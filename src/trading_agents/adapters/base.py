@@ -1,0 +1,91 @@
+"""MarketAdapter protocol.
+
+The adapter is the *only* place where the system knows which API/data source
+to call for a given market. The agent graph receives an adapter instance and
+calls a fixed interface on it. To add a new market you:
+
+1. Create a class implementing this Protocol.
+2. Register it via `registry.register_adapter`.
+3. Provide a matching `PromptPack`.
+4. Provide a `RegimeProfile`.
+
+Critically, every method takes an `asof` parameter. Backtests pass historical
+dates and the adapter MUST NOT return data with `published_at > asof`. This
+strict no-lookahead is enforced at the adapter boundary so individual analysts
+can't accidentally violate it.
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from datetime import date, datetime
+
+from ..core.regime import RegimeProfile
+from ..core.types import (
+    Fundamentals,
+    NewsItem,
+    Quote,
+    SentimentSummary,
+    TechnicalSnapshot,
+)
+
+
+class AdapterError(RuntimeError):
+    """Raised when adapter cannot fulfil a request (bad ticker, no data, etc.)."""
+
+
+class MarketAdapter(ABC):
+    """Pluggable per-market data source.
+
+    Implementations:
+        - MockAdapter (canned data, runs offline)
+        - YahooUSEquityAdapter (free, US stocks)
+        - FinnhubUSEquityAdapter (paid, broader)
+        - CoinGeckoCryptoAdapter (free, crypto)
+        - TushareAShareAdapter (paid, A-shares)
+    """
+
+    market: str
+    regime: RegimeProfile
+
+    # ---- core data accessors -------------------------------------------------
+
+    @abstractmethod
+    def get_quote(self, ticker: str, asof: datetime) -> Quote:
+        ...
+
+    @abstractmethod
+    def get_fundamentals(self, ticker: str, asof: date) -> Fundamentals:
+        ...
+
+    @abstractmethod
+    def get_news(
+        self, ticker: str, asof: date, lookback_days: int = 7
+    ) -> list[NewsItem]:
+        """Return news with `published_at <= asof end-of-day`. No future leak."""
+
+    @abstractmethod
+    def get_sentiment(
+        self, ticker: str, asof: date, lookback_days: int = 7
+    ) -> SentimentSummary:
+        ...
+
+    @abstractmethod
+    def get_technical(self, ticker: str, asof: date) -> TechnicalSnapshot:
+        ...
+
+    @abstractmethod
+    def get_price_history(
+        self, ticker: str, start: date, end: date
+    ) -> list[Quote]:
+        """Used by the backtester (its only data source)."""
+
+    # ---- helpers (default implementations) -----------------------------------
+
+    def assert_no_future(self, asof: date, observed: datetime) -> None:
+        """Adapter implementations should call this on every news/social item
+        before returning it, to keep lookahead bias impossible."""
+        if observed.date() > asof:
+            raise AdapterError(
+                f"Lookahead bias: data dated {observed.date()} > asof {asof}"
+            )
