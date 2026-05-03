@@ -26,6 +26,7 @@ export interface AnalystReport {
   asof: string;
   body: string;
   signals: Record<string, unknown>;
+  sources?: string[];
 }
 
 export interface DebateTurn {
