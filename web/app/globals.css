@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    font-feature-settings: "cv11", "ss01", "ss03";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-bg-base text-ink-primary antialiased font-sans;
+    background-image:
+      radial-gradient(ellipse 90% 50% at 50% -10%, rgba(86, 211, 100, 0.06), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(95, 168, 232, 0.04), transparent 60%);
+  }
+
+  ::selection {
+    background: rgba(86, 211, 100, 0.25);
+    color: #fff;
+  }
+
+  /* Better scrollbar in dark mode */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #272d36;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3a4150;
+  }
+}
+
+@layer components {
+  .surface {
+    @apply bg-bg-elevated border border-border-subtle rounded-xl;
+  }
+
+  .surface-elev {
+    @apply bg-bg-elevated border border-border rounded-xl shadow-card;
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-2xs font-medium;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg
+           font-medium text-sm transition-all duration-150
+           focus:outline-none focus:ring-2 focus:ring-accent/40 focus:ring-offset-2 focus:ring-offset-bg-base
+           disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent text-bg-base hover:bg-accent-hover hover:-translate-y-px;
+  }
+
+  .btn-secondary {
+    @apply btn border border-border text-ink-primary hover:bg-bg-hover;
+  }
+
+  .btn-ghost {
+    @apply btn text-ink-secondary hover:text-ink-primary hover:bg-bg-hover;
+  }
+
+  .input {
+    @apply bg-bg-subtle border border-border-subtle text-ink-primary placeholder:text-ink-tertiary
+           rounded-lg px-3 py-2 text-sm
+           focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-border-strong
+           transition-colors;
+  }
+
+  .label-cap {
+    @apply uppercase tracking-wider text-2xs font-medium text-ink-tertiary;
+  }
+
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 30%, transparent 80%);
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(135deg, #ffffff 0%, #b8c4d4 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .text-gradient-accent {
+    background: linear-gradient(135deg, #56d364 0%, #5fa8e8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}

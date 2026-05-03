@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Eye, Plus, Sparkles, TrendingUp } from "lucide-react";
 import { auth } from "../lib/api";
+import { cn } from "../lib/cn";
 
 interface Item {
   ticker: string;
@@ -24,10 +27,13 @@ function authedFetch(path: string, init?: RequestInit) {
 export default function WatchlistPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [ticker, setTicker] = useState("");
+  const [loading, setLoading] = useState(false);
 
   async function load() {
+    setLoading(true);
     const r = await authedFetch("/v1/watchlist");
     if (r.ok) setItems(await r.json());
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -38,74 +44,111 @@ export default function WatchlistPage() {
     load();
   }, []);
 
-  async function add() {
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
     if (!ticker) return;
     await authedFetch("/v1/watchlist/items", {
       method: "POST",
-      body: JSON.stringify({ ticker, market: "us_equity" }),
+      body: JSON.stringify({
+        ticker: ticker.toUpperCase(),
+        market: "us_equity",
+      }),
     });
     setTicker("");
     load();
   }
 
   return (
-    <div>
-      <h2 style={{ fontSize: 22 }}>Watchlist</h2>
-      <p style={{ color: "#8b9bb4" }}>
-        Tickers here will get an automatic pre-market briefing each trading day
-        (when the daily-cron worker is enabled).
-      </p>
-      <div style={{ display: "flex", gap: 8 }}>
+    <div className="max-w-6xl mx-auto px-6 py-10">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
+        <div>
+          <span className="label-cap">Watchlist</span>
+          <h1 className="text-2xl font-semibold mt-1">Your tracked tickers</h1>
+          <p className="text-sm text-ink-secondary mt-1">
+            Tickers here will get an automatic pre-market briefing each
+            trading day (rolling out).
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={add} className="surface-elev p-3 mb-6 flex gap-2">
         <input
           value={ticker}
           onChange={(e) => setTicker(e.target.value.toUpperCase())}
           placeholder="Add ticker (e.g. NVDA)"
-          style={{
-            padding: 8,
-            background: "#0d1117",
-            border: "1px solid #30363d",
-            color: "white",
-            borderRadius: 6,
-            width: 240,
-          }}
+          className="input flex-1 font-mono uppercase tracking-wider"
         />
-        <button
-          onClick={add}
-          style={{
-            padding: "8px 14px",
-            background: "#2da44e",
-            color: "white",
-            border: 0,
-            borderRadius: 6,
-            cursor: "pointer",
-          }}
-        >
-          Add
+        <button type="submit" disabled={!ticker} className="btn-primary">
+          <Plus className="w-4 h-4" /> Add
         </button>
-      </div>
+      </form>
 
-      <div style={{ marginTop: 16 }}>
-        {items.length === 0 ? (
-          <p style={{ color: "#5b6470" }}>No tickers yet.</p>
-        ) : (
-          items.map((i) => (
+      {loading && items.length === 0 ? (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {[0, 1, 2].map((i) => (
             <div
-              key={i.ticker}
-              style={{
-                padding: 12,
-                marginBottom: 6,
-                border: "1px solid #21262d",
-                borderRadius: 6,
-                display: "flex",
-                justifyContent: "space-between",
-              }}
-            >
-              <strong>{i.ticker}</strong>
-              <span style={{ color: "#8b9bb4" }}>{i.market}</span>
-            </div>
-          ))
-        )}
+              key={i}
+              className="surface p-5 h-32 animate-pulse bg-bg-hover/30"
+            />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {items.map((item, i) => (
+            <TickerCard key={i} item={item} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TickerCard({ item }: { item: Item }) {
+  return (
+    <Link
+      href={`/decision?ticker=${item.ticker}`}
+      className="surface p-5 hover:border-border hover:bg-bg-hover/40 transition-all group block"
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <div className="font-mono text-lg font-semibold tracking-wider">
+            {item.ticker}
+          </div>
+          <div className="text-2xs label-cap mt-0.5">{item.market}</div>
+        </div>
+        <span className="pill bg-bg-subtle text-ink-tertiary border border-border-subtle group-hover:text-accent group-hover:border-accent/30 transition-colors">
+          <Sparkles className="w-3 h-3" />
+          Run
+        </span>
       </div>
+      {item.note && (
+        <div className="text-xs text-ink-secondary line-clamp-2">
+          {item.note}
+        </div>
+      )}
+    </Link>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="surface p-10 text-center">
+      <div className="inline-flex w-12 h-12 rounded-xl bg-accent-muted text-accent items-center justify-center mb-4">
+        <Eye className="w-5 h-5" />
+      </div>
+      <h3 className="font-semibold mb-1">No tickers yet</h3>
+      <p className="text-sm text-ink-secondary max-w-sm mx-auto">
+        Add a ticker above. Or run a one-off decision without saving.
+      </p>
+      <Link
+        href="/decision"
+        className="btn-secondary mt-4 inline-flex"
+      >
+        <TrendingUp className="w-4 h-4" />
+        Run a one-off decision
+      </Link>
     </div>
   );
 }

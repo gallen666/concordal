@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ArrowRight, KeyRound } from "lucide-react";
 import { api, auth } from "../lib/api";
+import { Logo } from "../components/Logo";
 
 export default function RedeemPage() {
   const router = useRouter();
@@ -11,7 +14,8 @@ export default function RedeemPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit() {
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
     setLoading(true);
     setError(null);
     try {
@@ -26,58 +30,78 @@ export default function RedeemPage() {
   }
 
   return (
-    <div style={{ maxWidth: 460, margin: "60px auto", padding: 24 }}>
-      <h2 style={{ marginTop: 0 }}>Redeem invite code</h2>
-      <p style={{ color: "#8b9bb4" }}>Enter the email + code we sent you.</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <input
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="email"
-          style={inp}
-          disabled={loading}
-        />
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          placeholder="invite code"
-          style={inp}
-          disabled={loading}
-        />
-        <button
-          onClick={submit}
-          disabled={loading || !email || !code}
-          style={{
-            padding: "10px 14px",
-            background: loading ? "#30363d" : "#2da44e",
-            color: "white",
-            border: 0,
-            borderRadius: 6,
-            cursor: loading ? "default" : "pointer",
-          }}
+    <div className="relative min-h-[calc(100vh-3.5rem-4rem)] flex items-center justify-center px-6 py-12">
+      <div className="absolute inset-0 grid-bg pointer-events-none" />
+      <div className="relative w-full max-w-md">
+        <div className="text-center mb-6">
+          <div className="inline-flex w-12 h-12 rounded-xl bg-accent-muted text-accent items-center justify-center mb-4">
+            <KeyRound className="w-5 h-5" />
+          </div>
+          <h1 className="text-2xl font-semibold">Redeem invite code</h1>
+          <p className="text-sm text-ink-secondary mt-1">
+            Enter the email and code we sent you.
+          </p>
+        </div>
+
+        <form
+          onSubmit={submit}
+          className="surface-elev p-6 space-y-4"
         >
-          {loading ? "Redeeming…" : "Redeem"}
-        </button>
-        {error && (
-          <p style={{ color: "#f85149", margin: 0, fontSize: 14 }}>{error}</p>
-        )}
+          <div className="space-y-1.5">
+            <label className="label-cap" htmlFor="email">
+              Email
+            </label>
+            <input
+              id="email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@firm.com"
+              disabled={loading}
+              className="input w-full"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="label-cap" htmlFor="code">
+              Invite code
+            </label>
+            <input
+              id="code"
+              type="text"
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="trial"
+              disabled={loading}
+              className="input w-full font-mono"
+            />
+          </div>
+
+          {error && (
+            <div className="text-sm text-signal-sell bg-signal-sell_soft border border-signal-sell/20 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading || !email || !code}
+            className="btn-primary w-full"
+          >
+            {loading ? "Redeeming…" : "Redeem"}
+            {!loading && <ArrowRight className="w-4 h-4" />}
+          </button>
+        </form>
+
+        <p className="text-center text-xs text-ink-tertiary mt-6">
+          Don&apos;t have a code?{" "}
+          <Link href="/" className="text-accent hover:underline">
+            Join the waitlist
+          </Link>
+        </p>
       </div>
-      <p style={{ marginTop: 24, color: "#5b6470", fontSize: 13 }}>
-        Don't have a code?{" "}
-        <a href="/" style={{ color: "#56d364" }}>
-          Join the waitlist
-        </a>
-        .
-      </p>
     </div>
   );
 }
-
-const inp: React.CSSProperties = {
-  padding: 10,
-  background: "#0d1117",
-  border: "1px solid #30363d",
-  color: "white",
-  borderRadius: 6,
-  fontSize: 15,
-};
