@@ -8,14 +8,12 @@ import {
   BarChart3,
   Briefcase,
   CheckCircle2,
-  ChevronDown,
   Gavel,
   LineChart,
   Loader2,
   MessageCircle,
   Newspaper,
   Play,
-  ScrollText,
   ShieldCheck,
   Sparkles,
   TrendingDown,
@@ -23,44 +21,82 @@ import {
   Users,
   XCircle,
 } from "lucide-react";
-import { api, type DecisionTrace, type DebateTranscript, type AnalystReport } from "../lib/api";
+import {
+  api,
+  type DecisionTrace,
+  type DebateTranscript,
+  type AnalystReport,
+} from "../lib/api";
 import { cn } from "../lib/cn";
 
 const SIDE_STYLES: Record<
   string,
-  { bg: string; text: string; border: string; icon: React.ReactNode }
+  {
+    pillBg: string;
+    pillText: string;
+    pillBorder: string;
+    icon: React.ReactNode;
+    accent: string;
+    glow: string;
+  }
 > = {
   BUY: {
-    bg: "bg-signal-buy_soft",
-    text: "text-signal-buy",
-    border: "border-signal-buy/30",
+    pillBg: "bg-signal-buy_soft",
+    pillText: "text-signal-buy",
+    pillBorder: "border-signal-buy/30",
     icon: <TrendingUp className="w-4 h-4" />,
+    accent: "border-l-signal-buy",
+    glow: "rgba(63,185,80,0.18)",
   },
   OVERWEIGHT: {
-    bg: "bg-signal-buy_soft",
-    text: "text-signal-buy",
-    border: "border-signal-buy/30",
+    pillBg: "bg-signal-buy_soft",
+    pillText: "text-signal-buy",
+    pillBorder: "border-signal-buy/30",
     icon: <TrendingUp className="w-4 h-4" />,
+    accent: "border-l-signal-buy",
+    glow: "rgba(63,185,80,0.18)",
   },
   HOLD: {
-    bg: "bg-bg-hover",
-    text: "text-ink-secondary",
-    border: "border-border",
+    pillBg: "bg-bg-hover",
+    pillText: "text-ink-secondary",
+    pillBorder: "border-border",
     icon: <Activity className="w-4 h-4" />,
+    accent: "border-l-ink-tertiary",
+    glow: "rgba(154,166,184,0.15)",
   },
   UNDERWEIGHT: {
-    bg: "bg-signal-sell_soft",
-    text: "text-signal-sell",
-    border: "border-signal-sell/30",
+    pillBg: "bg-signal-sell_soft",
+    pillText: "text-signal-sell",
+    pillBorder: "border-signal-sell/30",
     icon: <TrendingDown className="w-4 h-4" />,
+    accent: "border-l-signal-sell",
+    glow: "rgba(248,81,73,0.18)",
   },
   SELL: {
-    bg: "bg-signal-sell_soft",
-    text: "text-signal-sell",
-    border: "border-signal-sell/30",
+    pillBg: "bg-signal-sell_soft",
+    pillText: "text-signal-sell",
+    pillBorder: "border-signal-sell/30",
     icon: <TrendingDown className="w-4 h-4" />,
+    accent: "border-l-signal-sell",
+    glow: "rgba(248,81,73,0.18)",
   },
 };
+
+// --- text cleanup helpers --------------------------------------------------
+
+/** Strip fenced code blocks (```...```) from analyst body — the structured
+ * signals are already shown as pills, so the JSON dump is redundant. */
+function stripCodeFences(s: string): string {
+  return s
+    .replace(/```[\w-]*\s*[\s\S]*?```/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Strip leading "BULL: " / "BEAR: " role prefixes from debate content. */
+function stripRolePrefix(s: string): string {
+  return s.replace(/^\s*(BULL|BEAR|AGGRESSIVE|NEUTRAL|CONSERVATIVE)\s*:\s*/i, "").trim();
+}
 
 export default function DecisionPage() {
   const [ticker, setTicker] = useState("AAPL");
@@ -100,20 +136,18 @@ export default function DecisionPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
-        <div>
-          <span className="label-cap">New decision</span>
-          <h1 className="text-2xl font-semibold mt-1">
-            Run the 7-agent pipeline
-          </h1>
-          <p className="text-sm text-ink-secondary mt-1">
-            Enter a ticker. The system goes from data gathering to final
-            approval, fully traced.
-          </p>
-        </div>
+      <div className="mb-6">
+        <span className="label-cap">New decision</span>
+        <h1 className="text-2xl font-semibold mt-1">
+          Run the 7-agent pipeline
+        </h1>
+        <p className="text-sm text-ink-secondary mt-1">
+          Enter a ticker. The system goes from data gathering to final
+          approval, fully traced.
+        </p>
       </div>
 
-      <div className="surface-elev p-4 flex flex-col sm:flex-row gap-3">
+      <div className="surface-elev p-3 flex flex-col sm:flex-row gap-3">
         <input
           value={ticker}
           onChange={(e) => setTicker(e.target.value.toUpperCase())}
@@ -160,39 +194,52 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
   const style = SIDE_STYLES[d.side] || SIDE_STYLES.HOLD;
   return (
     <div className="mt-8 space-y-8 animate-fade-in">
-      {/* Headline */}
-      <div className="surface-elev relative overflow-hidden">
-        <div className="absolute inset-0 bg-radial-fade pointer-events-none" />
-        <div className="relative p-6 grid lg:grid-cols-[2fr_1fr] gap-6">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="font-mono text-3xl font-semibold tracking-wider">
+      {/* Headline card with side accent + horizontal stat strip at bottom */}
+      <div
+        className={cn(
+          "surface-elev relative overflow-hidden border-l-2",
+          style.accent
+        )}
+      >
+        <div
+          className="absolute inset-0 pointer-events-none opacity-60"
+          style={{
+            background: `radial-gradient(ellipse 70% 60% at 0% 0%, ${style.glow}, transparent 70%)`,
+          }}
+        />
+        <div className="relative">
+          {/* Top: ticker + side + asof */}
+          <div className="px-6 pt-6 pb-4">
+            <div className="flex flex-wrap items-center gap-3 mb-3">
+              <span className="font-mono text-3xl font-semibold tracking-wider leading-none">
                 {d.ticker}
               </span>
               <span
                 className={cn(
                   "pill px-3 py-1 text-sm font-semibold border",
-                  style.bg,
-                  style.text,
-                  style.border
+                  style.pillBg,
+                  style.pillText,
+                  style.pillBorder
                 )}
               >
                 {style.icon}
                 {d.side}
               </span>
-              <span className="text-xs text-ink-tertiary">
+              <span className="text-xs text-ink-tertiary ml-auto font-mono">
                 asof {d.asof}
               </span>
             </div>
-            <p className="text-ink-primary leading-relaxed">{d.rationale}</p>
+            <p className="text-ink-primary leading-relaxed text-base">
+              {d.rationale}
+            </p>
             {d.risk_notes && (
-              <div className="flex items-start gap-2 text-sm text-ink-secondary">
+              <div className="mt-3 flex items-start gap-2 text-sm text-ink-secondary">
                 <AlertTriangle className="w-4 h-4 text-signal-warn shrink-0 mt-0.5" />
                 <span>{d.risk_notes}</span>
               </div>
             )}
             {d.flags && d.flags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
+              <div className="mt-3 flex flex-wrap gap-1.5">
                 {d.flags.map((f) => (
                   <span
                     key={f}
@@ -204,26 +251,28 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
               </div>
             )}
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-1 gap-3">
-            <Stat label="Target weight" value={signedPct(d.target_weight)} mono />
-            <Stat
+
+          {/* Stats strip across the bottom */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-border-subtle border-t border-border-subtle">
+            <StatCell label="Target weight" value={signedPct(d.target_weight)} mono />
+            <StatCell
               label="Confidence"
               value={`${(d.confidence * 100).toFixed(0)}%`}
               accent
             >
-              <div className="mt-1.5 h-1.5 bg-bg-base rounded-full overflow-hidden">
+              <div className="mt-1.5 h-1 bg-bg-base rounded-full overflow-hidden">
                 <div
                   className="h-full bg-accent transition-all"
                   style={{ width: `${d.confidence * 100}%` }}
                 />
               </div>
-            </Stat>
-            <Stat
+            </StatCell>
+            <StatCell
               label="LLM cost"
               value={`$${(trace.total_cost_usd ?? 0).toFixed(4)}`}
               mono
             />
-            <Stat
+            <StatCell
               label="Reports"
               value={`${trace.analyst_reports.length} / 4`}
               mono
@@ -232,10 +281,8 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
         </div>
       </div>
 
-      {/* Pipeline progress */}
       <PipelineTimeline trace={trace} />
 
-      {/* Analyst reports */}
       {trace.analyst_reports.length > 0 && (
         <Section
           title="Analyst reports"
@@ -245,7 +292,6 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
         </Section>
       )}
 
-      {/* Researcher debate */}
       {trace.researcher_debate && (
         <Section
           title="Bull / Bear debate"
@@ -255,22 +301,20 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
         </Section>
       )}
 
-      {/* Trader plan */}
       {trace.trader_plan && (
         <Section
           title="Trader's plan"
           subtitle="Synthesis from analyst reports + debate."
           icon={<Briefcase className="w-4 h-4" />}
         >
-          <div className="surface p-5 prose-trader">
-            <pre className="whitespace-pre-wrap font-sans text-sm text-ink-primary leading-relaxed">
+          <div className="surface p-5">
+            <div className="whitespace-pre-wrap text-sm text-ink-primary leading-relaxed font-sans">
               {trace.trader_plan}
-            </pre>
+            </div>
           </div>
         </Section>
       )}
 
-      {/* Risk committee */}
       {trace.risk_debate && (
         <Section
           title="Risk committee"
@@ -284,7 +328,7 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
   );
 }
 
-function Stat({
+function StatCell({
   label,
   value,
   mono,
@@ -298,11 +342,11 @@ function Stat({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="bg-bg-subtle border border-border-subtle rounded-lg p-3">
+    <div className="bg-bg-elevated p-4">
       <div className="label-cap">{label}</div>
       <div
         className={cn(
-          "mt-1 text-lg font-semibold",
+          "mt-1.5 text-lg font-semibold leading-none",
           mono && "font-mono",
           accent && "text-accent"
         )}
@@ -377,6 +421,8 @@ const ANALYST_META: Record<
 function AnalystTabs({ reports }: { reports: AnalystReport[] }) {
   const [active, setActive] = useState(reports[0]?.analyst || "fundamentals");
   const current = reports.find((r) => r.analyst === active) || reports[0];
+  const cleanedBody = current ? stripCodeFences(current.body) : "";
+
   return (
     <div className="surface overflow-hidden">
       <div className="flex border-b border-border-subtle overflow-x-auto">
@@ -404,12 +450,12 @@ function AnalystTabs({ reports }: { reports: AnalystReport[] }) {
       </div>
       {current && (
         <div className="p-5 space-y-4">
-          <pre className="whitespace-pre-wrap font-sans text-sm text-ink-primary leading-relaxed">
-            {current.body}
-          </pre>
+          <div className="text-sm text-ink-primary leading-relaxed whitespace-pre-wrap">
+            {cleanedBody}
+          </div>
           {Object.keys(current.signals || {}).length > 0 && (
             <div>
-              <div className="label-cap mb-2">Structured signals</div>
+              <div className="label-cap mb-2">Signals</div>
               <div className="flex flex-wrap gap-1.5">
                 {Object.entries(current.signals).map(([k, v]) => (
                   <span
@@ -442,14 +488,12 @@ function DebateView({ transcript }: { transcript: DebateTranscript }) {
     <div className="space-y-4">
       <div className="grid md:grid-cols-2 gap-3">
         <DebateColumn
-          side="bull"
           label="Bull"
           icon={<TrendingUp className="w-4 h-4" />}
           turns={turns.filter((t) => t.speaker === "bull")}
           color="signal-buy"
         />
         <DebateColumn
-          side="bear"
           label="Bear"
           icon={<TrendingDown className="w-4 h-4" />}
           turns={turns.filter((t) => t.speaker === "bear")}
@@ -472,13 +516,11 @@ function DebateView({ transcript }: { transcript: DebateTranscript }) {
 }
 
 function DebateColumn({
-  side,
   label,
   icon,
   turns,
   color,
 }: {
-  side: string;
   label: string;
   icon: React.ReactNode;
   turns: DebateTranscript["turns"];
@@ -509,7 +551,7 @@ function DebateColumn({
           <div key={i}>
             <div className="label-cap mb-1.5">Round {t.round}</div>
             <p className="text-sm text-ink-primary leading-relaxed">
-              {t.content}
+              {stripRolePrefix(t.content)}
             </p>
           </div>
         ))}
@@ -546,10 +588,7 @@ function RiskView({ transcript }: { transcript: DebateTranscript }) {
         const turn = transcript.turns?.find((t) => t.speaker === role);
         const meta = RISK_META[role];
         return (
-          <div
-            key={role}
-            className={cn("rounded-xl border p-4", meta.bg)}
-          >
+          <div key={role} className={cn("rounded-xl border p-4", meta.bg)}>
             <div className="flex items-center gap-2 mb-3">
               <Gavel className={cn("w-4 h-4", meta.color)} />
               <span className={cn("font-semibold text-sm", meta.color)}>
@@ -557,7 +596,9 @@ function RiskView({ transcript }: { transcript: DebateTranscript }) {
               </span>
             </div>
             <p className="text-sm text-ink-primary leading-relaxed">
-              {turn?.content || (
+              {turn?.content ? (
+                stripRolePrefix(turn.content)
+              ) : (
                 <span className="text-ink-tertiary italic">No statement</span>
               )}
             </p>
@@ -601,12 +642,12 @@ function PipelineTimeline({ trace }: { trace: DecisionTrace }) {
     return false;
   };
   return (
-    <div className="surface p-4">
-      <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1">
+    <div className="surface p-3">
+      <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto pb-1">
         {STAGES.map((s, i) => {
           const done = completed(s.key);
           return (
-            <div key={s.key} className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <div key={s.key} className="flex items-center gap-1 sm:gap-1.5 shrink-0">
               <span
                 className={cn(
                   "pill border whitespace-nowrap",

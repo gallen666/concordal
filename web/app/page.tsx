@@ -19,7 +19,7 @@ export default function Landing() {
       {/* HERO */}
       <section className="relative overflow-hidden border-b border-border-subtle">
         <div className="absolute inset-0 grid-bg pointer-events-none" />
-        <div className="relative max-w-6xl mx-auto px-6 py-20 sm:py-24 grid lg:grid-cols-[1.1fr_1fr] gap-12 items-center">
+        <div className="relative max-w-6xl mx-auto px-6 py-12 sm:py-16 grid lg:grid-cols-[1.1fr_1fr] gap-12 items-center">
           <div className="space-y-6">
             <span className="pill bg-accent-muted text-accent border border-accent/20">
               <span className="relative flex w-1.5 h-1.5">
