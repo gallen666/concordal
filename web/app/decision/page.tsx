@@ -93,9 +93,14 @@ function stripCodeFences(s: string): string {
     .trim();
 }
 
-/** Strip leading "BULL: " / "BEAR: " role prefixes from debate content. */
+/** Strip leading role-style prefixes from debate / risk content.
+ * Matches "BULL:", "BEAR:", "Aggressive risk view:", "Neutral risk view:",
+ * "Conservative risk view:", etc. */
 function stripRolePrefix(s: string): string {
-  return s.replace(/^\s*(BULL|BEAR|AGGRESSIVE|NEUTRAL|CONSERVATIVE)\s*:\s*/i, "").trim();
+  return s
+    .replace(/^\s*(BULL|BEAR|AGGRESSIVE|NEUTRAL|CONSERVATIVE)\s*:\s*/i, "")
+    .replace(/^\s*(aggressive|neutral|conservative)\s+risk\s+view\s*:\s*/i, "")
+    .trim();
 }
 
 export default function DecisionPage() {
@@ -307,11 +312,7 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
           subtitle="Synthesis from analyst reports + debate."
           icon={<Briefcase className="w-4 h-4" />}
         >
-          <div className="surface p-5">
-            <div className="whitespace-pre-wrap text-sm text-ink-primary leading-relaxed font-sans">
-              {trace.trader_plan}
-            </div>
-          </div>
+          <TraderPlan text={trace.trader_plan} />
         </Section>
       )}
 
@@ -324,6 +325,48 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
           <RiskView transcript={trace.risk_debate} />
         </Section>
       )}
+    </div>
+  );
+}
+
+/** Render trader plan: split lines into key/value rows when possible. */
+function TraderPlan({ text }: { text: string }) {
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  // Each line ideally looks like "Key: value." — split on first ":"
+  const rows = lines.map((line) => {
+    const colon = line.indexOf(":");
+    if (colon === -1 || colon > 40) return { key: null, value: line };
+    return {
+      key: line.slice(0, colon).trim(),
+      value: line.slice(colon + 1).trim().replace(/\.$/, ""),
+    };
+  });
+
+  return (
+    <div className="surface overflow-hidden">
+      <div className="divide-y divide-border-subtle">
+        {rows.map((r, i) =>
+          r.key ? (
+            <div
+              key={i}
+              className="grid grid-cols-[160px_1fr] gap-4 px-5 py-3 hover:bg-bg-hover/30 transition-colors"
+            >
+              <span className="label-cap pt-0.5">{r.key}</span>
+              <span className="text-sm text-ink-primary leading-relaxed">
+                {r.value}
+              </span>
+            </div>
+          ) : (
+            <div key={i} className="px-5 py-3 text-sm text-ink-primary leading-relaxed">
+              {r.value}
+            </div>
+          )
+        )}
+      </div>
     </div>
   );
 }
