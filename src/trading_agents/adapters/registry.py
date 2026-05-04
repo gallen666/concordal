@@ -26,9 +26,12 @@ def get_adapter(name: str) -> MarketAdapter:
 def _register_builtins() -> None:
     # Imported lazily so missing optional deps don't break the world.
     from .mock import MockAdapter
+    from .yahoo_us_equity import YahooUSEquityAdapter
 
     register_adapter("mock", MockAdapter)
-    register_adapter("us_equity", MockAdapter)  # default to mock until live wired
+    # Real US-equity data via Yahoo Finance. Falls back to MockAdapter
+    # automatically if yfinance can't reach Yahoo (rate limit, network, etc.).
+    register_adapter("us_equity", YahooUSEquityAdapter)
     register_adapter("crypto", MockAdapter)
 
 

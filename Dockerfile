@@ -23,7 +23,8 @@ RUN pip install --upgrade pip && \
         "langgraph>=0.2" "langchain-core>=0.3" "tenacity>=8.2" \
         "fastapi>=0.110" "uvicorn[standard]>=0.29" \
         "PyJWT>=2.8" "sentry-sdk>=2.0" \
-        "openai>=1.30" "anthropic>=0.30"
+        "openai>=1.30" "anthropic>=0.30" \
+        "yfinance>=0.2.40"
 
 # Copy app
 COPY src/ ./src/
