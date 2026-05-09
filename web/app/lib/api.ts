@@ -137,6 +137,8 @@ export const api = {
     user_risk_profile?: string;
     /** "en" or "zh" — controls language of LLM free-text fields. */
     locale?: string;
+    /** When false, bypasses TickerCache and forces a fresh run. */
+    use_cache?: boolean;
   }) =>
     _fetch<{ job_id: string; status: string }>("/v1/decisions", {
       method: "POST",

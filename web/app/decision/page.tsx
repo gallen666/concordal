@@ -15,6 +15,7 @@ import {
   MessageCircle,
   Newspaper,
   Play,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   TrendingDown,
@@ -115,22 +116,26 @@ export default function DecisionPage() {
   const [result, setResult] = useState<DecisionTrace | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<CurrentUser | null>(null);
+  const [mode, setMode] = useState<string | null>(null);  // cached / real_llm / mock
+  const [generatedAt, setGeneratedAt] = useState<Date | null>(null);
 
   useEffect(() => {
     if (!auth.isLoggedIn()) return;
     api.me().then(setUser).catch(() => undefined);
   }, []);
 
-  async function run() {
+  async function run({ forceRefresh = false }: { forceRefresh?: boolean } = {}) {
     setLoading(true);
     setError(null);
     setResult(null);
+    setMode(null);
     setStage(t("decision.running"));
     try {
       const job = await api.createDecision({
         ticker,
         debate_rounds: 2,
         locale,
+        use_cache: !forceRefresh,
       });
       setStage(t("decision.running"));
       for (let i = 0; i < 240; i++) {
@@ -138,6 +143,8 @@ export default function DecisionPage() {
         const j = await api.getDecision(job.job_id);
         if (j.status === "done") {
           setResult(j.result);
+          setMode(j.mode || null);
+          setGeneratedAt(new Date());
           setStage("done");
           break;
         }
@@ -177,7 +184,7 @@ export default function DecisionPage() {
           spellCheck={false}
         />
         <button
-          onClick={run}
+          onClick={() => run()}
           disabled={loading || !ticker}
           className="btn-primary"
         >
@@ -193,7 +200,37 @@ export default function DecisionPage() {
             </>
           )}
         </button>
+        {result && !loading && (
+          <button
+            onClick={() => run({ forceRefresh: true })}
+            disabled={loading || !ticker}
+            className="btn-secondary"
+            title={t("decision.refresh")}
+          >
+            <RefreshCw className="w-4 h-4" />
+            {t("decision.refresh")}
+          </button>
+        )}
       </div>
+
+      {/* Mode + timestamp banner above the result */}
+      {result && mode && generatedAt && (
+        <div className="mt-3 flex items-center gap-2 text-xs text-ink-tertiary">
+          {mode === "cached" ? (
+            <span className="pill bg-bg-hover text-ink-secondary">
+              {t("decision.cached")}
+            </span>
+          ) : (
+            <span className="pill bg-signal-buy_soft text-signal-buy">
+              <Sparkles className="w-3 h-3" />
+              {t("decision.fresh")}
+            </span>
+          )}
+          <span className="font-mono">
+            {t("decision.dataAt")} {generatedAt.toLocaleString(locale === "zh" ? "zh-CN" : "en-US")}
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="mt-6 surface border-signal-sell/30 p-4 flex items-center gap-3">
