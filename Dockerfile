@@ -24,6 +24,7 @@ RUN pip install --upgrade pip && \
         "fastapi>=0.110" "uvicorn[standard]>=0.29" \
         "PyJWT>=2.8" "sentry-sdk>=2.0" \
         "openai>=1.30" "anthropic>=0.30" \
+        "google-genai>=0.3.0" \
         "yfinance>=0.2.40"
 
 # Copy app

@@ -46,6 +46,11 @@ _PRICES: dict[str, tuple[float, float]] = {
     "claude-haiku-4-5": (0.80, 4.00),
     "claude-sonnet-4-6": (3.00, 15.00),
     "claude-opus-4-6": (15.00, 75.00),
+    # Google Gemini
+    "gemini-2.5-pro": (1.25, 10.00),
+    "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.5-flash-lite": (0.10, 0.40),
+    "gemini-2.0-flash": (0.10, 0.40),
     # Mock
     "mock-fast": (0.0, 0.0),
     "mock-mid": (0.0, 0.0),
@@ -266,6 +271,48 @@ class AnthropicProvider(_ProviderBase):
         )
 
 
+class GeminiProvider(_ProviderBase):
+    """Google Gemini via the official `google-genai` SDK.
+
+    Uses the unified `GenerateContentConfig` so we can pass the analyst's
+    system prompt as `system_instruction` and the rendered facts as `contents`.
+    """
+
+    name = "gemini"
+
+    def __init__(self, api_key: str):
+        from google import genai
+        self._client = genai.Client(api_key=api_key)
+
+    def complete(self, system: str, user: str, model: str, **kw) -> LLMResponse:
+        from google.genai import types
+
+        resp = self._client.models.generate_content(
+            model=model,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                temperature=kw.get("temperature", 0.3),
+                max_output_tokens=kw.get("max_tokens", 4096),
+            ),
+            contents=user,
+        )
+        text = resp.text or ""
+        meta = getattr(resp, "usage_metadata", None)
+        in_tok = getattr(meta, "prompt_token_count", 0) or 0
+        out_tok = getattr(meta, "candidates_token_count", 0) or 0
+        in_p, out_p = _PRICES.get(model, (0.0, 0.0))
+        cost = in_tok / 1e6 * in_p + out_tok / 1e6 * out_p
+        return LLMResponse(
+            text=text,
+            usage=TokenUsage(
+                model=model,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                usd_cost=round(cost, 6),
+            ),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
@@ -278,6 +325,7 @@ class LLMRouter:
         self._mock = MockProvider()
         self._openai: OpenAIProvider | None = None
         self._anthropic: AnthropicProvider | None = None
+        self._gemini: GeminiProvider | None = None
 
         oa = os.getenv("OPENAI_API_KEY")
         if oa:
@@ -285,6 +333,13 @@ class LLMRouter:
                 self._openai = OpenAIProvider(oa)
             except Exception as e:
                 log.warning("OpenAI init failed: %s", e)
+
+        gm = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if gm:
+            try:
+                self._gemini = GeminiProvider(gm)
+            except Exception as e:
+                log.warning("Gemini init failed: %s", e)
 
         an = os.getenv("ANTHROPIC_API_KEY")
         if an:
@@ -296,16 +351,28 @@ class LLMRouter:
         force_mock = os.getenv("TA_MODE", "mock").lower() == "mock"
         self._force_mock = force_mock
 
-        # Default model strings per tier (override via env)
+        # Default model strings per tier (override via env). Defaults pick a
+        # working free/cheap path based on which keys are present.
+        if self._gemini and not (self._openai or self._anthropic):
+            default_fast = "gemini-2.5-flash-lite"
+            default_mid = "gemini-2.5-flash"
+            default_deep = "gemini-2.5-pro"
+        else:
+            default_fast = "gpt-4o-mini"
+            default_mid = "claude-sonnet-4-6"
+            default_deep = "claude-opus-4-6"
+
         self.models: dict[Tier, str] = {
-            Tier.FAST: os.getenv("TA_MODEL_FAST", "gpt-4o-mini"),
-            Tier.MID: os.getenv("TA_MODEL_MID", "claude-sonnet-4-6"),
-            Tier.DEEP: os.getenv("TA_MODEL_DEEP", "claude-opus-4-6"),
+            Tier.FAST: os.getenv("TA_MODEL_FAST", default_fast),
+            Tier.MID: os.getenv("TA_MODEL_MID", default_mid),
+            Tier.DEEP: os.getenv("TA_MODEL_DEEP", default_deep),
         }
 
     def _provider_for(self, model: str) -> _ProviderBase:
         if self._force_mock:
             return self._mock
+        if model.startswith("gemini-") and self._gemini:
+            return self._gemini
         if model.startswith(("gpt-", "o1-")) and self._openai:
             return self._openai
         if model.startswith("claude-") and self._anthropic:
