@@ -1,8 +1,15 @@
-// Edge-runtime proxy for the Gemini Generative Language API.
+// Node-runtime proxy for the Gemini Generative Language API.
 //
 // Why: our Render backend lives in Singapore, where Google geo-blocks
 // Gemini calls ("FAILED_PRECONDITION: User location is not supported").
-// Vercel edge functions run on US POPs by default, which Google accepts.
+//
+// Why Node, not Edge: Edge functions are routed to the POP nearest the
+// CALLER (Singapore → sin1), which puts the proxy back inside the same
+// geo-block. Node-runtime serverless functions run in a fixed Vercel
+// region (default iad1, US-East) regardless of caller location — exactly
+// the unblocking we need. Node also gives us up to 60s maxDuration vs.
+// 25s on Edge, which matters because Gemini 2.5 Pro responses can run
+// long for analyst-style prompts.
 //
 // The path after /api/gemini-proxy/ is forwarded verbatim, so the
 // upstream URL becomes:
@@ -11,9 +18,9 @@
 // API key is supplied by the caller (backend) as either ?key=... or
 // the x-goog-api-key header. We do NOT inject our own.
 
-export const runtime = "edge";
-export const preferredRegion = ["iad1", "sfo1", "pdx1"]; // US east/west
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60; // Hobby plan ceiling for serverless
 
 const UPSTREAM = "https://generativelanguage.googleapis.com";
 
