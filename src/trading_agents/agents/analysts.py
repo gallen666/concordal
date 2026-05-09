@@ -35,6 +35,16 @@ def _make_analyst(
             user=rendered,
         )
         signals = extract_json(resp.text) or {}
+        # Some models (notably Gemini 2.5) wrap the dict in another
+        # "signals" key, producing {"signals": {...real keys...}}. Unwrap
+        # one layer if we detect that exact shape.
+        if (
+            isinstance(signals, dict)
+            and len(signals) == 1
+            and "signals" in signals
+            and isinstance(signals["signals"], dict)
+        ):
+            signals = signals["signals"]
         state[state_report_key] = AnalystReport(  # type: ignore[index]
             analyst=role,
             ticker=state["ticker"],

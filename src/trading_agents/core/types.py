@@ -134,7 +134,12 @@ class AnalystReport(BaseModel):
     ticker: str
     asof: date
     body: str
-    signals: dict[str, float | str | bool] = Field(default_factory=dict)
+    # `Any` because real LLMs sometimes return nested objects (e.g. a
+    # "signals" wrapper around the actual key/value pairs, or a list of
+    # qualifiers per signal). Strict scalar typing here was causing
+    # cascade failures from Gemini output. Downstream consumers stringify
+    # this for the trader/risk prompts so any JSON-serializable shape works.
+    signals: dict[str, object] = Field(default_factory=dict)
     sources: list[str] = Field(default_factory=list)
 
 
