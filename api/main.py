@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 import uuid
 from collections import defaultdict, deque
@@ -152,8 +153,38 @@ class BacktestRequest(BaseModel):
 # --- background runners --------------------------------------------------
 
 
+# US-equity ticker syntactic check. A real US ticker is 1-5 letters with an
+# optional class suffix (e.g. AAPL, BRK-B, BF.B). Rejecting A-share codes
+# (6-digit numerics like 301308, 600519), HK codes (5 digits like 00700),
+# and crypto pairs early prevents the LLM from hallucinating analysis from
+# empty fundamentals when yfinance silently returns nothing.
+_US_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,8}$")
+
+
+def _is_supported_us_ticker(ticker: str) -> bool:
+    s = (ticker or "").upper().strip()
+    if not _US_TICKER_RE.fullmatch(s):
+        return False
+    # Reject all-digit symbols even if they were uppercased.
+    if not any(c.isalpha() for c in s):
+        return False
+    return True
+
+
 def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> None:
     try:
+        # Pre-flight: block obvious non-US tickers before burning any LLM
+        # quota. The Yahoo adapter also defends against this, but failing
+        # here is faster, cheaper, and the message is shown to the user.
+        if req.market == "us_equity" and not _is_supported_us_ticker(req.ticker):
+            _jobs[job_id]["status"] = "error"
+            _jobs[job_id]["error"] = (
+                f"代码 '{req.ticker}' 不像美股代码（仅支持 1–5 位字母，如 AAPL、NVDA、TSLA）。"
+                f" / Ticker '{req.ticker}' is not a supported US-equity symbol "
+                "(only 1–5 letter codes like AAPL, NVDA, TSLA are supported in the closed beta)."
+            )
+            return
+
         asof = req.asof or date.today()
 
         # Cache key incorporates locale so an English run doesn't get served

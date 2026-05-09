@@ -76,6 +76,27 @@ class YahooUSEquityAdapter(MarketAdapter):
             return self._fallback.get_fundamentals(ticker, asof)
         try:
             info = self._yf(ticker).info or {}
+            # Detect "yfinance succeeded but returned an empty/placeholder
+            # info dict" — this happens for tickers Yahoo doesn't recognize
+            # (typo, non-US code like an A-share '301308', delisted, etc.).
+            # If we don't catch it here, all fields below become None and
+            # the analyst LLM hallucinates plausible-looking nonsense from
+            # the empty record. Better to fail loudly so the API layer
+            # can return a clear error.
+            #
+            # We require AT LEAST ONE of (marketCap, totalRevenue, trailingPE)
+            # to be present; legitimate US equities virtually always have
+            # at least one of these populated.
+            looks_real = any(
+                info.get(k) is not None
+                for k in ("marketCap", "totalRevenue", "trailingPE", "regularMarketPrice")
+            )
+            if not looks_real:
+                raise AdapterError(
+                    f"yfinance returned no fundamentals for '{ticker}'. "
+                    "Likely not a US equity (e.g. A-share / HK / crypto codes "
+                    "are not supported on this market adapter)."
+                )
             return Fundamentals(
                 ticker=ticker,
                 asof=asof,
@@ -92,8 +113,13 @@ class YahooUSEquityAdapter(MarketAdapter):
                 debt_to_equity=info.get("debtToEquity"),
                 notes=info.get("longBusinessSummary"),
             )
+        except AdapterError:
+            # Empty-data is a hard error — propagate so the API can show
+            # a user-facing "ticker not found" message instead of falling
+            # back to mock data the user definitely doesn't want.
+            raise
         except Exception as e:
-            log.warning("Yahoo fundamentals failed (%s)", e)
+            log.warning("Yahoo fundamentals failed (%s); falling back to mock", e)
             return self._fallback.get_fundamentals(ticker, asof)
 
     def get_news(
