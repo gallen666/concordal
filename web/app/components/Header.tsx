@@ -47,6 +47,7 @@ export default function Header() {
               <NavLink href="/watchlist">{t("header.watchlist")}</NavLink>
               <NavLink href="/decision">{t("header.newDecision")}</NavLink>
               <NavLink href="/backtest">{t("header.backtest")}</NavLink>
+              <NavLink href="/track-record">{t("header.trackRecord")}</NavLink>
               <ModeBadge real={user.real_llm} />
               <span className="hidden sm:inline-flex text-xs text-ink-tertiary px-2">
                 {user.id}
@@ -66,6 +67,7 @@ export default function Header() {
             </>
           ) : loaded ? (
             <>
+              <NavLink href="/track-record">{t("header.trackRecord")}</NavLink>
               <LangToggle
                 label={toggleLabel}
                 title={toggleTitle}
