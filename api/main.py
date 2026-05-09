@@ -124,6 +124,10 @@ class DecisionRequest(BaseModel):
     debate_rounds: int = 2
     user_risk_profile: str = "balanced"
     use_cache: bool = True
+    # "en" or "zh". When "zh" the LLM returns free-text fields (analyst
+    # body, debate, rationale, risk notes) in Simplified Chinese. The
+    # cache key includes locale so en/zh runs don't collide.
+    locale: str = "en"
 
 
 class JobResponse(BaseModel):
@@ -152,8 +156,12 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
     try:
         asof = req.asof or date.today()
 
+        # Cache key incorporates locale so an English run doesn't get served
+        # to a Chinese-locale request and vice versa. Cheap and avoids a
+        # confusing mid-language flip in the UI.
+        cache_market = f"{req.market}:{req.locale}" if req.locale != "en" else req.market
         if req.use_cache:
-            cached = cache.get(req.ticker.upper(), asof, req.market)
+            cached = cache.get(req.ticker.upper(), asof, cache_market)
             if cached:
                 _jobs[job_id]["status"] = "done"
                 _jobs[job_id]["result"] = cached.model_dump(mode="json")
@@ -171,6 +179,7 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
                 market=req.market,
                 debate_rounds=req.debate_rounds,
                 user_risk_profile=req.user_risk_profile,
+                locale=req.locale,
             )
         finally:
             if prev_mode is None:
@@ -178,7 +187,7 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
             else:
                 os.environ["TA_MODE"] = prev_mode
 
-        cache.put(trace, req.market)
+        cache.put(trace, cache_market)
         memory.append_decision(trace.decision)
         _jobs[job_id]["status"] = "done"
         _jobs[job_id]["result"] = trace.model_dump(mode="json")

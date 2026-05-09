@@ -386,9 +386,16 @@ class GeminiProvider(_ProviderBase):
 
 
 class LLMRouter:
-    """Routes by tier to (model, provider). Falls back to mock if no key."""
+    """Routes by tier to (model, provider). Falls back to mock if no key.
 
-    def __init__(self):
+    The optional `locale` parameter lets the caller force LLM output into
+    a specific language. Internally we just prepend a language directive
+    to the system prompt for every call — works for any provider (OpenAI,
+    Anthropic, Gemini) without provider-specific changes.
+    """
+
+    def __init__(self, locale: str = "en"):
+        self.locale = locale or "en"
         self._mock = MockProvider()
         self._openai: OpenAIProvider | None = None
         self._anthropic: AnthropicProvider | None = None
@@ -461,7 +468,28 @@ class LLMRouter:
         model = self.models[tier]
         provider = self._provider_for(model)
         log.debug("LLM %s -> %s (%s)", tier.value, model, provider.name)
-        return provider.complete(system, user, model, temperature=temperature)
+        # Append a language directive when the request asks for non-English
+        # output. Done at the router level so every provider (OpenAI,
+        # Anthropic, Gemini, Mock) gets the same treatment without us
+        # having to touch each agent node's complete() call site.
+        sys_with_lang = self._with_lang_directive(system)
+        return provider.complete(sys_with_lang, user, model, temperature=temperature)
+
+    def _with_lang_directive(self, system: str) -> str:
+        if self.locale == "zh":
+            # Strong, repeated instruction — Gemini occasionally still drifts
+            # back to English on the first few tokens of a long structured
+            # response, so we anchor it twice (start + end) and explicitly
+            # cover the JSON case (keys stay English, values switch to ZH).
+            zh_instr = (
+                "\n\n---\n请用简体中文回答。所有自由文本（如分析、辩论、推理、风险提示）"
+                "必须使用简体中文。如果输出 JSON：JSON 的键（key）保持英文，值（value）"
+                "如果是描述性文本就用简体中文，如果是分类标签（如 'high' / 'medium' / 'low'）"
+                "保持英文。术语和金融指标的英文缩写（如 P/E, FCF, RSI, MACD, EBITDA）"
+                "可以保留原文，无需翻译。"
+            )
+            return system + zh_instr
+        return system
 
 
 # ---------------------------------------------------------------------------

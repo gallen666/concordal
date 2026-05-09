@@ -105,7 +105,7 @@ function stripRolePrefix(s: string): string {
 }
 
 export default function DecisionPage() {
-  const { t } = useT();
+  const { t, locale } = useT();
   const [ticker, setTicker] = useState("AAPL");
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
@@ -118,7 +118,11 @@ export default function DecisionPage() {
     setResult(null);
     setStage(t("decision.running"));
     try {
-      const job = await api.createDecision({ ticker, debate_rounds: 2 });
+      const job = await api.createDecision({
+        ticker,
+        debate_rounds: 2,
+        locale,
+      });
       setStage(t("decision.running"));
       for (let i = 0; i < 240; i++) {
         await new Promise((r) => setTimeout(r, 1000));

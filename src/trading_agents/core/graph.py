@@ -105,15 +105,22 @@ def run_decision(
     llm: LLMRouter | None = None,
     debate_rounds: int = 2,
     user_risk_profile: str = "balanced",
+    locale: str = "en",
 ) -> DecisionTrace:
     """Run the full 7-agent pipeline for one (ticker, asof) and return a
-    DecisionTrace suitable for storage / UI rendering."""
+    DecisionTrace suitable for storage / UI rendering.
+
+    `locale="zh"` makes every LLM call return its free-text fields in
+    Simplified Chinese (analyst body, debate turns, trader plan, risk
+    notes, manager rationale). Numeric signals stay in English keys so
+    downstream code parses cleanly.
+    """
     from ..adapters import get_adapter
     from ..prompts import get_pack
 
     adapter = adapter or get_adapter(market)
     pack = pack or get_pack(market)
-    llm = llm or LLMRouter()
+    llm = llm or LLMRouter(locale=locale)
 
     state: DecisionState = {
         "ticker": ticker,
