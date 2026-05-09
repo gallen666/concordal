@@ -13,10 +13,12 @@ import {
 import { BarChart3, Loader2, Play, TrendingDown, TrendingUp } from "lucide-react";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
+import { useT } from "../lib/i18n";
 
 type Row = { name: string; metrics: Record<string, number> };
 
 export default function BacktestPage() {
+  const { t } = useT();
   const [ticker, setTicker] = useState("AAPL");
   const [days, setDays] = useState(120);
   const [loading, setLoading] = useState(false);
@@ -55,13 +57,12 @@ export default function BacktestPage() {
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
       <div className="mb-8">
-        <span className="label-cap">Backtest</span>
+        <span className="label-cap">{t("backtest.label")}</span>
         <h1 className="text-2xl font-semibold mt-1">
-          Compare strategies over a window
+          {t("backtest.heading")}
         </h1>
         <p className="text-sm text-ink-secondary mt-1">
-          5 deterministic baselines (Buy &amp; Hold, MACD, KDJ+RSI, SMA, ZMR)
-          run with strict no-lookahead enforced at the data layer.
+          {t("backtest.subheading")}
         </p>
       </div>
 
@@ -83,11 +84,11 @@ export default function BacktestPage() {
         <button onClick={run} disabled={loading} className="btn-primary">
           {loading ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Running…
+              <Loader2 className="w-4 h-4 animate-spin" /> {t("backtest.running")}
             </>
           ) : (
             <>
-              <Play className="w-4 h-4" /> Run
+              <Play className="w-4 h-4" /> {t("backtest.run")}
             </>
           )}
         </button>

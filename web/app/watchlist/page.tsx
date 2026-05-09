@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Eye, Plus, Sparkles, TrendingUp } from "lucide-react";
 import { auth } from "../lib/api";
 import { cn } from "../lib/cn";
+import { useT } from "../lib/i18n";
 
 interface Item {
   ticker: string;
@@ -28,6 +29,7 @@ export default function WatchlistPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [ticker, setTicker] = useState("");
   const [loading, setLoading] = useState(false);
+  const { t } = useT();
 
   async function load() {
     setLoading(true);
@@ -62,11 +64,10 @@ export default function WatchlistPage() {
     <div className="max-w-6xl mx-auto px-6 py-10">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
         <div>
-          <span className="label-cap">Watchlist</span>
-          <h1 className="text-2xl font-semibold mt-1">Your tracked tickers</h1>
+          <span className="label-cap">{t("watchlist.label")}</span>
+          <h1 className="text-2xl font-semibold mt-1">{t("watchlist.heading")}</h1>
           <p className="text-sm text-ink-secondary mt-1">
-            Tickers here will get an automatic pre-market briefing each
-            trading day (rolling out).
+            {t("watchlist.subheading")}
           </p>
         </div>
       </div>
@@ -75,11 +76,11 @@ export default function WatchlistPage() {
         <input
           value={ticker}
           onChange={(e) => setTicker(e.target.value.toUpperCase())}
-          placeholder="Add ticker (e.g. NVDA)"
+          placeholder={t("watchlist.addPlaceholder")}
           className="input flex-1 font-mono uppercase tracking-wider"
         />
         <button type="submit" disabled={!ticker} className="btn-primary">
-          <Plus className="w-4 h-4" /> Add
+          <Plus className="w-4 h-4" /> {t("watchlist.add")}
         </button>
       </form>
 
@@ -133,21 +134,22 @@ function TickerCard({ item }: { item: Item }) {
 }
 
 function EmptyState() {
+  const { t } = useT();
   return (
     <div className="surface p-10 text-center">
       <div className="inline-flex w-12 h-12 rounded-xl bg-accent-muted text-accent items-center justify-center mb-4">
         <Eye className="w-5 h-5" />
       </div>
-      <h3 className="font-semibold mb-1">No tickers yet</h3>
+      <h3 className="font-semibold mb-1">{t("watchlist.empty")}</h3>
       <p className="text-sm text-ink-secondary max-w-sm mx-auto">
-        Add a ticker above. Or run a one-off decision without saving.
+        {t("watchlist.emptyHint")}
       </p>
       <Link
         href="/decision"
         className="btn-secondary mt-4 inline-flex"
       >
         <TrendingUp className="w-4 h-4" />
-        Run a one-off decision
+        {t("watchlist.runOneOff")}
       </Link>
     </div>
   );

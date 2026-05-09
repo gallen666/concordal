@@ -6,9 +6,11 @@ import Link from "next/link";
 import { ArrowRight, KeyRound } from "lucide-react";
 import { api, auth } from "../lib/api";
 import { Logo } from "../components/Logo";
+import { useT } from "../lib/i18n";
 
 export default function RedeemPage() {
   const router = useRouter();
+  const { t } = useT();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,9 +39,9 @@ export default function RedeemPage() {
           <div className="inline-flex w-12 h-12 rounded-xl bg-accent-muted text-accent items-center justify-center mb-4">
             <KeyRound className="w-5 h-5" />
           </div>
-          <h1 className="text-2xl font-semibold">Redeem invite code</h1>
+          <h1 className="text-2xl font-semibold">{t("redeem.title")}</h1>
           <p className="text-sm text-ink-secondary mt-1">
-            Enter the email and code we sent you.
+            {t("redeem.subtitle")}
           </p>
         </div>
 
@@ -49,7 +51,7 @@ export default function RedeemPage() {
         >
           <div className="space-y-1.5">
             <label className="label-cap" htmlFor="email">
-              Email
+              {t("redeem.email")}
             </label>
             <input
               id="email"
@@ -65,7 +67,7 @@ export default function RedeemPage() {
 
           <div className="space-y-1.5">
             <label className="label-cap" htmlFor="code">
-              Invite code
+              {t("redeem.inviteCode")}
             </label>
             <input
               id="code"
@@ -73,7 +75,7 @@ export default function RedeemPage() {
               required
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="trial"
+              placeholder={t("redeem.codePlaceholder")}
               disabled={loading}
               className="input w-full font-mono"
             />
@@ -90,15 +92,15 @@ export default function RedeemPage() {
             disabled={loading || !email || !code}
             className="btn-primary w-full"
           >
-            {loading ? "Redeeming…" : "Redeem"}
+            {loading ? t("redeem.submitting") : t("redeem.submit")}
             {!loading && <ArrowRight className="w-4 h-4" />}
           </button>
         </form>
 
         <p className="text-center text-xs text-ink-tertiary mt-6">
-          Don&apos;t have a code?{" "}
+          {t("redeem.noCode")}{" "}
           <Link href="/" className="text-accent hover:underline">
-            Join the waitlist
+            {t("redeem.joinWaitlist")}
           </Link>
         </p>
       </div>

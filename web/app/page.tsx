@@ -12,8 +12,10 @@ import {
 } from "lucide-react";
 import { api } from "./lib/api";
 import { AgentOrbit } from "./components/AgentOrbit";
+import { useT } from "./lib/i18n";
 
 export default function Landing() {
+  const { t } = useT();
   return (
     <div>
       {/* HERO */}
@@ -26,22 +28,19 @@ export default function Landing() {
                 <span className="absolute inset-0 rounded-full bg-accent animate-pulse-slow" />
                 <span className="relative rounded-full bg-accent w-1.5 h-1.5" />
               </span>
-              Closed beta · Decision-support
+              {t("landing.pillBeta")}
             </span>
 
             <h1 className="text-5xl sm:text-6xl font-semibold tracking-tight leading-[1.05]">
-              <span className="text-gradient">Seven AI agents</span>
+              <span className="text-gradient">{t("landing.heroLine1")}</span>
               <br />
-              <span className="text-gradient-accent">debate every ticker</span>
+              <span className="text-gradient-accent">{t("landing.heroLine2")}</span>
               <br />
-              <span className="text-gradient">on your watchlist.</span>
+              <span className="text-gradient">{t("landing.heroLine3")}</span>
             </h1>
 
             <p className="text-lg text-ink-secondary max-w-xl leading-relaxed">
-              A multi-agent LLM research desk modeled on real trading firms —
-              fundamentals, sentiment, news, technical analysts; bull/bear
-              researcher debate; risk committee; fund manager. Every decision
-              is fully traceable, line by line.
+              {t("landing.heroBlurb")}
             </p>
 
             <Waitlist />
@@ -49,15 +48,15 @@ export default function Landing() {
             <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-ink-tertiary pt-2">
               <span className="flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-accent" />
-                No-lookahead enforced
+                {t("landing.checkNoLookahead")}
               </span>
               <span className="flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-accent" />
-                Fully open-source core
+                {t("landing.checkOpenSource")}
               </span>
               <span className="flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-accent" />
-                Never executes trades
+                {t("landing.checkNoTrades")}
               </span>
             </div>
           </div>
@@ -71,31 +70,30 @@ export default function Landing() {
       {/* FEATURES */}
       <section className="max-w-6xl mx-auto px-6 py-20">
         <div className="text-center mb-12">
-          <span className="label-cap">What you get</span>
+          <span className="label-cap">{t("landing.featuresLabel")}</span>
           <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight mt-2 text-gradient">
-            Research, not a black box.
+            {t("landing.featuresHeading")}
           </h2>
           <p className="text-ink-secondary mt-3 max-w-2xl mx-auto">
-            Every recommendation comes with the full debate behind it. Read the
-            reasoning, challenge it, override it.
+            {t("landing.featuresBlurb")}
           </p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-4">
           <Feature
             icon={<Layers className="w-5 h-5" />}
-            title="One-click decision"
-            body="Enter a ticker. Seven agents run in sequence — analysts, debaters, trader, risk committee, fund manager — and produce an explained Buy/Hold/Sell with target weight and confidence."
+            title={t("landing.feature1Title")}
+            body={t("landing.feature1Body")}
           />
           <Feature
             icon={<GitBranch className="w-5 h-5" />}
-            title="Backtest replay"
-            body="See how the agents would have decided on past dates. Strict no-lookahead enforced at the data layer, so you can trust the simulation."
+            title={t("landing.feature2Title")}
+            body={t("landing.feature2Body")}
           />
           <Feature
             icon={<Zap className="w-5 h-5" />}
-            title="Daily watchlist briefings"
-            body="Every ticker you follow gets an automatic pre-market report (rolling out). Wake up to a coherent argument, not a wall of indicators."
+            title={t("landing.feature3Title")}
+            body={t("landing.feature3Body")}
           />
         </div>
       </section>
@@ -103,9 +101,9 @@ export default function Landing() {
       {/* PIPELINE */}
       <section className="max-w-6xl mx-auto px-6 py-16 border-t border-border-subtle">
         <div className="text-center mb-10">
-          <span className="label-cap">Inside one decision</span>
+          <span className="label-cap">{t("landing.pipelineLabel")}</span>
           <h2 className="text-2xl sm:text-3xl font-semibold mt-2">
-            The pipeline mirrors a real trading firm.
+            {t("landing.pipelineHeading")}
           </h2>
         </div>
         <Pipeline />
@@ -117,17 +115,14 @@ export default function Landing() {
           <ShieldAlert className="w-5 h-5 text-signal-warn shrink-0 mt-0.5" />
           <p>
             <strong className="text-ink-primary">
-              Decision-support tool only.
+              {t("landing.disclaimerStrong")}
             </strong>{" "}
-            Outputs are research generated by language models, not investment
-            advice, not personal recommendations, and not solicitations to buy
-            or sell any security. We don&apos;t execute trades. Past performance
-            and backtests do not predict future results. Read the{" "}
+            {t("landing.disclaimerBody")}{" "}
             <Link
               href="/disclaimer"
               className="text-accent hover:text-accent-hover underline-offset-4 hover:underline"
             >
-              full disclaimer
+              {t("landing.disclaimerLink")}
             </Link>
             .
           </p>
@@ -158,30 +153,31 @@ function Feature({
 }
 
 function Pipeline() {
+  const { t } = useT();
   const stages = [
     {
-      label: "Data gathering",
-      detail: "4 analysts in parallel",
+      label: t("landing.pipeline1Label"),
+      detail: t("landing.pipeline1Detail"),
       color: "#56d364",
     },
     {
-      label: "Dialectical analysis",
-      detail: "Bull vs Bear debate",
+      label: t("landing.pipeline2Label"),
+      detail: t("landing.pipeline2Detail"),
       color: "#5fa8e8",
     },
     {
-      label: "Trading decision",
-      detail: "Trader synthesis",
+      label: t("landing.pipeline3Label"),
+      detail: t("landing.pipeline3Detail"),
       color: "#a371f7",
     },
     {
-      label: "Risk control",
-      detail: "Aggressive / Neutral / Conservative",
+      label: t("landing.pipeline4Label"),
+      detail: t("landing.pipeline4Detail"),
       color: "#d4a72c",
     },
     {
-      label: "Final approval",
-      detail: "Fund manager",
+      label: t("landing.pipeline5Label"),
+      detail: t("landing.pipeline5Detail"),
       color: "#f85149",
     },
   ];
@@ -201,7 +197,9 @@ function Pipeline() {
                 className="w-2 h-2 rounded-full"
                 style={{ background: s.color, boxShadow: `0 0 12px ${s.color}` }}
               />
-              <span className="text-2xs label-cap">step {i + 1}</span>
+              <span className="text-2xs label-cap">
+                {t("landing.pipelineStep")} {i + 1}
+              </span>
             </div>
             <div className="font-medium text-sm">{s.label}</div>
             <div className="text-xs text-ink-tertiary mt-1 leading-relaxed">
@@ -218,6 +216,7 @@ function Pipeline() {
 }
 
 function Waitlist() {
+  const { t } = useT();
   const [email, setEmail] = useState("");
   const [note, setNote] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "ok" | "err">("idle");
@@ -242,13 +241,12 @@ function Waitlist() {
       <div className="surface p-5 max-w-xl">
         <div className="flex items-center gap-2 text-accent">
           <CheckCircle2 className="w-5 h-5" />
-          <span className="font-medium">You&apos;re on the list</span>
+          <span className="font-medium">{t("waitlist.successTitle")}</span>
         </div>
         <p className="text-sm text-ink-secondary mt-2">
-          We&apos;ll send your invite as we onboard the first cohort. Already
-          have a code?{" "}
+          {t("waitlist.successBody1")}{" "}
           <Link href="/redeem" className="text-accent hover:underline">
-            Redeem here
+            {t("waitlist.successRedeem")}
           </Link>
           .
         </p>
@@ -264,7 +262,7 @@ function Waitlist() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@firm.com"
+          placeholder={t("waitlist.emailPlaceholder")}
           className="input flex-1"
           disabled={state === "loading"}
         />
@@ -273,22 +271,22 @@ function Waitlist() {
           disabled={state === "loading" || !email}
           className="btn-primary"
         >
-          {state === "loading" ? "Sending…" : "Join waitlist"}
+          {state === "loading" ? t("waitlist.sending") : t("waitlist.join")}
           {state !== "loading" && <ArrowRight className="w-4 h-4" />}
         </button>
       </div>
       <input
         value={note}
         onChange={(e) => setNote(e.target.value)}
-        placeholder="(optional) what would you use this for?"
+        placeholder={t("waitlist.notePlaceholder")}
         className="input w-full"
         disabled={state === "loading"}
       />
       {error && <p className="text-sm text-signal-sell">{error}</p>}
       <p className="text-xs text-ink-tertiary">
-        Already have a code?{" "}
+        {t("waitlist.alreadyHaveCode")}{" "}
         <Link href="/redeem" className="text-accent hover:underline">
-          Redeem
+          {t("waitlist.redeem")}
         </Link>
       </p>
     </form>

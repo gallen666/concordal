@@ -28,6 +28,7 @@ import {
   type AnalystReport,
 } from "../lib/api";
 import { cn } from "../lib/cn";
+import { useT } from "../lib/i18n";
 
 const SIDE_STYLES: Record<
   string,
@@ -104,6 +105,7 @@ function stripRolePrefix(s: string): string {
 }
 
 export default function DecisionPage() {
+  const { t } = useT();
   const [ticker, setTicker] = useState("AAPL");
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
@@ -114,10 +116,10 @@ export default function DecisionPage() {
     setLoading(true);
     setError(null);
     setResult(null);
-    setStage("queueing");
+    setStage(t("decision.running"));
     try {
       const job = await api.createDecision({ ticker, debate_rounds: 2 });
-      setStage("running 7 agents");
+      setStage(t("decision.running"));
       for (let i = 0; i < 240; i++) {
         await new Promise((r) => setTimeout(r, 1000));
         const j = await api.getDecision(job.job_id);
@@ -142,13 +144,12 @@ export default function DecisionPage() {
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
       <div className="mb-6">
-        <span className="label-cap">New decision</span>
+        <span className="label-cap">{t("decision.label")}</span>
         <h1 className="text-2xl font-semibold mt-1">
-          Run the 7-agent pipeline
+          {t("decision.heading")}
         </h1>
         <p className="text-sm text-ink-secondary mt-1">
-          Enter a ticker. The system goes from data gathering to final
-          approval, fully traced.
+          {t("decision.subheading")}
         </p>
       </div>
 
@@ -169,12 +170,12 @@ export default function DecisionPage() {
           {loading ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              {stage}…
+              {stage || t("decision.running")}
             </>
           ) : (
             <>
               <Play className="w-4 h-4" />
-              Run debate
+              {t("decision.run")}
             </>
           )}
         </button>
@@ -195,6 +196,7 @@ export default function DecisionPage() {
 }
 
 function DecisionView({ trace }: { trace: DecisionTrace }) {
+  const { t } = useT();
   const d = trace.decision;
   const style = SIDE_STYLES[d.side] || SIDE_STYLES.HOLD;
   return (
@@ -231,7 +233,7 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
                 {d.side}
               </span>
               <span className="text-xs text-ink-tertiary ml-auto font-mono">
-                asof {d.asof}
+                {t("decision.asof")} {d.asof}
               </span>
             </div>
             <p className="text-ink-primary leading-relaxed text-base">
@@ -259,9 +261,9 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
 
           {/* Stats strip across the bottom */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-border-subtle border-t border-border-subtle">
-            <StatCell label="Target weight" value={signedPct(d.target_weight)} mono />
+            <StatCell label={t("decision.targetWeight")} value={signedPct(d.target_weight)} mono />
             <StatCell
-              label="Confidence"
+              label={t("decision.confidence")}
               value={`${(d.confidence * 100).toFixed(0)}%`}
               accent
             >
@@ -273,12 +275,12 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
               </div>
             </StatCell>
             <StatCell
-              label="LLM cost"
+              label={t("decision.llmCost")}
               value={`$${(trace.total_cost_usd ?? 0).toFixed(4)}`}
               mono
             />
             <StatCell
-              label="Reports"
+              label={t("decision.reports")}
               value={`${trace.analyst_reports.length} / 4`}
               mono
             />
@@ -290,8 +292,8 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
 
       {trace.analyst_reports.length > 0 && (
         <Section
-          title="Analyst reports"
-          subtitle="Four specialists, four lenses on the same ticker."
+          title={t("decision.analystReports")}
+          subtitle={t("decision.analystSubtitle")}
         >
           <AnalystTabs reports={trace.analyst_reports} />
         </Section>
@@ -299,8 +301,8 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
 
       {trace.researcher_debate && (
         <Section
-          title="Bull / Bear debate"
-          subtitle="The dialectic core. Whoever can defend their view stronger wins the trader's ear."
+          title={t("decision.researchers")}
+          subtitle={t("decision.researchersSubtitle")}
         >
           <DebateView transcript={trace.researcher_debate} />
         </Section>
@@ -308,8 +310,8 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
 
       {trace.trader_plan && (
         <Section
-          title="Trader's plan"
-          subtitle="Synthesis from analyst reports + debate."
+          title={t("decision.trader")}
+          subtitle={t("decision.traderSubtitle")}
           icon={<Briefcase className="w-4 h-4" />}
         >
           <TraderPlan text={trace.trader_plan} />
@@ -318,8 +320,8 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
 
       {trace.risk_debate && (
         <Section
-          title="Risk committee"
-          subtitle="Aggressive, conservative, and neutral analysts each take the trader's plan apart."
+          title={t("decision.risk")}
+          subtitle={t("decision.riskSubtitle")}
           icon={<ShieldCheck className="w-4 h-4" />}
         >
           <RiskView transcript={trace.risk_debate} />
@@ -437,31 +439,32 @@ function Section({
 
 const ANALYST_META: Record<
   string,
-  { icon: React.ReactNode; color: string; label: string }
+  { icon: React.ReactNode; color: string; labelKey: "decision.fundamentals" | "decision.sentiment" | "decision.news" | "decision.technical" }
 > = {
   fundamentals: {
     icon: <BarChart3 className="w-4 h-4" />,
     color: "text-signal-buy",
-    label: "Fundamentals",
+    labelKey: "decision.fundamentals",
   },
   sentiment: {
     icon: <Users className="w-4 h-4" />,
     color: "text-signal-info",
-    label: "Sentiment",
+    labelKey: "decision.sentiment",
   },
   news: {
     icon: <Newspaper className="w-4 h-4" />,
     color: "text-signal-warn",
-    label: "News",
+    labelKey: "decision.news",
   },
   technical: {
     icon: <LineChart className="w-4 h-4" />,
     color: "text-purple-400",
-    label: "Technical",
+    labelKey: "decision.technical",
   },
 };
 
 function AnalystTabs({ reports }: { reports: AnalystReport[] }) {
+  const { t } = useT();
   const [active, setActive] = useState(reports[0]?.analyst || "fundamentals");
   const current = reports.find((r) => r.analyst === active) || reports[0];
   const cleanedBody = current ? stripCodeFences(current.body) : "";
@@ -486,7 +489,7 @@ function AnalystTabs({ reports }: { reports: AnalystReport[] }) {
               <span className={cn(isActive ? meta?.color : "")}>
                 {meta?.icon}
               </span>
-              {meta?.label || r.analyst}
+              {meta?.labelKey ? t(meta.labelKey) : r.analyst}
             </button>
           );
         })}
@@ -498,7 +501,7 @@ function AnalystTabs({ reports }: { reports: AnalystReport[] }) {
           </div>
           {Object.keys(current.signals || {}).length > 0 && (
             <div>
-              <div className="label-cap mb-2">Signals</div>
+              <div className="label-cap mb-2">{t("decision.signals")}</div>
               <div className="flex flex-wrap gap-1.5">
                 {Object.entries(current.signals).map(([k, v]) => (
                   <span
@@ -516,7 +519,7 @@ function AnalystTabs({ reports }: { reports: AnalystReport[] }) {
           )}
           {current.sources && current.sources.length > 0 && (
             <div className="text-xs text-ink-tertiary">
-              {current.sources.length} sources
+              {current.sources.length} {t("decision.sources")}
             </div>
           )}
         </div>
@@ -526,18 +529,19 @@ function AnalystTabs({ reports }: { reports: AnalystReport[] }) {
 }
 
 function DebateView({ transcript }: { transcript: DebateTranscript }) {
+  const { t } = useT();
   const turns = transcript.turns || [];
   return (
     <div className="space-y-4">
       <div className="grid md:grid-cols-2 gap-3">
         <DebateColumn
-          label="Bull"
+          label={t("decision.bull")}
           icon={<TrendingUp className="w-4 h-4" />}
           turns={turns.filter((t) => t.speaker === "bull")}
           color="signal-buy"
         />
         <DebateColumn
-          label="Bear"
+          label={t("decision.bear")}
           icon={<TrendingDown className="w-4 h-4" />}
           turns={turns.filter((t) => t.speaker === "bear")}
           color="signal-sell"
@@ -547,7 +551,7 @@ function DebateView({ transcript }: { transcript: DebateTranscript }) {
         <div className="surface p-4 border-l-2 border-l-accent">
           <div className="flex items-center gap-2 mb-1.5">
             <Sparkles className="w-4 h-4 text-accent" />
-            <span className="label-cap text-accent">Facilitator synthesis</span>
+            <span className="label-cap text-accent">Synthesis</span>
           </div>
           <p className="text-sm text-ink-primary leading-relaxed">
             {transcript.synthesis}
@@ -605,26 +609,27 @@ function DebateColumn({
 
 const RISK_META: Record<
   string,
-  { color: string; bg: string; label: string }
+  { color: string; bg: string; labelKey: "decision.aggressive" | "decision.neutral" | "decision.conservative" }
 > = {
   aggressive: {
     color: "text-signal-buy",
     bg: "bg-signal-buy_soft border-signal-buy/30",
-    label: "Aggressive",
+    labelKey: "decision.aggressive",
   },
   neutral: {
     color: "text-ink-secondary",
     bg: "bg-bg-hover border-border",
-    label: "Neutral",
+    labelKey: "decision.neutral",
   },
   conservative: {
     color: "text-signal-sell",
     bg: "bg-signal-sell_soft border-signal-sell/30",
-    label: "Conservative",
+    labelKey: "decision.conservative",
   },
 };
 
 function RiskView({ transcript }: { transcript: DebateTranscript }) {
+  const { t } = useT();
   return (
     <div className="grid md:grid-cols-3 gap-3">
       {(["aggressive", "neutral", "conservative"] as const).map((role) => {
@@ -635,7 +640,7 @@ function RiskView({ transcript }: { transcript: DebateTranscript }) {
             <div className="flex items-center gap-2 mb-3">
               <Gavel className={cn("w-4 h-4", meta.color)} />
               <span className={cn("font-semibold text-sm", meta.color)}>
-                {meta.label}
+                {t(meta.labelKey)}
               </span>
             </div>
             <p className="text-sm text-ink-primary leading-relaxed">
@@ -652,27 +657,31 @@ function RiskView({ transcript }: { transcript: DebateTranscript }) {
   );
 }
 
-const STAGES = [
-  { key: "quote", label: "Quote", icon: <LineChart className="w-3.5 h-3.5" /> },
-  {
-    key: "fundamentals",
-    label: "Fundamentals",
-    icon: <BarChart3 className="w-3.5 h-3.5" />,
-  },
-  { key: "sentiment", label: "Sentiment", icon: <Users className="w-3.5 h-3.5" /> },
-  { key: "news", label: "News", icon: <Newspaper className="w-3.5 h-3.5" /> },
-  { key: "technical", label: "Technical", icon: <LineChart className="w-3.5 h-3.5" /> },
-  {
-    key: "researcher",
-    label: "Bull / Bear",
-    icon: <MessageCircle className="w-3.5 h-3.5" />,
-  },
-  { key: "trader", label: "Trader", icon: <Briefcase className="w-3.5 h-3.5" /> },
-  { key: "risk", label: "Risk", icon: <ShieldCheck className="w-3.5 h-3.5" /> },
-  { key: "manager", label: "Manager", icon: <Gavel className="w-3.5 h-3.5" /> },
-];
+function useStages() {
+  const { t } = useT();
+  return [
+    { key: "quote", label: "Quote", icon: <LineChart className="w-3.5 h-3.5" /> },
+    {
+      key: "fundamentals",
+      label: t("decision.fundamentals"),
+      icon: <BarChart3 className="w-3.5 h-3.5" />,
+    },
+    { key: "sentiment", label: t("decision.sentiment"), icon: <Users className="w-3.5 h-3.5" /> },
+    { key: "news", label: t("decision.news"), icon: <Newspaper className="w-3.5 h-3.5" /> },
+    { key: "technical", label: t("decision.technical"), icon: <LineChart className="w-3.5 h-3.5" /> },
+    {
+      key: "researcher",
+      label: `${t("decision.bull")} / ${t("decision.bear")}`,
+      icon: <MessageCircle className="w-3.5 h-3.5" />,
+    },
+    { key: "trader", label: t("decision.trader").replace(" plan", "").replace(" 方案", ""), icon: <Briefcase className="w-3.5 h-3.5" /> },
+    { key: "risk", label: t("decision.risk").replace(" committee", "").replace(" 委员会", ""), icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+    { key: "manager", label: t("decision.manager").replace(" final call", "").replace(" 终审", ""), icon: <Gavel className="w-3.5 h-3.5" /> },
+  ];
+}
 
 function PipelineTimeline({ trace }: { trace: DecisionTrace }) {
+  const STAGES = useStages();
   const reports = new Set(trace.analyst_reports.map((r) => r.analyst));
   const completed = (k: string) => {
     if (k === "quote") return true;
