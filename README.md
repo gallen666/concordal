@@ -1,5 +1,14 @@
 # TradingAgents Platform
 
+### 👉 Live site: **[trading-agents-platform.vercel.app](https://trading-agents-platform.vercel.app)**
+
+Closed beta — invite code `trial` lets anyone in to try the demo. Friend codes
+`gallen-fr-1` … `gallen-fr-10` are also active. Real-LLM mode (Gemini 3.1 Pro
+Preview) is gated to allowlisted accounts; everyone else sees the mock pipeline
+so the demo never burns through the API quota.
+
+---
+
 A multi-agent LLM trading **decision-support** platform inspired by the
 [TradingAgents paper](https://arxiv.org/abs/2412.20138)
 (Xiao, Sun, Luo, Wang — UCLA / MIT / Tauric Research). Seven specialized

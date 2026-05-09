@@ -46,7 +46,11 @@ _PRICES: dict[str, tuple[float, float]] = {
     "claude-haiku-4-5": (0.80, 4.00),
     "claude-sonnet-4-6": (3.00, 15.00),
     "claude-opus-4-6": (15.00, 75.00),
-    # Google Gemini
+    # Google Gemini (USD per 1M tokens, input/output)
+    # 3.1 Pro tiered pricing: standard <=200k context, extended >200k.
+    # We use the standard tier since our analyst prompts are well under 200k.
+    "gemini-3.1-pro-preview": (2.00, 12.00),
+    "gemini-3-pro-preview": (2.00, 12.00),  # alias; Google now redirects this to 3.1
     "gemini-2.5-pro": (1.25, 10.00),
     "gemini-2.5-flash": (0.30, 2.50),
     "gemini-2.5-flash-lite": (0.10, 0.40),
