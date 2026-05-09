@@ -21,6 +21,15 @@ def _bootstrap() -> None:
     from .us_equity_en import US_EQUITY_EN
     register_pack("us_equity:en", US_EQUITY_EN)
     register_pack("us_equity", US_EQUITY_EN)
+    # A-share market reuses the US-equity prompt pack for now. Analyst
+    # logic (fundamentals/sentiment/news/technical/debate) is largely
+    # market-agnostic, and the LLM router appends a "answer in 简体中文"
+    # directive when locale="zh", so the output reads naturally in
+    # Chinese even though the system-prompt template is English.
+    # Future: a `cn_equity_zh.py` pack with A-share-specific framing
+    # (涨跌停板、T+1、ST 股、流通市值 vs 总市值、限售解禁).
+    register_pack("a_share", US_EQUITY_EN)
+    register_pack("a_share:zh", US_EQUITY_EN)
 
 
 _bootstrap()
