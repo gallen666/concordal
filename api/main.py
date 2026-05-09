@@ -516,100 +516,124 @@ def my_decisions(
     return out
 
 
-@app.get("/v1/markets/hot-rankings/cn")
-def cn_hot_rankings(limit: int = 20) -> dict:
-    """East Money 个股人气榜 (retail attention rank) — top-N A-shares.
+def _df_find(df_columns: list[str], *needles: str) -> str | None:
+    for c in df_columns:
+        for n in needles:
+            if n in c or n.lower() in c.lower():
+                return c
+    return None
 
-    Public endpoint (no auth) so it can power the /hot landing page.
 
-    NOTE: EastMoney's `emrnweb.eastmoney.com` endpoint is geo-restricted —
-    returns empty / HTML / blocked page when called from non-Chinese IPs
-    (which is what Render Singapore is). We catch all upstream errors and
-    return 200 with `source_status="unavailable"` so the frontend can show
-    a friendly explanation rather than a red HTTP 502.
-
-    Returns:
-        {
-          "source": "EastMoney 个股人气榜",
-          "source_status": "ok" | "unavailable",
-          "fetched_at": ISO timestamp,
-          "rows": [{rank, ticker, name, last_price, change_pct, heat}, ...],
-          "message": optional explanation when status != "ok"
-        }
-    """
-    base = {
-        "source": "EastMoney 个股人气榜",
-        "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
-    }
-    try:
-        import akshare as ak
-    except ImportError:
-        return {
-            **base,
-            "source_status": "unavailable",
-            "rows": [],
-            "message": "akshare not installed on this server.",
-        }
-    try:
-        df = ak.stock_hot_rank_em()
-    except Exception as e:
-        log.warning("ak.stock_hot_rank_em failed: %s", e)
-        return {
-            **base,
-            "source_status": "unavailable",
-            "rows": [],
-            "message": (
-                f"东方财富数据源暂不可达（错误：{e}）。"
-                "本服务器在 Singapore，EastMoney 部分接口对境外 IP 限制访问。"
-                " / EastMoney source temporarily unreachable: this server is"
-                " in Singapore and EastMoney restricts some endpoints to CN IPs."
-            ),
-        }
-    if df is None or df.empty:
-        return {
-            **base,
-            "source_status": "unavailable",
-            "rows": [],
-            "message": "Upstream returned no data.",
-        }
-
-    # akshare column names vary by version. Map by content rather than name.
+def _normalize_hot_rows(df, limit: int) -> list[dict]:
+    """Best-effort normalization of an akshare hot-ranking DataFrame to our
+    canonical row shape. Works with both EastMoney (stock_hot_rank_em) and
+    Baidu (stock_hot_search_baidu) column conventions."""
     cols = list(df.columns)
-
-    def find(*needles: str) -> str | None:
-        for c in cols:
-            for n in needles:
-                if n in c or n.lower() in c.lower():
-                    return c
-        return None
-
-    rank_col = find("排名", "rank") or cols[0]
-    code_col = find("代码", "code") or (cols[1] if len(cols) > 1 else cols[0])
-    name_col = find("名称", "name", "股票")
-    price_col = find("最新价", "price")
-    change_col = find("涨跌幅", "change")
-    heat_col = find("热度", "heat")
+    rank_col = _df_find(cols, "排名", "rank")
+    code_col = _df_find(cols, "代码", "code")
+    name_col = _df_find(cols, "名称", "name", "股票")
+    price_col = _df_find(cols, "最新价", "price")
+    change_col = _df_find(cols, "涨跌幅", "change")
+    heat_col = _df_find(cols, "热度", "heat", "综合热度")
 
     rows: list[dict] = []
-    for _, r in df.head(limit).iterrows():
+    for i, (_, r) in enumerate(df.head(limit).iterrows()):
         try:
+            rk = int(r[rank_col]) if rank_col else (i + 1)
+            ticker = (
+                str(r[code_col]).replace("SH", "").replace("SZ", "").strip()
+                if code_col else None
+            )
             row = {
-                "rank": int(r[rank_col]) if rank_col else None,
-                "ticker": str(r[code_col]).replace("SH", "").replace("SZ", "").strip()
-                if code_col else None,
+                "rank": rk,
+                "ticker": ticker,
                 "name": str(r[name_col]).strip() if name_col else None,
-                "last_price": float(r[price_col]) if price_col and r[price_col] not in ("-", None) else None,
-                "change_pct": float(r[change_col]) if change_col and r[change_col] not in ("-", None) else None,
-                "heat": float(r[heat_col]) if heat_col and r[heat_col] not in ("-", None) else None,
+                "last_price": (
+                    float(r[price_col])
+                    if price_col and r[price_col] not in ("-", None, "") else None
+                ),
+                "change_pct": (
+                    float(r[change_col])
+                    if change_col and r[change_col] not in ("-", None, "") else None
+                ),
+                "heat": (
+                    float(r[heat_col])
+                    if heat_col and r[heat_col] not in ("-", None, "") else None
+                ),
             }
         except (TypeError, ValueError):
             continue
         rows.append(row)
+    return rows
+
+
+@app.get("/v1/markets/hot-rankings/cn")
+def cn_hot_rankings(limit: int = 20) -> dict:
+    """A-share retail attention ranking, with multi-source fallback.
+
+    Sources tried in order:
+        1. Baidu hot search (`stock_hot_search_baidu`) — globally accessible,
+           best for non-China deployments like Render Singapore.
+        2. EastMoney 个股人气榜 (`stock_hot_rank_em`) — best data quality
+           but `emrnweb.eastmoney.com` is geo-blocked from many regions.
+
+    First source that returns non-empty rows wins. If both fail, return 200
+    with `source_status="unavailable"` so the frontend shows a friendly
+    explanation rather than a red HTTP error.
+    """
+    fetched_at = datetime.now(tz=timezone.utc).isoformat()
+
+    try:
+        import akshare as ak
+    except ImportError:
+        return {
+            "source": "akshare",
+            "source_status": "unavailable",
+            "fetched_at": fetched_at,
+            "rows": [],
+            "message": "akshare not installed on this server.",
+        }
+
+    # Try Baidu first (more globally accessible)
+    try:
+        df = ak.stock_hot_search_baidu(symbol="A股", date=date.today().strftime("%Y%m%d"), time="今日")
+        if df is not None and not df.empty:
+            rows = _normalize_hot_rows(df, limit)
+            if rows:
+                return {
+                    "source": "百度热搜 (A 股)",
+                    "source_status": "ok",
+                    "fetched_at": fetched_at,
+                    "rows": rows,
+                }
+    except Exception as e:
+        log.info("baidu hot search failed (%s); will try EastMoney next", e)
+
+    # Fallback: EastMoney
+    try:
+        df = ak.stock_hot_rank_em()
+        if df is not None and not df.empty:
+            rows = _normalize_hot_rows(df, limit)
+            if rows:
+                return {
+                    "source": "EastMoney 个股人气榜",
+                    "source_status": "ok",
+                    "fetched_at": fetched_at,
+                    "rows": rows,
+                }
+    except Exception as e:
+        log.warning("EastMoney hot rank failed (%s)", e)
 
     return {
-        **base,
-        "source_status": "ok",
-        "rows": rows,
+        "source": "akshare (multi-source)",
+        "source_status": "unavailable",
+        "fetched_at": fetched_at,
+        "rows": [],
+        "message": (
+            "暂时无法从百度热搜或东方财富拉到 A 股关注度数据。"
+            "请稍后重试。 / Could not fetch A-share attention data from "
+            "Baidu hot search or EastMoney. Try again shortly."
+        ),
     }
 
 

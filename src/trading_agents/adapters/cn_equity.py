@@ -298,12 +298,21 @@ class CnEquityAdapter(MarketAdapter):
             ak = self._ak()
             t = self._normalize_ticker(ticker)
 
-            # Top-100 retail-attention ranking (东方财富 个股人气榜)
+            # Top retail-attention ranking. Try Baidu first (works globally),
+            # fall back to EastMoney if available.
             rank_list = None
             try:
-                rank_list = ak.stock_hot_rank_em()
+                from datetime import datetime as _dt
+                rank_list = ak.stock_hot_search_baidu(
+                    symbol="A股", date=_dt.now().strftime("%Y%m%d"), time="今日"
+                )
             except Exception as e:
-                log.debug("stock_hot_rank_em failed: %s", e)
+                log.debug("Baidu hot search failed: %s", e)
+            if rank_list is None or rank_list.empty:
+                try:
+                    rank_list = ak.stock_hot_rank_em()
+                except Exception as e:
+                    log.debug("stock_hot_rank_em failed: %s", e)
 
             mention_count = 0
             attention_rank: int | None = None
