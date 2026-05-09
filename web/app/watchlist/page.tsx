@@ -49,12 +49,14 @@ export default function WatchlistPage() {
   async function add(e: React.FormEvent) {
     e.preventDefault();
     if (!ticker) return;
+    const t = ticker.toUpperCase().trim();
+    // Auto-detect market from ticker shape: 6-digit numeric → A-share,
+    // else US equity. Mirrors the API's _auto_route_market() so the saved
+    // entry can be re-run without hitting the "wrong-market" error path.
+    const market = /^\d{6}$/.test(t) ? "a_share" : "us_equity";
     await authedFetch("/v1/watchlist/items", {
       method: "POST",
-      body: JSON.stringify({
-        ticker: ticker.toUpperCase(),
-        market: "us_equity",
-      }),
+      body: JSON.stringify({ ticker: t, market }),
     });
     setTicker("");
     load();
