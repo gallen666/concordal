@@ -169,4 +169,29 @@ export const api = {
       result: { rows: Array<{ name: string; metrics: Record<string, number> }> } | null;
       error: string | null;
     }>(`/v1/backtests/${id}`),
+
+  /**
+   * Current user's full decision history with forward-return enrichment.
+   * Used to render the /me/history page.
+   */
+  myDecisions: () =>
+    _fetch<MyDecision[]>("/v1/me/decisions?enrich_pnl=true&limit=200"),
 };
+
+/** A single past decision the user made, optionally enriched with forward PnL. */
+export interface MyDecision {
+  ticker: string;
+  market: string | null;
+  decision_date: string;
+  decision: {
+    side: string;
+    target_weight: number;
+    confidence: number;
+    rationale: string;
+    risk_notes?: string;
+  };
+  decision_close: number | null;
+  forward_return?: number | null;   // null/undefined when not yet enriched
+  forward_close?: number | null;
+  days_held?: number | null;
+}

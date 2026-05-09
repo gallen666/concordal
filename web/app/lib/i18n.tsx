@@ -213,6 +213,27 @@ const dict = {
   },
   "disclaimer.back":            { en: "← Back",                             zh: "← 返回" },
 
+  // ---- My history (per-user past decisions) ------------------------------
+  "header.myHistory":           { en: "My history",                         zh: "我的历史" },
+  "history.label":              { en: "MY DECISIONS",                       zh: "我的决策" },
+  "history.heading":            { en: "Your decision history",              zh: "你跑过的所有决策" },
+  "history.subheading":         {
+    en: "Every ticker you've decided on, with how the stock has actually moved since. Honest receipts.",
+    zh: "你跑过的每只票，加上之后股价的真实表现。诚实记账。",
+  },
+  "history.empty":              { en: "You haven't made any decisions yet. Go run one!", zh: "你还没跑过任何决策，去跑一个！" },
+  "history.colDate":            { en: "Date",                               zh: "日期" },
+  "history.colTicker":          { en: "Ticker",                             zh: "代码" },
+  "history.colSide":            { en: "Call",                               zh: "建议" },
+  "history.colWeight":          { en: "Weight",                             zh: "目标仓位" },
+  "history.colConfidence":      { en: "Confidence",                         zh: "置信度" },
+  "history.colReturn":          { en: "Return since",                       zh: "至今涨跌" },
+  "history.colDays":            { en: "Days",                               zh: "天数" },
+  "history.totalCalls":         { en: "Total calls",                        zh: "总决策数" },
+  "history.hitRate":            { en: "Calls in the right direction",       zh: "方向正确率" },
+  "history.avgReturn":          { en: "Avg signed return",                  zh: "平均带方向收益" },
+  "history.runFirst":           { en: "Run your first decision",            zh: "去跑第一个决策" },
+
   // ---- Track Record / Backtest results -----------------------------------
   "header.trackRecord":         { en: "Track record",                       zh: "回测战绩" },
   "track.label":                { en: "TRACK RECORD",                       zh: "回测战绩" },

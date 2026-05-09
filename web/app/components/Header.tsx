@@ -46,6 +46,7 @@ export default function Header() {
             <>
               <NavLink href="/watchlist">{t("header.watchlist")}</NavLink>
               <NavLink href="/decision">{t("header.newDecision")}</NavLink>
+              <NavLink href="/me/history">{t("header.myHistory")}</NavLink>
               <NavLink href="/backtest">{t("header.backtest")}</NavLink>
               <NavLink href="/track-record">{t("header.trackRecord")}</NavLink>
               <ModeBadge real={user.real_llm} />

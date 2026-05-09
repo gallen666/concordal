@@ -17,7 +17,7 @@ import re
 import time
 import uuid
 from collections import defaultdict, deque
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import (
@@ -245,7 +245,21 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
                 os.environ["TA_MODE"] = prev_mode
 
         cache.put(trace, cache_market)
-        memory.append_decision(trace.decision)
+        # Snapshot the close at decision time so forward return can be
+        # computed later (e.g. on the user's history page) without
+        # re-fetching adjusted prices.
+        decision_close = None
+        try:
+            quote = trace.model_dump(mode="json").get("quote") or {}
+            decision_close = quote.get("close")
+        except Exception:
+            pass
+        memory.append_decision(
+            trace.decision,
+            user_id=user.id,
+            decision_close=decision_close,
+            market=effective_market,
+        )
         _jobs[job_id]["status"] = "done"
         _jobs[job_id]["result"] = trace.model_dump(mode="json")
         _jobs[job_id]["mode"] = "real_llm" if user.real_llm else "mock"
@@ -397,6 +411,46 @@ def decision_history(
     user: CurrentUser = Depends(get_current_user),
 ) -> list[dict]:
     return [e.model_dump(mode="json") for e in memory.recent(ticker, n=limit)]
+
+
+@app.get("/v1/me/decisions")
+def my_decisions(
+    limit: int = 200,
+    enrich_pnl: bool = True,
+    user: CurrentUser = Depends(get_current_user),
+) -> list[dict]:
+    """Return all past decisions made by the current user, most recent first.
+
+    When `enrich_pnl=True` (default), each entry is augmented with the
+    forward return ("how the stock did since you decided") so the frontend
+    can render trust signals like "+3.2% in 7 days vs SPY +0.8%".
+
+    Returns are computed against the SAME market's adapter (yfinance for
+    US, akshare for A-share) and are best-effort — failures fall through
+    silently with realised_return left as null.
+    """
+    rows = memory.user_history(user.id, limit=limit)
+    out: list[dict] = []
+    today = date.today()
+    for e in rows:
+        d = e.model_dump(mode="json")
+        if enrich_pnl and e.decision_close and e.market:
+            try:
+                adapter = get_adapter(e.market)
+                # Get most recent close for this ticker
+                ts = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+                quote = adapter.get_quote(e.ticker, ts)
+                if quote and quote.close:
+                    forward_ret = quote.close / e.decision_close - 1.0
+                    days_held = (today - e.decision_date).days
+                    d["forward_return"] = round(forward_ret, 4)
+                    d["forward_close"] = quote.close
+                    d["days_held"] = days_held
+            except Exception:
+                # Silent — pnl enrichment is best-effort, do not break the list
+                pass
+        out.append(d)
+    return out
 
 
 # Minimal landing page redirect for visitors hitting the API root

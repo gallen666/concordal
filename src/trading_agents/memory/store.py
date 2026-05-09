@@ -21,14 +21,47 @@ class MemoryStore:
     def _path(self, ticker: str) -> Path:
         return self.root / f"{ticker.upper()}.jsonl"
 
-    def append_decision(self, decision: Decision) -> None:
+    def append_decision(
+        self,
+        decision: Decision,
+        *,
+        user_id: str | None = None,
+        decision_close: float | None = None,
+        market: str | None = None,
+    ) -> None:
         entry = ReflectionEntry(
             ticker=decision.ticker,
             decision_date=decision.asof,
             decision=decision,
+            user_id=user_id,
+            decision_close=decision_close,
+            market=market,
         )
         with self._path(decision.ticker).open("a", encoding="utf-8") as f:
             f.write(entry.model_dump_json() + "\n")
+
+    def user_history(self, user_id: str, limit: int = 200) -> list[ReflectionEntry]:
+        """Scan all per-ticker JSONL files for entries belonging to user_id.
+
+        Returns most recent first. v0 is O(files * rows); fine for closed beta.
+        Move to SQLite when this gets slow.
+        """
+        out: list[ReflectionEntry] = []
+        for path in self.root.glob("*.jsonl"):
+            try:
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        e = ReflectionEntry.model_validate_json(line)
+                    except Exception:
+                        continue
+                    if e.user_id == user_id:
+                        out.append(e)
+            except OSError:
+                continue
+        out.sort(key=lambda e: e.decision_date, reverse=True)
+        return out[:limit]
 
     def update_reflection(
         self,

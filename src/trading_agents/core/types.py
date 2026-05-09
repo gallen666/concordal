@@ -173,6 +173,13 @@ class ReflectionEntry(BaseModel):
     realised_return: float | None = None
     alpha_vs_benchmark: float | None = None
     reflection: str | None = None
+    # Who triggered this decision. Optional for backward compatibility with
+    # older JSONL rows written before this field existed.
+    user_id: str | None = None
+    # Snapshot of close at decision time, so forward return can be computed
+    # later without re-fetching historical adjusted prices.
+    decision_close: float | None = None
+    market: str | None = None
 
 
 # ---------------------------------------------------------------------------
