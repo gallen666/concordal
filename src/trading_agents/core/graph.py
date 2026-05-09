@@ -11,7 +11,23 @@ from __future__ import annotations
 import logging
 from datetime import date
 from functools import partial
-from typing import Any
+from typing import Any, Callable
+
+# Progress callback type: (stage_id, status) where status ∈ {"start","done","error"}
+ProgressCallback = Callable[[str, str], None]
+
+# Canonical stage IDs that the frontend renders. Keep in sync with web/.
+STAGES = [
+    "quote",
+    "fundamentals",
+    "sentiment",
+    "news",
+    "technical",
+    "researcher_debate",
+    "trader",
+    "risk_debate",
+    "manager",
+]
 
 from ..adapters.base import MarketAdapter
 from ..agents.analysts import (
@@ -74,6 +90,42 @@ def _try_langgraph(adapter, pack, llm, debate_rounds):
     return g.compile()
 
 
+def _step(
+    stage: str,
+    fn,
+    state: DecisionState,
+    *,
+    progress_cb: ProgressCallback | None,
+    **kwargs,
+) -> DecisionState:
+    """Run one pipeline stage and report progress before/after.
+
+    Each stage transition is reported to `progress_cb` so the frontend can
+    show "正在分析基本面..." rather than a single 90s spinner. Errors are
+    reported then re-raised so the api job marker can capture them.
+    """
+    if progress_cb:
+        try:
+            progress_cb(stage, "start")
+        except Exception:
+            pass  # progress callback never breaks the pipeline
+    try:
+        result = fn(state, **kwargs)
+        if progress_cb:
+            try:
+                progress_cb(stage, "done")
+            except Exception:
+                pass
+        return result
+    except Exception:
+        if progress_cb:
+            try:
+                progress_cb(stage, "error")
+            except Exception:
+                pass
+        raise
+
+
 def _fallback_runner(
     state: DecisionState,
     *,
@@ -81,17 +133,21 @@ def _fallback_runner(
     pack: PromptPack,
     llm: LLMRouter,
     debate_rounds: int,
+    progress_cb: ProgressCallback | None = None,
 ) -> DecisionState:
     deps = dict(adapter=adapter, pack=pack, llm=llm)
-    state = quote_node(state, **deps)
-    state = fundamentals_node(state, **deps)
-    state = sentiment_node(state, **deps)
-    state = news_node(state, **deps)
-    state = technical_node(state, **deps)
-    state = researcher_debate_node(state, rounds=debate_rounds, **deps)
-    state = trader_node(state, **deps)
-    state = risk_debate_node(state, **deps)
-    state = manager_node(state, **deps)
+    state = _step("quote", quote_node, state, progress_cb=progress_cb, **deps)
+    state = _step("fundamentals", fundamentals_node, state, progress_cb=progress_cb, **deps)
+    state = _step("sentiment", sentiment_node, state, progress_cb=progress_cb, **deps)
+    state = _step("news", news_node, state, progress_cb=progress_cb, **deps)
+    state = _step("technical", technical_node, state, progress_cb=progress_cb, **deps)
+    state = _step(
+        "researcher_debate", researcher_debate_node, state,
+        progress_cb=progress_cb, rounds=debate_rounds, **deps,
+    )
+    state = _step("trader", trader_node, state, progress_cb=progress_cb, **deps)
+    state = _step("risk_debate", risk_debate_node, state, progress_cb=progress_cb, **deps)
+    state = _step("manager", manager_node, state, progress_cb=progress_cb, **deps)
     return state
 
 
@@ -107,6 +163,7 @@ def run_decision(
     user_risk_profile: str = "balanced",
     locale: str = "en",
     lessons: str = "",
+    progress_cb: ProgressCallback | None = None,
 ) -> DecisionTrace:
     """Run the full 7-agent pipeline for one (ticker, asof) and return a
     DecisionTrace suitable for storage / UI rendering.
@@ -133,15 +190,29 @@ def run_decision(
         "lessons": lessons,
     }
 
-    compiled = _try_langgraph(adapter, pack, llm, debate_rounds)
-    if compiled is not None:
-        log.info("Running via LangGraph")
-        result: dict[str, Any] = compiled.invoke(state)
-    else:
-        log.info("Running via fallback sequential runner")
-        result = _fallback_runner(
-            state, adapter=adapter, pack=pack, llm=llm, debate_rounds=debate_rounds,
+    # When a progress callback is provided we always use the sequential
+    # runner, since wrapping LangGraph nodes for per-stage progress is
+    # noticeably more invasive than the value it adds.
+    if progress_cb is not None:
+        log.info("Running via fallback sequential runner (with progress)")
+        result: dict[str, Any] = _fallback_runner(
+            state,
+            adapter=adapter,
+            pack=pack,
+            llm=llm,
+            debate_rounds=debate_rounds,
+            progress_cb=progress_cb,
         )
+    else:
+        compiled = _try_langgraph(adapter, pack, llm, debate_rounds)
+        if compiled is not None:
+            log.info("Running via LangGraph")
+            result = compiled.invoke(state)
+        else:
+            log.info("Running via fallback sequential runner")
+            result = _fallback_runner(
+                state, adapter=adapter, pack=pack, llm=llm, debate_rounds=debate_rounds,
+            )
 
     return DecisionTrace(
         ticker=ticker,

@@ -184,6 +184,24 @@ const dict = {
   "decision.sources":           { en: "Sources",                            zh: "数据来源" },
   "decision.noReports":         { en: "No analyst reports.",                zh: "暂无分析师报告。" },
 
+  // ---- Live progress (per-stage labels shown while the pipeline runs) ----
+  "progress.heading":           { en: "Live progress",                       zh: "实时进度" },
+  "progress.subheading":        { en: "Watch the agents work — data first, debate next, decision last.", zh: "看 agent 干活——先取数，再辩论，最后定决策。" },
+  "progress.starting":          { en: "Starting up…",                        zh: "启动中…" },
+  "progress.waiting":           { en: "Waiting",                             zh: "待运行" },
+  "progress.running":           { en: "Running",                             zh: "运行中" },
+  "progress.done":              { en: "Done",                                zh: "已完成" },
+  "progress.errored":           { en: "Errored",                             zh: "出错" },
+  "progress.quote":             { en: "Fetching quote",                      zh: "拉取行情" },
+  "progress.fundamentals":      { en: "Fundamentals analyst",                zh: "基本面分析师" },
+  "progress.sentiment":         { en: "Sentiment analyst",                   zh: "情绪分析师" },
+  "progress.news":              { en: "News analyst",                        zh: "新闻分析师" },
+  "progress.technical":         { en: "Technical analyst",                   zh: "技术面分析师" },
+  "progress.researcher_debate": { en: "Bull vs Bear debate",                 zh: "多空辩论" },
+  "progress.trader":            { en: "Trader synthesizing",                 zh: "交易员组装方案" },
+  "progress.risk_debate":       { en: "Risk committee review",               zh: "风控委员会审视" },
+  "progress.manager":           { en: "Manager final call",                  zh: "基金经理终审" },
+
   // ---- Backtest page ------------------------------------------------------
   "backtest.label":             { en: "BACKTEST",                           zh: "回测" },
   "backtest.heading":            { en: "Replay the agents on history",      zh: "在历史区间上回放 agent" },

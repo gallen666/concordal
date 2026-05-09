@@ -30,6 +30,7 @@ import {
   type DebateTranscript,
   type AnalystReport,
   type CurrentUser,
+  type DecisionProgress,
 } from "../lib/api";
 import { cn } from "../lib/cn";
 import { useT } from "../lib/i18n";
@@ -118,6 +119,9 @@ export default function DecisionPage() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [mode, setMode] = useState<string | null>(null);  // cached / real_llm / mock
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null);
+  // Live progress reported by the backend job; populated while the
+  // pipeline runs so the UI can highlight the currently-working agent.
+  const [progress, setProgress] = useState<DecisionProgress | null>(null);
 
   useEffect(() => {
     if (!auth.isLoggedIn()) return;
@@ -137,6 +141,7 @@ export default function DecisionPage() {
     setError(null);
     setResult(null);
     setMode(null);
+    setProgress(null);
     setStage(t("decision.running"));
     try {
       const job = await api.createDecision({
@@ -146,9 +151,13 @@ export default function DecisionPage() {
         use_cache: !forceRefresh,
       });
       setStage(t("decision.running"));
+      // Poll the job status; the response includes a `progress` object
+      // that updates as each agent reports start/done. We forward it
+      // straight to <LiveProgress/>.
       for (let i = 0; i < 240; i++) {
         await new Promise((r) => setTimeout(r, 1000));
         const j = await api.getDecision(job.job_id);
+        if (j.progress) setProgress(j.progress);
         if (j.status === "done") {
           setResult(j.result);
           setMode(j.mode || null);
@@ -247,7 +256,12 @@ export default function DecisionPage() {
         </div>
       )}
 
-      {loading && !result && <SkeletonReport />}
+      {loading && !result && (
+        <>
+          <LiveProgress progress={progress} />
+          <SkeletonReport />
+        </>
+      )}
 
       {result && <DecisionView trace={result} />}
     </div>
@@ -831,6 +845,119 @@ function PipelineTimeline({ trace }: { trace: DecisionTrace }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Live progress timeline shown while the decision pipeline is running.
+ *
+ * Stages mirror `STAGES` in src/trading_agents/core/graph.py. Each stage
+ * is one of:
+ *   - completed  → green check
+ *   - errored    → red X
+ *   - running    → spinner + "Running" pill
+ *   - waiting    → muted icon
+ *
+ * The currently-running stage is also called out in a prominent banner
+ * above the timeline so the user always sees a verb ("Fetching quote…")
+ * instead of a single 90-second spinner.
+ */
+const LIVE_STAGES: Array<{
+  key: string;
+  labelKey:
+    | "progress.quote"
+    | "progress.fundamentals"
+    | "progress.sentiment"
+    | "progress.news"
+    | "progress.technical"
+    | "progress.researcher_debate"
+    | "progress.trader"
+    | "progress.risk_debate"
+    | "progress.manager";
+  icon: React.ReactNode;
+}> = [
+  { key: "quote", labelKey: "progress.quote", icon: <LineChart className="w-3.5 h-3.5" /> },
+  { key: "fundamentals", labelKey: "progress.fundamentals", icon: <BarChart3 className="w-3.5 h-3.5" /> },
+  { key: "sentiment", labelKey: "progress.sentiment", icon: <Users className="w-3.5 h-3.5" /> },
+  { key: "news", labelKey: "progress.news", icon: <Newspaper className="w-3.5 h-3.5" /> },
+  { key: "technical", labelKey: "progress.technical", icon: <LineChart className="w-3.5 h-3.5" /> },
+  { key: "researcher_debate", labelKey: "progress.researcher_debate", icon: <MessageCircle className="w-3.5 h-3.5" /> },
+  { key: "trader", labelKey: "progress.trader", icon: <Briefcase className="w-3.5 h-3.5" /> },
+  { key: "risk_debate", labelKey: "progress.risk_debate", icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+  { key: "manager", labelKey: "progress.manager", icon: <Gavel className="w-3.5 h-3.5" /> },
+];
+
+function LiveProgress({ progress }: { progress: DecisionProgress | null }) {
+  const { t } = useT();
+  const completed = new Set(progress?.completed || []);
+  const errored = new Set(progress?.errored || []);
+  const current = progress?.current_stage || null;
+  const currentStage = LIVE_STAGES.find((s) => s.key === current);
+  const totalDone = completed.size + errored.size;
+
+  return (
+    <div className="mt-6 surface-elev p-5 animate-fade-in">
+      <div className="flex items-baseline justify-between gap-3 mb-3">
+        <div>
+          <span className="label-cap">{t("progress.heading")}</span>
+          <h3 className="text-sm font-semibold mt-0.5 text-ink-primary">
+            {currentStage
+              ? t(currentStage.labelKey)
+              : totalDone === 0
+                ? t("progress.starting")
+                : t("progress.starting")}
+            {currentStage && <span className="text-ink-tertiary"> …</span>}
+          </h3>
+        </div>
+        <span className="font-mono text-xs text-ink-tertiary shrink-0">
+          {totalDone} / {LIVE_STAGES.length}
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1 bg-bg-base rounded-full overflow-hidden mb-4">
+        <div
+          className="h-full bg-accent transition-all duration-500"
+          style={{ width: `${(totalDone / LIVE_STAGES.length) * 100}%` }}
+        />
+      </div>
+
+      {/* Per-stage timeline */}
+      <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto pb-1">
+        {LIVE_STAGES.map((s, i) => {
+          const isDone = completed.has(s.key);
+          const isErr = errored.has(s.key);
+          const isRunning = current === s.key;
+          let pillCls = "bg-bg-subtle border-border-subtle text-ink-tertiary";
+          let leadIcon: React.ReactNode = s.icon;
+          if (isDone) {
+            pillCls = "bg-accent-muted border-accent/30 text-accent";
+            leadIcon = <CheckCircle2 className="w-3 h-3" />;
+          } else if (isErr) {
+            pillCls = "bg-signal-sell_soft border-signal-sell/30 text-signal-sell";
+            leadIcon = <XCircle className="w-3 h-3" />;
+          } else if (isRunning) {
+            pillCls = "bg-signal-info_soft border-signal-info/30 text-signal-info animate-pulse";
+            leadIcon = <Loader2 className="w-3 h-3 animate-spin" />;
+          }
+          return (
+            <div key={s.key} className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+              <span className={cn("pill border whitespace-nowrap", pillCls)}>
+                {leadIcon}
+                {t(s.labelKey)}
+              </span>
+              {i < LIVE_STAGES.length - 1 && (
+                <ArrowRight className="w-3 h-3 text-ink-muted shrink-0" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-xs text-ink-tertiary mt-3">
+        {t("progress.subheading")}
+      </p>
     </div>
   );
 }

@@ -151,6 +151,7 @@ export const api = {
       result: DecisionTrace | null;
       error: string | null;
       mode?: string;
+      progress?: DecisionProgress | null;
     }>(`/v1/decisions/job/${id}`),
 
   createBacktest: (req: {
@@ -195,6 +196,22 @@ export const api = {
       body: JSON.stringify(req),
     }),
 };
+
+/**
+ * Live progress reported by the decision pipeline. Polled while the
+ * job is running so the UI can highlight the agent currently working
+ * (instead of showing a single 90s spinner).
+ *
+ * Stage IDs match `STAGES` in src/trading_agents/core/graph.py:
+ *   quote, fundamentals, sentiment, news, technical,
+ *   researcher_debate, trader, risk_debate, manager
+ */
+export interface DecisionProgress {
+  current_stage: string | null;
+  completed: string[];
+  errored: string[];
+  history: Array<{ stage: string; status: string; ts: number }>;
+}
 
 /** A single past decision the user made, optionally enriched with forward PnL. */
 export interface MyDecision {

@@ -254,6 +254,37 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
             except Exception as e:
                 log.warning("collect_lessons failed (non-fatal): %s", e)
 
+            # Live progress: each agent reports start/done so the UI can
+            # render "正在分析新闻..." instead of a single 90s spinner.
+            # Stored on the job dict, polled by GET /v1/decisions/job/{id}.
+            _jobs[job_id]["progress"] = {
+                "current_stage": None,
+                "completed": [],
+                "errored": [],
+                "history": [],   # [{stage, status, ts}]
+            }
+
+            def _progress_cb(stage: str, status: str) -> None:
+                p = _jobs[job_id].get("progress") or {
+                    "current_stage": None, "completed": [], "errored": [], "history": [],
+                }
+                p["history"].append({
+                    "stage": stage,
+                    "status": status,
+                    "ts": time.time(),
+                })
+                if status == "start":
+                    p["current_stage"] = stage
+                elif status == "done":
+                    if stage not in p["completed"]:
+                        p["completed"].append(stage)
+                    p["current_stage"] = None
+                elif status == "error":
+                    if stage not in p["errored"]:
+                        p["errored"].append(stage)
+                    p["current_stage"] = None
+                _jobs[job_id]["progress"] = p
+
             trace = run_decision(
                 ticker=req.ticker.upper(),
                 asof=asof,
@@ -262,6 +293,7 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
                 user_risk_profile=req.user_risk_profile,
                 locale=req.locale,
                 lessons=lessons,
+                progress_cb=_progress_cb,
             )
         finally:
             if prev_mode is None:
