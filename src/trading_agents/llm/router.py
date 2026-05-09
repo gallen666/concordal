@@ -457,6 +457,16 @@ class LLMRouter:
             return self._anthropic
         return self._mock
 
+    # Models we'll fall through to when the configured one rate-limits or
+    # otherwise errors. Tried in order. All are Gemini today (cheapest
+    # path); when other providers are configured the same idea applies but
+    # the chain extends naturally via _provider_for().
+    _GEMINI_FALLBACK_CHAIN = [
+        "gemini-2.5-pro",          # if 3.1-pro-preview is rate-limited
+        "gemini-2.5-flash",        # cheap and high-quota
+        "gemini-2.5-flash-lite",   # last resort before mock
+    ]
+
     def complete(
         self,
         *,
@@ -466,14 +476,48 @@ class LLMRouter:
         temperature: float = 0.3,
     ) -> LLMResponse:
         model = self.models[tier]
-        provider = self._provider_for(model)
-        log.debug("LLM %s -> %s (%s)", tier.value, model, provider.name)
         # Append a language directive when the request asks for non-English
         # output. Done at the router level so every provider (OpenAI,
         # Anthropic, Gemini, Mock) gets the same treatment without us
         # having to touch each agent node's complete() call site.
         sys_with_lang = self._with_lang_directive(system)
-        return provider.complete(sys_with_lang, user, model, temperature=temperature)
+
+        # Build the model-fallback list: configured model first, then
+        # backup Gemini tiers, then mock as last resort. We try each on a
+        # rate-limit / 429 / 5xx error so a single agent can't bring down
+        # the whole pipeline when the user's free quota is exhausted.
+        chain: list[str] = [model]
+        if model.startswith("gemini-"):
+            for m in self._GEMINI_FALLBACK_CHAIN:
+                if m not in chain:
+                    chain.append(m)
+        # Always end with mock so the pipeline NEVER hard-fails.
+        chain.append("mock-deep" if tier == Tier.DEEP else "mock-mid")
+
+        last_err: Exception | None = None
+        for m in chain:
+            provider = self._provider_for(m)
+            log.debug("LLM %s -> %s (%s)", tier.value, m, provider.name)
+            try:
+                return provider.complete(sys_with_lang, user, m, temperature=temperature)
+            except Exception as e:
+                last_err = e
+                msg = str(e)
+                # Retry on transient / rate-limit; raise immediately on
+                # config errors (auth, missing key) so we don't pointlessly
+                # cycle through the whole chain.
+                if "401" in msg or "403" in msg or "API key" in msg:
+                    raise
+                log.warning(
+                    "LLM call to %s failed (%s); falling through chain",
+                    m, msg[:200],
+                )
+                continue
+        # Should be unreachable because mock providers always succeed, but
+        # be explicit if somehow not.
+        if last_err:
+            raise last_err
+        raise RuntimeError("LLMRouter chain exhausted without response")
 
     def _with_lang_directive(self, system: str) -> str:
         if self.locale == "zh":
