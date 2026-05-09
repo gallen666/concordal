@@ -153,35 +153,61 @@ class BacktestRequest(BaseModel):
 # --- background runners --------------------------------------------------
 
 
-# US-equity ticker syntactic check. A real US ticker is 1-5 letters with an
-# optional class suffix (e.g. AAPL, BRK-B, BF.B). Rejecting A-share codes
-# (6-digit numerics like 301308, 600519), HK codes (5 digits like 00700),
-# and crypto pairs early prevents the LLM from hallucinating analysis from
-# empty fundamentals when yfinance silently returns nothing.
+# Ticker syntactic checks per market.
+#  - US equities: 1–5 letter codes with optional class suffix (AAPL, BRK-B, BF.B)
+#  - A-shares  : 6 digits (301308, 600519, 000001) — akshare picks SH/SZ/BJ
 _US_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,8}$")
+_CN_TICKER_RE = re.compile(r"^\d{6}$")
 
 
 def _is_supported_us_ticker(ticker: str) -> bool:
     s = (ticker or "").upper().strip()
     if not _US_TICKER_RE.fullmatch(s):
         return False
-    # Reject all-digit symbols even if they were uppercased.
-    if not any(c.isalpha() for c in s):
-        return False
-    return True
+    return any(c.isalpha() for c in s)
+
+
+def _is_supported_cn_ticker(ticker: str) -> bool:
+    return bool(_CN_TICKER_RE.fullmatch((ticker or "").strip()))
+
+
+def _auto_route_market(ticker: str, market: str) -> str:
+    """Auto-detect market when the user typed a ticker that obviously
+    belongs to a different market than the one the request came in on.
+
+    Pattern: a 6-digit numeric ticker is unambiguously an A-share code,
+    so even if the request says `market="us_equity"` (the frontend default)
+    we route it to `a_share`. This means users don't need a market picker
+    to try 中文股票.
+    """
+    if _is_supported_cn_ticker(ticker):
+        return "a_share"
+    return market
 
 
 def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> None:
     try:
-        # Pre-flight: block obvious non-US tickers before burning any LLM
-        # quota. The Yahoo adapter also defends against this, but failing
-        # here is faster, cheaper, and the message is shown to the user.
-        if req.market == "us_equity" and not _is_supported_us_ticker(req.ticker):
+        # Auto-detect market from ticker shape so 6-digit codes route to A-share
+        # without requiring the frontend to expose a market picker.
+        effective_market = _auto_route_market(req.ticker, req.market)
+        # Mutate the request so downstream cache key + run_decision use it.
+        req = req.model_copy(update={"market": effective_market})
+
+        # Pre-flight: block obvious mismatches (e.g. user typed Chinese
+        # characters or a 7-digit number that matches no convention).
+        if effective_market == "us_equity" and not _is_supported_us_ticker(req.ticker):
             _jobs[job_id]["status"] = "error"
             _jobs[job_id]["error"] = (
-                f"代码 '{req.ticker}' 不像美股代码（仅支持 1–5 位字母，如 AAPL、NVDA、TSLA）。"
-                f" / Ticker '{req.ticker}' is not a supported US-equity symbol "
-                "(only 1–5 letter codes like AAPL, NVDA, TSLA are supported in the closed beta)."
+                f"代码 '{req.ticker}' 看起来既不是美股（如 AAPL、NVDA）也不是 A 股（6 位数字，如 301308、600519）。"
+                f" / Ticker '{req.ticker}' doesn't look like a US equity (e.g. AAPL) "
+                "or an A-share (6 digits, e.g. 301308). Other markets aren't supported in this beta."
+            )
+            return
+        if effective_market == "a_share" and not _is_supported_cn_ticker(req.ticker):
+            _jobs[job_id]["status"] = "error"
+            _jobs[job_id]["error"] = (
+                f"A 股代码必须是 6 位数字，例如 301308、600519、000001。 / "
+                f"A-share tickers must be exactly 6 digits."
             )
             return
 
