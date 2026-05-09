@@ -41,9 +41,16 @@ def manager_node(
         f"daily_limit={regime.daily_limit_pct} short_allowed={regime.short_selling_allowed} "
         f"funding_rate_relevant={regime.funding_rate_relevant} benchmark={regime.benchmark_ticker}"
     )
+    # If reflection lessons from prior decisions on this ticker were collected,
+    # inject them BEFORE trader/risk so the manager's framing acknowledges
+    # institutional memory. Optional — empty string is a no-op.
+    lessons = state.get("lessons") or ""
+    lessons_block = f"=== LESSONS FROM PRIOR DECISIONS ===\n{lessons}\n\n" if lessons else ""
+
     user = (
         f"Ticker: {state['ticker']}  Asof: {state['asof']}\n"
         f"Regime: {regime_blob}\n\n"
+        f"{lessons_block}"
         f"=== TRADER PLAN ===\n{plan}\n\n"
         f"=== RISK DEBATE ===\n{risk_blob}\n\n"
         "Emit your final Decision JSON."

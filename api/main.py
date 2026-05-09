@@ -36,6 +36,7 @@ from trading_agents.adapters import get_adapter
 from trading_agents.backtest.engine import Backtester
 from trading_agents.cache.ticker_cache import TickerCache
 from trading_agents.core.graph import run_decision
+from trading_agents.memory.reflection import collect_lessons
 from trading_agents.memory.store import MemoryStore
 
 from .auth import CurrentUser, RedeemRequest, TokenResponse, get_current_user, redeem
@@ -231,6 +232,28 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
         if not user.real_llm:
             os.environ["TA_MODE"] = "mock"
         try:
+            # Reflection loop (a la TauricResearch v0.2.4 persistent log):
+            # pull this user's prior decisions on the same ticker, enrich
+            # with realised PnL, and inject as "institutional memory" into
+            # the Manager prompt. Empty when there's no usable history.
+            lessons = ""
+            try:
+                lessons = collect_lessons(
+                    ticker=req.ticker.upper(),
+                    user_id=user.id,
+                    today=asof,
+                    memory=memory,
+                    adapter=get_adapter(req.market),
+                    locale=req.locale,
+                )
+                if lessons:
+                    log.info(
+                        "Injecting %d-char reflection into manager for %s/%s",
+                        len(lessons), user.id, req.ticker,
+                    )
+            except Exception as e:
+                log.warning("collect_lessons failed (non-fatal): %s", e)
+
             trace = run_decision(
                 ticker=req.ticker.upper(),
                 asof=asof,
@@ -238,6 +261,7 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
                 debate_rounds=req.debate_rounds,
                 user_risk_profile=req.user_risk_profile,
                 locale=req.locale,
+                lessons=lessons,
             )
         finally:
             if prev_mode is None:

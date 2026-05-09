@@ -213,6 +213,143 @@ const dict = {
   },
   "disclaimer.back":            { en: "← Back",                             zh: "← 返回" },
 
+  // ---- 3 core value props (from the latest TauricResearch slide) --------
+  "value.label":                { en: "WHY THIS APPROACH",                  zh: "为什么用这种做法" },
+  "value.title":                {
+    en: "TradingAgents isn't just a trading framework — it's the future of collaborative AI in finance.",
+    zh: "TradingAgents 不仅是一个交易框架，更是 AI 协作智慧在金融领域的未来。",
+  },
+  "value.firmTitle":            { en: "Realistic Firm Simulation",          zh: "真实组织模拟" },
+  "value.firmBody":             {
+    en: "Successfully replicates the collaborative intelligence of a professional trading desk.",
+    zh: "成功复制了专业交易团队的协作式智慧。",
+  },
+  "value.dialecticTitle":       { en: "Multi-faceted Dialectical Reasoning", zh: "多维度辩证推理" },
+  "value.dialecticBody":        {
+    en: "Bull / bear debate produces more robust, comprehensive decisions than a single prompt.",
+    zh: "透过多空辩论产生更稳健、更全面的决策。",
+  },
+  "value.commTitle":             { en: "Efficient Structured Communication", zh: "高效结构化沟通" },
+  "value.commBody":              {
+    en: "Solves the information-distortion problem that plagues classic multi-agent systems.",
+    zh: "克服了传统多智能体系统中的信息失真问题。",
+  },
+  "value.attribution":          {
+    en: "Methodology adapted from",
+    zh: "方法论参考自",
+  },
+
+  // ---- /how-it-works page ------------------------------------------------
+  "header.howItWorks":          { en: "How it works",                       zh: "如何工作" },
+  "how.label":                  { en: "OUR APPROACH",                       zh: "我们的做法" },
+  "how.heroTitle":              {
+    en: "An AI framework that mirrors a real trading firm.",
+    zh: "一个模拟真实交易公司的 AI 框架。",
+  },
+  "how.heroBody":               {
+    en: "TradingAgents gives each AI agent a specialized role, drives structured debate among them, and mirrors the workflow of an actual buy-side desk. We turn a chaotic single-prompt LLM into an organized, collaborative decision process.",
+    zh: "TradingAgents 透过赋予 AI 智能体特定角色、促进结构化辩论，并模仿真实世界的工作流程，把混乱的单 prompt 互动转变为一个有组织、可协作的决策过程，旨在提高决策质量。",
+  },
+
+  "how.pipelineLabel":          { en: "ORG CHART",                          zh: "组织架构" },
+  "how.pipelineTitle":          {
+    en: "Seven specialized roles working in a closed-loop decision process",
+    zh: "七个专业角色协同运作，形成决策闭环",
+  },
+  "how.pipelineBody":           {
+    en: "Inspired by the org chart of an actual hedge fund. Each agent has a specific objective, skillset, and toolset.",
+    zh: "受真实交易公司组织结构的启发，每个角色都被赋予特定的目标、技能和工具。",
+  },
+  "how.stage.gather":           { en: "Data Gathering",                     zh: "信息收集" },
+  "how.stage.gatherTeam":       { en: "Analyst Team",                       zh: "分析师团队" },
+  "how.stage.gatherDetail":     { en: "Fundamentals · Sentiment · News · Technical", zh: "基本面 · 情绪 · 新闻 · 技术分析师" },
+  "how.stage.dialect":          { en: "Dialectical Analysis",               zh: "辩证分析" },
+  "how.stage.dialectTeam":      { en: "Researcher Team",                    zh: "研究员团队" },
+  "how.stage.dialectDetail":    { en: "Bull vs Bear researchers",           zh: "多头 & 空头研究员" },
+  "how.stage.trade":            { en: "Trading Decision",                   zh: "交易决策" },
+  "how.stage.tradeTeam":        { en: "Trader",                             zh: "交易员" },
+  "how.stage.tradeDetail":      { en: "Synthesizes inputs into a sized, conditioned trade", zh: "综合输入，形成有仓位、有条件的方案" },
+  "how.stage.risk":             { en: "Risk Control",                       zh: "风险管控" },
+  "how.stage.riskTeam":         { en: "Risk Management Team",               zh: "风险管理团队" },
+  "how.stage.riskDetail":       { en: "Aggressive · Neutral · Conservative debate", zh: "进取 · 中性 · 保守 三方辩论" },
+  "how.stage.final":            { en: "Final Approval",                     zh: "最终批准" },
+  "how.stage.finalTeam":        { en: "Fund Manager",                       zh: "基金经理" },
+  "how.stage.finalDetail":      { en: "Authorizes the transaction with explicit rationale", zh: "授权交易并附明确理由" },
+  "how.stage.exec":             { en: "Decision Output",                    zh: "决策输出" },
+  "how.stage.execTeam":         { en: "Traceable Record",                   zh: "可追溯记录" },
+  "how.stage.execDetail":       { en: "Stored, ranked, audit-able. We never auto-execute trades.", zh: "存档、可排名、可审计。我们从不自动下单。" },
+
+  "how.analystsLabel":          { en: "ANALYST TEAM",                       zh: "分析师团队" },
+  "how.analystsTitle":          { en: "Four lenses on one ticker",          zh: "从四大维度全面扫描市场" },
+  "how.analyst.fundTitle":      { en: "Fundamental Analyst",                zh: "基本面分析师" },
+  "how.analyst.fundBody":       {
+    en: "Reads financial statements, earnings reports, and insider transactions to estimate intrinsic value.",
+    zh: "评估公司财务状况、财报和内幕交易，以确定内在价值。",
+  },
+  "how.analyst.sentTitle":      { en: "Sentiment Analyst",                  zh: "情绪分析师" },
+  "how.analyst.sentBody":       {
+    en: "Processes social-media posts and sentiment scores to gauge market mood and predict investor behavior.",
+    zh: "处理社交媒体贴文和情绪分数，以衡量市场情绪并预测投资者行为。",
+  },
+  "how.analyst.newsTitle":      { en: "News Analyst",                       zh: "新闻分析师" },
+  "how.analyst.newsBody":       {
+    en: "Analyzes news, government announcements, and macro indicators to assess events that may move the market.",
+    zh: "分析新闻、政府公告和宏观经济指标，以评估可能影响市场的重大事件。",
+  },
+  "how.analyst.techTitle":      { en: "Technical Analyst",                  zh: "技术分析师" },
+  "how.analyst.techBody":       {
+    en: "Computes technical indicators (MACD, RSI), reads price patterns and volume to forecast direction.",
+    zh: "计算并选择相关技术指标（如 MACD、RSI），分析价格模式和交易量以预测未来走势。",
+  },
+
+  "how.balanceLabel":           { en: "TRADER × RISK",                      zh: "交易员 × 风险" },
+  "how.balanceTitle":           { en: "Balancing opportunity and discipline", zh: "在机会与纪律之间取得平衡" },
+  "how.balance.traderTitle":    { en: "Trader: synthesize, propose",        zh: "交易员：综合洞察，提出建议" },
+  "how.balance.traderBody":     {
+    en: "The trader integrates every analyst report and the bull/bear debate into a concrete trade proposal — with timing and sizing.",
+    zh: "交易员综合所有分析师报告和研究员的辩论结果，提出具体的交易建议，包括时机和规模。",
+  },
+  "how.balance.riskTitle":      { en: "Risk Team: evaluate, adjust",        zh: "风险管理团队：评估与调整" },
+  "how.balance.riskBody":       {
+    en: "The risk team holds its own internal debate (aggressive / neutral / conservative) and adjusts the trade to fit pre-set risk parameters.",
+    zh: "风险管理团队对交易提案进行评估。团队内部同样进行辩论（进取、中性、保守），以调整交易计划，确保其符合预设的风险参数。",
+  },
+
+  "how.dataLabel":              { en: "DATA SOURCES",                       zh: "数据源" },
+  "how.dataTitle":              { en: "What the agents actually read",      zh: "Agent 实际读取的数据" },
+  "how.dataBody":               {
+    en: "Honest list. We use free public sources today; institutional data feeds (Bloomberg, FactSet, Wind) are on the roadmap.",
+    zh: "诚实清单。当前用免费公开数据源；机构级数据（Bloomberg / FactSet / Wind）在路线图上。",
+  },
+  "how.data.usMarket":          { en: "US market data",                     zh: "美股行情" },
+  "how.data.usMarketSrc":       { en: "Yahoo Finance via yfinance",         zh: "Yahoo Finance（yfinance）" },
+  "how.data.cnMarket":          { en: "A-share market data",                zh: "A 股行情" },
+  "how.data.cnMarketSrc":       { en: "EastMoney / Sina / Tencent via akshare", zh: "东方财富 / 新浪 / 腾讯（akshare）" },
+  "how.data.usNews":            { en: "US news",                            zh: "美股新闻" },
+  "how.data.usNewsSrc":         { en: "Yahoo Finance news feed",            zh: "Yahoo Finance news" },
+  "how.data.cnNews":            { en: "A-share news",                       zh: "A 股新闻" },
+  "how.data.cnNewsSrc":         { en: "EastMoney news (akshare)",           zh: "东方财富新闻（akshare）" },
+  "how.data.fundamentals":      { en: "Financials & filings",               zh: "财务与公告" },
+  "how.data.fundamentalsSrc":   { en: "Yahoo info / EastMoney info",        zh: "Yahoo / 东方财富 个股信息" },
+  "how.data.sentiment":         { en: "Social sentiment",                   zh: "社交情绪" },
+  "how.data.sentimentSrc":      { en: "Mocked — Twitter/Reddit/Xueqiu integration is roadmap", zh: "暂为模拟 — Twitter / Reddit / 雪球接入在路线图上" },
+
+  "how.modelsLabel":            { en: "LLM ROUTING",                        zh: "LLM 路由" },
+  "how.modelsTitle":            { en: "Cost-aware model routing",           zh: "成本感知的模型路由" },
+  "how.modelsBody":             {
+    en: "Each agent runs at the cheapest tier that still produces good output. Trader and Manager get Pro; analysts/risk run on Flash.",
+    zh: "每个 agent 用能保证质量的最便宜模型。Trader / Manager 用 Pro，分析师 / 风控用 Flash。",
+  },
+  "how.models.deep":            { en: "Pro tier",                           zh: "Pro 档" },
+  "how.models.deepFor":         { en: "Trader · Fund Manager",              zh: "交易员 · 基金经理" },
+  "how.models.deepModel":       { en: "Gemini 3.1 Pro Preview",             zh: "Gemini 3.1 Pro Preview" },
+  "how.models.fast":            { en: "Flash tier",                         zh: "Flash 档" },
+  "how.models.fastFor":         { en: "Analysts · Researchers · Risk team", zh: "分析师 · 研究员 · 风控团队" },
+  "how.models.fastModel":       { en: "Gemini 2.5 Flash",                   zh: "Gemini 2.5 Flash" },
+
+  "how.cta.try":                { en: "Try it on a ticker",                 zh: "拿一只票试试" },
+  "how.cta.code":               { en: "Read the source",                    zh: "看源代码" },
+
   // ---- Mock-mode warning banner -----------------------------------------
   "mockBanner.title":           { en: "Mock mode — output is a template, not real analysis", zh: "模拟模式 — 输出是模板，不是真实分析" },
   "mockBanner.body":            {

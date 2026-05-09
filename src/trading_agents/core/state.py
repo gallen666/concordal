@@ -60,3 +60,8 @@ class DecisionState(TypedDict, total=False):
     # --- bookkeeping ---
     usage: list[TokenUsage]
     flags: list[str]
+
+    # --- reflection / institutional memory ---
+    # Pre-formatted "lessons from prior decisions" string, injected into
+    # the Manager's user prompt. Empty string is a no-op.
+    lessons: str

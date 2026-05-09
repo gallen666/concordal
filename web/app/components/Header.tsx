@@ -68,6 +68,7 @@ export default function Header() {
             </>
           ) : loaded ? (
             <>
+              <NavLink href="/how-it-works">{t("header.howItWorks")}</NavLink>
               <NavLink href="/track-record">{t("header.trackRecord")}</NavLink>
               <LangToggle
                 label={toggleLabel}

@@ -106,6 +106,7 @@ def run_decision(
     debate_rounds: int = 2,
     user_risk_profile: str = "balanced",
     locale: str = "en",
+    lessons: str = "",
 ) -> DecisionTrace:
     """Run the full 7-agent pipeline for one (ticker, asof) and return a
     DecisionTrace suitable for storage / UI rendering.
@@ -129,6 +130,7 @@ def run_decision(
         "user_risk_profile": user_risk_profile,
         "usage": [],
         "flags": [],
+        "lessons": lessons,
     }
 
     compiled = _try_langgraph(adapter, pack, llm, debate_rounds)
