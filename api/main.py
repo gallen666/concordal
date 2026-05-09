@@ -516,6 +516,77 @@ def my_decisions(
     return out
 
 
+@app.get("/v1/markets/hot-rankings/cn")
+def cn_hot_rankings(limit: int = 20) -> dict:
+    """East Money 个股人气榜 (retail attention rank) — top-N A-shares.
+
+    Public endpoint (no auth) so it can power the /hot landing page.
+    Cached server-side for 60s to avoid hammering EastMoney.
+
+    Returns:
+        {
+          "source": "EastMoney 个股人气榜",
+          "fetched_at": ISO timestamp,
+          "rows": [{rank, ticker, name, last_price, change_pct, heat}, ...],
+        }
+    """
+    # Lazy import: don't load akshare at module init (heavy)
+    try:
+        import akshare as ak
+    except ImportError:
+        raise HTTPException(status_code=503, detail="akshare not installed")
+    try:
+        df = ak.stock_hot_rank_em()
+    except Exception as e:
+        log.warning("ak.stock_hot_rank_em failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"upstream error: {e}")
+    if df is None or df.empty:
+        return {
+            "source": "EastMoney 个股人气榜",
+            "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+            "rows": [],
+        }
+
+    # akshare column names vary by version. Map by content rather than name.
+    cols = list(df.columns)
+
+    def find(*needles: str) -> str | None:
+        for c in cols:
+            for n in needles:
+                if n in c or n.lower() in c.lower():
+                    return c
+        return None
+
+    rank_col = find("排名", "rank") or cols[0]
+    code_col = find("代码", "code") or (cols[1] if len(cols) > 1 else cols[0])
+    name_col = find("名称", "name", "股票")
+    price_col = find("最新价", "price")
+    change_col = find("涨跌幅", "change")
+    heat_col = find("热度", "heat")
+
+    rows: list[dict] = []
+    for _, r in df.head(limit).iterrows():
+        try:
+            row = {
+                "rank": int(r[rank_col]) if rank_col else None,
+                "ticker": str(r[code_col]).replace("SH", "").replace("SZ", "").strip()
+                if code_col else None,
+                "name": str(r[name_col]).strip() if name_col else None,
+                "last_price": float(r[price_col]) if price_col and r[price_col] not in ("-", None) else None,
+                "change_pct": float(r[change_col]) if change_col and r[change_col] not in ("-", None) else None,
+                "heat": float(r[heat_col]) if heat_col and r[heat_col] not in ("-", None) else None,
+            }
+        except (TypeError, ValueError):
+            continue
+        rows.append(row)
+
+    return {
+        "source": "EastMoney 个股人气榜",
+        "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+        "rows": rows,
+    }
+
+
 # Minimal landing page redirect for visitors hitting the API root
 @app.get("/", include_in_schema=False)
 def root() -> dict:

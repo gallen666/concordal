@@ -244,6 +244,24 @@ const dict = {
     zh: "方法论参考自",
   },
 
+  // ---- /hot — EastMoney attention rankings -----------------------------
+  "header.hot":                 { en: "Hot rankings",                       zh: "热度榜" },
+  "hot.label":                  { en: "EASTMONEY ATTENTION",                zh: "东方财富关注度" },
+  "hot.heading":                { en: "What A-share retail is watching right now", zh: "A 股散户此刻在关注什么" },
+  "hot.subheading":             {
+    en: "Live retail attention ranking from EastMoney 个股人气榜. Updated each minute. Click a ticker to run the 7-agent analysis on it.",
+    zh: "东方财富个股人气榜实时数据。每分钟刷新。点代码可直接对它跑 7-agent 决策。",
+  },
+  "hot.colRank":                { en: "Rank",                               zh: "排名" },
+  "hot.colTicker":              { en: "Ticker",                             zh: "代码" },
+  "hot.colName":                { en: "Name",                               zh: "名称" },
+  "hot.colPrice":               { en: "Last",                               zh: "最新价" },
+  "hot.colChange":              { en: "Change %",                           zh: "涨跌幅" },
+  "hot.colHeat":                { en: "Heat",                               zh: "热度值" },
+  "hot.refresh":                { en: "Refresh",                            zh: "刷新" },
+  "hot.fetched":                { en: "Fetched at",                         zh: "拉取时间" },
+  "hot.runAnalysis":            { en: "Run analysis",                       zh: "跑决策" },
+
   // ---- /how-it-works page ------------------------------------------------
   "header.howItWorks":          { en: "How it works",                       zh: "如何工作" },
   "how.label":                  { en: "OUR APPROACH",                       zh: "我们的做法" },

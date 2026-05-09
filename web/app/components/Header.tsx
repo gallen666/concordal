@@ -45,6 +45,7 @@ export default function Header() {
           {loaded && user ? (
             <>
               <NavLink href="/decision">{t("header.newDecision")}</NavLink>
+              <NavLink href="/hot">{t("header.hot")}</NavLink>
               <NavLink href="/me/history">{t("header.myHistory")}</NavLink>
               <NavLink href="/watchlist">{t("header.watchlist")}</NavLink>
               <NavLink href="/track-record">{t("header.trackRecord")}</NavLink>

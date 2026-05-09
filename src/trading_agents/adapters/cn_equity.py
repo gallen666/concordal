@@ -278,10 +278,106 @@ class CnEquityAdapter(MarketAdapter):
     def get_sentiment(
         self, ticker: str, asof: date, lookback_days: int = 7
     ) -> SentimentSummary:
-        # No reliable free sentiment source for A-shares yet (snowball/xueqiu
-        # API has aggressive rate limits). Punt to mock so the analyst pipeline
-        # still runs end-to-end. Future: scrape 雪球/股吧 mention counts.
-        return self._fallback.get_sentiment(ticker, asof, lookback_days)
+        """Synthesize sentiment from EastMoney 关注度排行榜 + 个股热门关键词.
+
+        akshare exposes:
+            stock_hot_rank_em()             - top-100 retail-attention list
+            stock_hot_keyword_em(symbol)    - per-ticker hot keywords
+            stock_hot_rank_detail_em(sym)   - historical rank time-series
+
+        We mine these for: how popular is THIS ticker right now, what
+        themes are people talking about, and is the buzz trending up or
+        down. Output is shaped to fit the SentimentSummary schema so
+        downstream sentiment analyst doesn't need to know the data source.
+
+        Falls back to mock on any error — akshare endpoints can change.
+        """
+        if not self._available:
+            return self._fallback.get_sentiment(ticker, asof, lookback_days)
+        try:
+            ak = self._ak()
+            t = self._normalize_ticker(ticker)
+
+            # Top-100 retail-attention ranking (东方财富 个股人气榜)
+            rank_list = None
+            try:
+                rank_list = ak.stock_hot_rank_em()
+            except Exception as e:
+                log.debug("stock_hot_rank_em failed: %s", e)
+
+            mention_count = 0
+            attention_rank: int | None = None
+            top_total = 0
+            if rank_list is not None and not rank_list.empty:
+                top_total = len(rank_list)
+                # akshare returns columns like 当前排名/代码/股票名称/最新价/涨跌幅/...
+                cols = list(rank_list.columns)
+                code_col = next(
+                    (c for c in cols if "代码" in c or "code" in c.lower()),
+                    cols[1] if len(cols) > 1 else cols[0],
+                )
+                rank_col = next(
+                    (c for c in cols if "排名" in c or "rank" in c.lower()),
+                    cols[0],
+                )
+                # The code may include market prefix e.g. SZ301308; match on suffix
+                hits = rank_list[rank_list[code_col].astype(str).str.endswith(t)]
+                if not hits.empty:
+                    try:
+                        attention_rank = int(hits.iloc[0][rank_col])
+                    except (TypeError, ValueError):
+                        attention_rank = None
+                    # Use rank position as a proxy for "mention count" — top
+                    # of the list = more mentions. Scale: 1st = 100, 100th = 1.
+                    mention_count = max(1, top_total - (attention_rank or top_total) + 1)
+
+            # Per-ticker hot keywords → top_themes
+            top_themes: list[str] = []
+            try:
+                kw = ak.stock_hot_keyword_em(symbol=t)
+                if kw is not None and not kw.empty:
+                    cols = list(kw.columns)
+                    # Common shape: 时间/股票代码/概念名称/概念代码/热度值
+                    name_col = next(
+                        (c for c in cols if "概念" in c or "关键词" in c or "name" in c.lower()),
+                        cols[2] if len(cols) > 2 else cols[0],
+                    )
+                    top_themes = [
+                        str(v).strip()
+                        for v in kw[name_col].head(8).tolist()
+                        if str(v).strip()
+                    ]
+            except Exception as e:
+                log.debug("stock_hot_keyword_em failed: %s", e)
+
+            # We don't have a reliable bullish/bearish split — leave as 0.5/0.5
+            # and let the analyst LLM read top_themes + rank context to form
+            # its own qualitative view. Set notable_posts with rank context.
+            notable: list[str] = []
+            if attention_rank is not None and top_total:
+                notable.append(
+                    f"东方财富个股人气榜：第 {attention_rank} 名 / 共 {top_total} 只（值越小越热）"
+                )
+            if top_themes:
+                notable.append("热门概念关键词：" + "、".join(top_themes[:5]))
+
+            if not notable and not top_themes:
+                # No useful signal — fall back to mock instead of empty data
+                return self._fallback.get_sentiment(ticker, asof, lookback_days)
+
+            return SentimentSummary(
+                ticker=ticker,
+                asof=asof,
+                lookback_days=lookback_days,
+                mention_count=mention_count,
+                bullish_share=0.5,
+                bearish_share=0.5,
+                top_themes=top_themes,
+                notable_posts=notable,
+            )
+        except Exception as e:
+            log.warning("akshare sentiment failed (%s); falling back to mock", e)
+            return self._fallback.get_sentiment(ticker, asof, lookback_days)
 
     def get_technical(self, ticker: str, asof: date) -> TechnicalSnapshot:
         if not self._available:

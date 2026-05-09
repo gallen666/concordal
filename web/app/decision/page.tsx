@@ -124,6 +124,14 @@ export default function DecisionPage() {
     api.me().then(setUser).catch(() => undefined);
   }, []);
 
+  // Read ?ticker=XXX from the URL so /hot, /watchlist etc. can deep-link.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("ticker");
+    if (t) setTicker(t.toUpperCase());
+  }, []);
+
   async function run({ forceRefresh = false }: { forceRefresh?: boolean } = {}) {
     setLoading(true);
     setError(null);
