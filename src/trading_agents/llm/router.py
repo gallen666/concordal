@@ -272,20 +272,37 @@ class AnthropicProvider(_ProviderBase):
 
 
 class GeminiProvider(_ProviderBase):
-    """Google Gemini via the official `google-genai` SDK.
+    """Google Gemini.
 
-    Uses the unified `GenerateContentConfig` so we can pass the analyst's
-    system prompt as `system_instruction` and the rendered facts as `contents`.
+    Two transport modes, chosen at __init__:
+
+    * **Direct REST** when `GEMINI_API_BASE` is set — used to route around
+      the Singapore IP geo-block on Render free tier by going through a
+      tiny Vercel edge proxy. The base URL should point at the proxy root
+      that re-emits requests to https://generativelanguage.googleapis.com.
+
+    * **Official google-genai SDK** otherwise, for local dev / non-blocked
+      regions.
     """
 
     name = "gemini"
 
-    def __init__(self, api_key: str):
-        from google import genai
-        self._client = genai.Client(api_key=api_key)
+    def __init__(self, api_key: str, base_url: str | None = None):
+        self._api_key = api_key
+        self._base_url = (base_url or "").rstrip("/") or None
+        self._client = None  # lazy-initialised SDK client
+        if self._base_url is None:
+            # Only import the SDK if we'll actually use it. This keeps the
+            # container tiny in proxy-mode and avoids the SDK's circular
+            # import quirk during sandbox tests.
+            from google import genai  # noqa: F401  (validated at boot)
 
-    def complete(self, system: str, user: str, model: str, **kw) -> LLMResponse:
+    def _sdk_complete(self, system: str, user: str, model: str, **kw) -> LLMResponse:
+        from google import genai
         from google.genai import types
+
+        if self._client is None:
+            self._client = genai.Client(api_key=self._api_key)
 
         resp = self._client.models.generate_content(
             model=model,
@@ -300,6 +317,47 @@ class GeminiProvider(_ProviderBase):
         meta = getattr(resp, "usage_metadata", None)
         in_tok = getattr(meta, "prompt_token_count", 0) or 0
         out_tok = getattr(meta, "candidates_token_count", 0) or 0
+        return self._wrap(text, in_tok, out_tok, model)
+
+    def _rest_complete(self, system: str, user: str, model: str, **kw) -> LLMResponse:
+        import httpx
+
+        url = f"{self._base_url}/v1beta/models/{model}:generateContent"
+        body = {
+            "system_instruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "generationConfig": {
+                "temperature": kw.get("temperature", 0.3),
+                "maxOutputTokens": kw.get("max_tokens", 4096),
+            },
+        }
+        # Pass the key via header — same as the SDK. Some proxies strip
+        # query params; header form is safer.
+        headers = {
+            "x-goog-api-key": self._api_key,
+            "content-type": "application/json",
+        }
+        with httpx.Client(timeout=httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=30.0)) as client:
+            resp = client.post(url, json=body, headers=headers)
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"gemini proxy call failed: HTTP {resp.status_code} {resp.text[:400]}"
+            )
+        data = resp.json()
+        # Extract text from candidates[0].content.parts[*].text
+        text = ""
+        try:
+            cand = (data.get("candidates") or [{}])[0]
+            parts = (cand.get("content") or {}).get("parts") or []
+            text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+        except Exception:
+            text = ""
+        usage = data.get("usageMetadata") or {}
+        in_tok = int(usage.get("promptTokenCount") or 0)
+        out_tok = int(usage.get("candidatesTokenCount") or 0)
+        return self._wrap(text, in_tok, out_tok, model)
+
+    def _wrap(self, text: str, in_tok: int, out_tok: int, model: str) -> LLMResponse:
         in_p, out_p = _PRICES.get(model, (0.0, 0.0))
         cost = in_tok / 1e6 * in_p + out_tok / 1e6 * out_p
         return LLMResponse(
@@ -311,6 +369,11 @@ class GeminiProvider(_ProviderBase):
                 usd_cost=round(cost, 6),
             ),
         )
+
+    def complete(self, system: str, user: str, model: str, **kw) -> LLMResponse:
+        if self._base_url is not None:
+            return self._rest_complete(system, user, model, **kw)
+        return self._sdk_complete(system, user, model, **kw)
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +400,11 @@ class LLMRouter:
         gm = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if gm:
             try:
-                self._gemini = GeminiProvider(gm)
+                # Optional proxy: route Gemini calls through a Vercel edge
+                # function so that backend hosts in Gemini-blocked regions
+                # (e.g. Render free-tier Singapore) can still reach the API.
+                gm_base = os.getenv("GEMINI_API_BASE") or None
+                self._gemini = GeminiProvider(gm, base_url=gm_base)
             except Exception as e:
                 log.warning("Gemini init failed: %s", e)
 
