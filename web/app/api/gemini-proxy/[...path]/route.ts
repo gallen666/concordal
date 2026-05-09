@@ -17,12 +17,24 @@ export const dynamic = "force-dynamic";
 
 const UPSTREAM = "https://generativelanguage.googleapis.com";
 
-function buildTargetUrl(path: string[], search: string): string {
+function buildTargetUrl(path: string[], reqUrl: string): string {
   // path may already contain colon-segments (e.g. "models/gemini-2.5-pro:generateContent")
   const joined = path.map(encodeURIComponent).join("/")
     // colons must stay literal for Google's REST routes
     .replace(/%3A/gi, ":");
-  return `${UPSTREAM}/${joined}${search}`;
+
+  // Vercel/Next.js catch-all routes inject the matched slug as a `path`
+  // query parameter on req.url. Google rejects it ("Cannot bind query
+  // parameter `path`"), so strip it. Also drop the framework's `nxtP`
+  // internals if present.
+  const incoming = new URL(reqUrl).searchParams;
+  const out = new URLSearchParams();
+  for (const [k, v] of incoming.entries()) {
+    if (k === "path" || k.startsWith("nxtP") || k.startsWith("nxtI")) continue;
+    out.append(k, v);
+  }
+  const search = out.toString();
+  return `${UPSTREAM}/${joined}${search ? "?" + search : ""}`;
 }
 
 function pruneRequestHeaders(src: Headers): Headers {
@@ -73,8 +85,7 @@ async function proxy(
   if (!path || path.length === 0) {
     return new Response("missing path", { status: 400 });
   }
-  const url = new URL(req.url);
-  const target = buildTargetUrl(path, url.search);
+  const target = buildTargetUrl(path, req.url);
 
   const headers = pruneRequestHeaders(req.headers);
   // Some clients set this; others don't — we don't care, just forward.
