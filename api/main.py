@@ -18,6 +18,7 @@ import time
 import uuid
 from collections import defaultdict, deque
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import (
@@ -411,6 +412,44 @@ def decision_history(
     user: CurrentUser = Depends(get_current_user),
 ) -> list[dict]:
     return [e.model_dump(mode="json") for e in memory.recent(ticker, n=limit)]
+
+
+class FeedbackRequest(BaseModel):
+    ticker: str
+    asof: date
+    side: str
+    verdict: str  # "up" or "down"
+    note: str | None = None
+
+
+@app.post("/v1/feedback")
+def submit_feedback(
+    req: FeedbackRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Persist a user's verdict on a past decision.
+
+    Writes a JSONL line per feedback event. Cheap, append-only, easy to
+    grep — exactly what we need for prompt iteration. When we have enough
+    rows we'll move to a real DB and use them as RLHF labels.
+    """
+    if req.verdict not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="verdict must be up|down")
+    feedback_dir = Path(os.getenv("TA_DATA_DIR", "./.tradingagents")) / "_feedback"
+    feedback_dir.mkdir(parents=True, exist_ok=True)
+    row = {
+        "user_id": user.id,
+        "ticker": req.ticker,
+        "asof": req.asof.isoformat(),
+        "side": req.side,
+        "verdict": req.verdict,
+        "note": req.note,
+        "submitted_at": datetime.now(tz=timezone.utc).isoformat(),
+    }
+    with (feedback_dir / "feedback.jsonl").open("a", encoding="utf-8") as f:
+        import json as _json
+        f.write(_json.dumps(row, ensure_ascii=False) + "\n")
+    return {"ok": True}
 
 
 @app.get("/v1/me/decisions")

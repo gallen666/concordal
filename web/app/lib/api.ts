@@ -176,6 +176,22 @@ export const api = {
    */
   myDecisions: () =>
     _fetch<MyDecision[]>("/v1/me/decisions?enrich_pnl=true&limit=200"),
+
+  /**
+   * Thumbs up / down on a specific decision. Stored to a JSONL log for
+   * later prompt iteration and (eventually) RLHF training data.
+   */
+  feedback: (req: {
+    ticker: string;
+    asof: string;
+    side: string;
+    verdict: "up" | "down";
+    note?: string;
+  }) =>
+    _fetch<{ ok: boolean }>("/v1/feedback", {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
 };
 
 /** A single past decision the user made, optionally enriched with forward PnL. */

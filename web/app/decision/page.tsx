@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
@@ -23,9 +24,11 @@ import {
 } from "lucide-react";
 import {
   api,
+  auth,
   type DecisionTrace,
   type DebateTranscript,
   type AnalystReport,
+  type CurrentUser,
 } from "../lib/api";
 import { cn } from "../lib/cn";
 import { useT } from "../lib/i18n";
@@ -111,6 +114,12 @@ export default function DecisionPage() {
   const [stage, setStage] = useState<string | null>(null);
   const [result, setResult] = useState<DecisionTrace | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [user, setUser] = useState<CurrentUser | null>(null);
+
+  useEffect(() => {
+    if (!auth.isLoggedIn()) return;
+    api.me().then(setUser).catch(() => undefined);
+  }, []);
 
   async function run() {
     setLoading(true);
@@ -147,6 +156,7 @@ export default function DecisionPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
+      {user && !user.real_llm && <MockBanner />}
       <div className="mb-6">
         <span className="label-cap">{t("decision.label")}</span>
         <h1 className="text-2xl font-semibold mt-1">
@@ -331,6 +341,60 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
           <RiskView transcript={trace.risk_debate} />
         </Section>
       )}
+
+      <FeedbackBar trace={trace} />
+    </div>
+  );
+}
+
+/** Thumbs up / down on the decision. Persists to /v1/feedback so we can
+ *  later use it as ground-truth labels for prompt iteration / RLHF. */
+function FeedbackBar({ trace }: { trace: DecisionTrace }) {
+  const { t } = useT();
+  const [sent, setSent] = useState<"up" | "down" | null>(null);
+
+  async function send(verdict: "up" | "down") {
+    if (sent) return;
+    setSent(verdict);
+    try {
+      await api.feedback({
+        ticker: trace.ticker,
+        asof: trace.asof,
+        side: trace.decision.side,
+        verdict,
+      });
+    } catch {
+      // best-effort; UI already says thanks
+    }
+  }
+
+  if (sent) {
+    return (
+      <div className="flex items-center justify-center gap-2 text-sm text-ink-tertiary py-2">
+        <CheckCircle2 className="w-4 h-4 text-accent" />
+        {t("feedback.thanks")}
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-center gap-3 py-2 text-sm">
+      <span className="text-ink-tertiary">{t("feedback.prompt")}</span>
+      <button
+        onClick={() => send("up")}
+        className="btn-ghost px-3 py-1.5"
+        aria-label={t("feedback.helpful")}
+      >
+        <span aria-hidden>👍</span>
+        <span>{t("feedback.helpful")}</span>
+      </button>
+      <button
+        onClick={() => send("down")}
+        className="btn-ghost px-3 py-1.5"
+        aria-label={t("feedback.notHelpful")}
+      >
+        <span aria-hidden>👎</span>
+        <span>{t("feedback.notHelpful")}</span>
+      </button>
     </div>
   );
 }
@@ -744,6 +808,37 @@ function SkeletonReport() {
           <div className="h-20 bg-bg-hover rounded animate-pulse" />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Banner shown above the decision form when the current user is NOT on the
+ * real-LLM allowlist. Mock mode produces deterministic template output that
+ * looks like analysis but is unrelated to the actual ticker — without this
+ * banner, friends might mistake mock for real signal. Honest by default.
+ */
+function MockBanner() {
+  const { t } = useT();
+  return (
+    <div className="mb-6 surface border-signal-warn/40 p-4 flex gap-3 items-start bg-signal-warn_soft/40">
+      <AlertTriangle className="w-5 h-5 text-signal-warn shrink-0 mt-0.5" />
+      <div className="flex-1 text-sm">
+        <div className="font-semibold text-ink-primary">
+          {t("mockBanner.title")}
+        </div>
+        <p className="text-ink-secondary mt-1 leading-relaxed">
+          {t("mockBanner.body")}
+        </p>
+      </div>
+      <Link
+        href="https://github.com/gallen666/trading-agents-platform/issues"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="btn-ghost text-xs whitespace-nowrap"
+      >
+        {t("mockBanner.contact")}
+      </Link>
     </div>
   );
 }
