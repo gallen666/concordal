@@ -34,6 +34,8 @@ interface HotRow {
 
 interface HotResp {
   source: string;
+  source_status?: "ok" | "unavailable";
+  message?: string;
   fetched_at: string;
   rows: HotRow[];
 }
@@ -109,7 +111,20 @@ export default function HotPage() {
         </div>
       )}
 
-      {data && data.rows.length > 0 && <RankTable rows={data.rows} />}
+      {data && data.source_status === "unavailable" && (
+        <div className="surface p-8 text-center space-y-3">
+          <div className="inline-flex w-12 h-12 rounded-xl bg-signal-warn_soft text-signal-warn items-center justify-center">
+            <Flame className="w-5 h-5" />
+          </div>
+          <p className="text-sm text-ink-secondary max-w-2xl mx-auto leading-relaxed">
+            {data.message || "Source unavailable."}
+          </p>
+        </div>
+      )}
+
+      {data && data.source_status === "ok" && data.rows.length > 0 && (
+        <RankTable rows={data.rows} />
+      )}
 
       <p className="text-xs text-ink-tertiary text-center pt-4">
         Source:{" "}

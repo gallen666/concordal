@@ -521,30 +521,56 @@ def cn_hot_rankings(limit: int = 20) -> dict:
     """East Money 个股人气榜 (retail attention rank) — top-N A-shares.
 
     Public endpoint (no auth) so it can power the /hot landing page.
-    Cached server-side for 60s to avoid hammering EastMoney.
+
+    NOTE: EastMoney's `emrnweb.eastmoney.com` endpoint is geo-restricted —
+    returns empty / HTML / blocked page when called from non-Chinese IPs
+    (which is what Render Singapore is). We catch all upstream errors and
+    return 200 with `source_status="unavailable"` so the frontend can show
+    a friendly explanation rather than a red HTTP 502.
 
     Returns:
         {
           "source": "EastMoney 个股人气榜",
+          "source_status": "ok" | "unavailable",
           "fetched_at": ISO timestamp,
           "rows": [{rank, ticker, name, last_price, change_pct, heat}, ...],
+          "message": optional explanation when status != "ok"
         }
     """
-    # Lazy import: don't load akshare at module init (heavy)
+    base = {
+        "source": "EastMoney 个股人气榜",
+        "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+    }
     try:
         import akshare as ak
     except ImportError:
-        raise HTTPException(status_code=503, detail="akshare not installed")
+        return {
+            **base,
+            "source_status": "unavailable",
+            "rows": [],
+            "message": "akshare not installed on this server.",
+        }
     try:
         df = ak.stock_hot_rank_em()
     except Exception as e:
         log.warning("ak.stock_hot_rank_em failed: %s", e)
-        raise HTTPException(status_code=502, detail=f"upstream error: {e}")
+        return {
+            **base,
+            "source_status": "unavailable",
+            "rows": [],
+            "message": (
+                f"东方财富数据源暂不可达（错误：{e}）。"
+                "本服务器在 Singapore，EastMoney 部分接口对境外 IP 限制访问。"
+                " / EastMoney source temporarily unreachable: this server is"
+                " in Singapore and EastMoney restricts some endpoints to CN IPs."
+            ),
+        }
     if df is None or df.empty:
         return {
-            "source": "EastMoney 个股人气榜",
-            "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+            **base,
+            "source_status": "unavailable",
             "rows": [],
+            "message": "Upstream returned no data.",
         }
 
     # akshare column names vary by version. Map by content rather than name.
@@ -581,8 +607,8 @@ def cn_hot_rankings(limit: int = 20) -> dict:
         rows.append(row)
 
     return {
-        "source": "EastMoney 个股人气榜",
-        "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+        **base,
+        "source_status": "ok",
         "rows": rows,
     }
 

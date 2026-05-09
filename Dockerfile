@@ -36,6 +36,12 @@ ENV PYTHONPATH=/app/src \
     TA_DATA_DIR=/app/.tradingagents \
     TA_MODE=mock
 
+# NOTE: /app/.tradingagents is on the container's ephemeral filesystem.
+# Decision history (MemoryStore JSONL files) is wiped on every redeploy.
+# To get persistence, mount a Render persistent disk at /var/data and
+# set TA_DATA_DIR=/var/data/tradingagents in the service env settings.
+# Long-term fix: move to Postgres (Supabase free tier handles this well).
+
 # Railway / Fly inject $PORT; default to 8000 locally.
 ENV PORT=8000
 EXPOSE 8000
