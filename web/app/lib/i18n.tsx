@@ -296,6 +296,91 @@ const dict = {
   "hot.fetched":                { en: "Fetched at",                         zh: "拉取时间" },
   "hot.runAnalysis":            { en: "Run analysis",                       zh: "跑决策" },
 
+  // ---- /pricing page ----------------------------------------------------
+  "header.pricing":             { en: "Pricing",                            zh: "定价" },
+  "header.proof":               { en: "Proof",                              zh: "证据" },
+  "pricing.label":              { en: "PRICING",                            zh: "定价方案" },
+  "pricing.heading":            {
+    en: "Pay for the alpha, not the lights",
+    zh: "为信号付费，不为门面",
+  },
+  "pricing.subheading":         {
+    en: "Free tier runs the real 8-source pipeline against mock LLMs so you can see exactly what the system does. Upgrade only when you want real LLM-driven decisions and unlimited runs.",
+    zh: "免费档跑完整 8 源 pipeline + mock LLM——你能完整看到系统做什么。只有当你需要真 LLM 驱动的决策 + 无限调用时再升级。",
+  },
+  "pricing.tier.free":          { en: "Free",                               zh: "免费" },
+  "pricing.tier.pro":           { en: "Pro",                                zh: "Pro" },
+  "pricing.tier.team":          { en: "Team",                               zh: "团队" },
+  "pricing.price.free":         { en: "$0",                                 zh: "¥0" },
+  "pricing.price.pro":          { en: "$29 /mo",                            zh: "¥199 /月" },
+  "pricing.price.team":         { en: "$99 /mo",                            zh: "¥699 /月" },
+  "pricing.price.suffix.free":  { en: "forever",                            zh: "永久" },
+  "pricing.price.suffix.pro":   { en: "billed monthly",                     zh: "月付" },
+  "pricing.price.suffix.team":  { en: "5 seats incl.",                      zh: "含 5 个席位" },
+  "pricing.cta.free":           { en: "Get started",                        zh: "免费开始" },
+  "pricing.cta.pro":            { en: "Upgrade to Pro",                     zh: "升级 Pro" },
+  "pricing.cta.team":           { en: "Talk to us",                         zh: "联系我们" },
+  "pricing.included":           { en: "Included",                           zh: "包含" },
+  "pricing.notIncluded":        { en: "Not included",                       zh: "不包含" },
+  "pricing.faq.title":          { en: "FAQ",                                zh: "常见问题" },
+  "pricing.faq.q1":             { en: "Why does Pro cost what it does?",    zh: "Pro 为什么是这个价" },
+  "pricing.faq.a1":             {
+    en: "One real-LLM decision through the full 5-analyst + 2-debate pipeline costs us about $0.05–$0.20 in API calls (depending on model + ticker). Pro gets you ~30 decisions/day = $90/mo at our cost. We charge $29 because volume + caching gets us there sustainably.",
+    zh: "一次真 LLM 完整决策（5 分析师 + 2 轮辩论）我们的 API 成本是 $0.05–$0.20。Pro 给你约 30 次/天 = 我们成本 $90/月。收 $29 是因为缓存 + 量上来后我们 sustainable。",
+  },
+  "pricing.faq.q2":             { en: "Can I bring my own LLM key?",        zh: "我能自带 LLM key 吗" },
+  "pricing.faq.a2":             {
+    en: "Yes. Self-host the open-source backend and set GEMINI_API_KEY / DEEPSEEK_API_KEY / ANTHROPIC_API_KEY. We'll be adding 'BYO key' tier on the hosted version soon — DM us.",
+    zh: "可以。自部署开源后端，设 GEMINI_API_KEY / DEEPSEEK_API_KEY 等环境变量即可。托管版的 \"自带 key\" 方案我们正在加，私信我们。",
+  },
+  "pricing.faq.q3":             { en: "Is this investment advice?",         zh: "这是投资建议吗" },
+  "pricing.faq.a3":             {
+    en: "No. Decision support — the system gives you a structured analyst view, but every position you take is your own call. We don't execute trades and we don't promise alpha.",
+    zh: "不是。决策支持工具——系统给你一个结构化的分析师视角，但每一笔仓位都是你自己的决定。我们不执行交易也不承诺 alpha。",
+  },
+
+  // ---- /proof trust page ------------------------------------------------
+  "proof.label":                { en: "PROOF",                              zh: "证据" },
+  "proof.heading":              {
+    en: "Why you can trust the output",
+    zh: "为什么可以信",
+  },
+  "proof.subheading":           {
+    en: "Every claim below is backed by code in the public repo. No black box.",
+    zh: "下面每条声明都对应公开仓库里的代码。没有黑盒。",
+  },
+  "proof.section.dataSources":  { en: "Real data sources",                  zh: "真实数据源" },
+  "proof.section.lookahead":    { en: "Strict no-lookahead",                zh: "严格禁止前瞻" },
+  "proof.section.crossVal":     { en: "Cross-validated against Backtrader", zh: "与 Backtrader 交叉验证" },
+  "proof.section.costModel":    { en: "Honest cost model",                  zh: "诚实的成本模型" },
+  "proof.section.openSource":   { en: "Fully open source",                  zh: "完全开源" },
+  "proof.section.tests":        { en: "Tests + CI",                         zh: "测试 + CI" },
+
+  // ---- Decision sharing -------------------------------------------------
+  "share.button":               { en: "Share decision",                     zh: "分享决策" },
+  "share.creating":              { en: "Creating link…",                    zh: "生成链接…" },
+  "share.copied":               { en: "Link copied!",                       zh: "链接已复制！" },
+  "share.copy":                 { en: "Copy link",                          zh: "复制链接" },
+  "share.modal.title":          { en: "Share this decision",                zh: "分享这个决策" },
+  "share.modal.body":           {
+    en: "Anyone with this link can view the full decision (no login required). The page shows your rationale + analyst reports, and links visitors back to make their own decisions.",
+    zh: "任何人有这个链接都能查看完整决策（无需登录）。页面会显示你的决策理由 + 分析师报告，并引导访客来做自己的决策。",
+  },
+  "share.modal.dismiss":        { en: "Done",                               zh: "完成" },
+  "share.publicView.label":     { en: "SHARED DECISION",                    zh: "分享的决策" },
+  "share.publicView.cta":       {
+    en: "Run your own — Free",
+    zh: "做你自己的 — 免费",
+  },
+  "share.publicView.body":      {
+    en: "This is a single decision generated by trading-agents-platform — a 5-analyst LLM pipeline (fundamentals + sentiment + news + technical + macro) that debates and votes on every ticker. You can run your own for free, no credit card.",
+    zh: "这是 trading-agents-platform 生成的一次决策——5 分析师 LLM pipeline（基本面 + 情绪 + 新闻 + 技术面 + 宏观）每一次都辩论 + 投票。你可以免费跑自己的，不用信用卡。",
+  },
+  "share.publicView.expired":   {
+    en: "This shared decision has expired or doesn't exist.",
+    zh: "这个分享链接已过期或不存在。",
+  },
+
   // ---- /decisions/[ticker] timeline comparison page ---------------------
   "tl.label":                   { en: "DECISION TIMELINE",                  zh: "决策时间线" },
   "tl.heading":                 {

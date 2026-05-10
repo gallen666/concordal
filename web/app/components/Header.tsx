@@ -69,6 +69,8 @@ export default function Header() {
               <NavLink href="/how-it-works">{t("header.howItWorks")}</NavLink>
               <NavLink href="/ecosystem">{t("header.ecosystem")}</NavLink>
               <NavLink href="/integrations">{t("header.integrations")}</NavLink>
+              <NavLink href="/proof">{t("header.proof")}</NavLink>
+              <NavLink href="/pricing">{t("header.pricing")}</NavLink>
               <ModeBadge real={user.real_llm} />
               {health && health.warnings.length > 0 && (
                 <DegradedBadge warnings={health.warnings} />
@@ -95,6 +97,8 @@ export default function Header() {
               <NavLink href="/track-record">{t("header.trackRecord")}</NavLink>
               <NavLink href="/ecosystem">{t("header.ecosystem")}</NavLink>
               <NavLink href="/integrations">{t("header.integrations")}</NavLink>
+              <NavLink href="/proof">{t("header.proof")}</NavLink>
+              <NavLink href="/pricing">{t("header.pricing")}</NavLink>
               {/* Show backend mode + degradation warnings to logged-out
                   visitors too — honesty by default. */}
               {health && <ModeBadge real={health.mode === "live"} />}

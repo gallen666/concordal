@@ -286,6 +286,56 @@ def test_alpha158_factors_produce_all_keys_with_enough_history():
     assert f["MA_DIFF"] > 0
 
 
+def test_share_endpoint_round_trip(monkeypatch):
+    """Share a finished job, then read it back unauth'd at /v1/decisions/share/{id}."""
+    import sys, os
+    sys.path.insert(0, ".")
+    monkeypatch.setenv("TA_MODE", "mock")
+    monkeypatch.setenv("TA_REQUIRE_INVITE", "false")
+    from fastapi.testclient import TestClient
+    from api.main import app, _jobs
+
+    c = TestClient(app)
+    # Seed a fake completed job
+    _jobs["test-share-1"] = {
+        "user": "anonymous",
+        "status": "done",
+        "result": {"ticker": "AAPL", "decision": {"side": "BUY", "target_weight": 0.05}},
+        "mode": "mock",
+    }
+    # Share it (auth as anonymous since require_invite=false)
+    r = c.post("/v1/decisions/job/test-share-1/share")
+    assert r.status_code == 200
+    sid = r.json()["share_id"]
+    assert len(sid) == 12
+
+    # Read it back without auth
+    r2 = c.get(f"/v1/decisions/share/{sid}")
+    assert r2.status_code == 200
+    payload = r2.json()
+    assert payload["share_id"] == sid
+    assert payload["result"]["ticker"] == "AAPL"
+
+    # Unknown share id => 404
+    r3 = c.get("/v1/decisions/share/doesnotexist")
+    assert r3.status_code == 404
+
+
+def test_share_endpoint_rejects_unfinished_job(monkeypatch):
+    """A job that hasn't completed (status != 'done') must NOT be shareable."""
+    import sys
+    sys.path.insert(0, ".")
+    monkeypatch.setenv("TA_MODE", "mock")
+    monkeypatch.setenv("TA_REQUIRE_INVITE", "false")
+    from fastapi.testclient import TestClient
+    from api.main import app, _jobs
+
+    c = TestClient(app)
+    _jobs["test-share-pending"] = {"user": "anonymous", "status": "queued", "result": None}
+    r = c.post("/v1/decisions/job/test-share-pending/share")
+    assert r.status_code == 400
+
+
 def test_alpha158_factors_short_history_no_crash():
     """With only 5 bars, compute_factors should not crash; missing factors
     default to 0.0 so analyst prompt's structured input has no holes."""

@@ -106,6 +106,14 @@ memory = MemoryStore()
 # --- in-memory job + rate-limit (swap to Redis when multi-replica) -------
 
 _jobs: dict[str, dict[str, Any]] = {}
+
+# Public, read-only registry of shared decisions. Created when a user
+# explicitly clicks Share on their decision result. Values are the raw
+# DecisionTrace JSON (anonymous — we don't store who created the share),
+# and we cap the dict to 5_000 entries with simple LRU eviction so it
+# fits in Render-free-tier memory and resets cleanly on redeploy.
+_shared_decisions: dict[str, dict[str, Any]] = {}
+_SHARE_LIMIT = 5_000
 _watchlists: dict[str, list[dict]] = {}
 
 # user -> deque of recent timestamps
@@ -576,6 +584,38 @@ def _has_pkg(name: str) -> bool:
         return False
 
 
+class UpgradeCheckoutRequest(BaseModel):
+    tier: str  # "pro" | "team"
+
+
+@app.post("/v1/upgrade/checkout")
+def upgrade_checkout(
+    req: UpgradeCheckoutRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Return a checkout URL for the requested tier.
+
+    Currently a placeholder — we route to a Tally/Stripe-Payment-Link
+    URL the operator configures via env. When Stripe is properly wired
+    we'll swap the body of this endpoint for a real Stripe Checkout
+    session creation. Frontend already opens the returned `url`, so
+    that swap requires no frontend change.
+
+    Why this exists today: the upgrade button on /pricing must do SOMETHING
+    real, even before payments are wired — otherwise visitors hit a dead
+    button and bounce. Pointing at a Tally form / Stripe payment link
+    captures intent + email without us needing PCI compliance yet.
+    """
+    if req.tier not in ("pro", "team"):
+        raise HTTPException(400, f"Unknown tier: {req.tier}")
+    base = os.environ.get(
+        "TA_UPGRADE_URL_" + req.tier.upper(),
+        # Default: a Tally / Google Form / waitlist URL
+        f"https://tally.so/r/upgrade?tier={req.tier}&user={user.id}",
+    )
+    return {"url": base, "tier": req.tier}
+
+
 @app.get("/v1/ecosystem")
 def ecosystem() -> dict:
     """Public catalog of every OSS project we integrate with.
@@ -630,6 +670,59 @@ def get_decision(
     if j.get("user") != user.id and user.id != "anonymous":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your job")
     return j
+
+
+@app.post("/v1/decisions/job/{job_id}/share")
+def share_decision(
+    job_id: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Mint a public share-id for the user's completed decision.
+
+    Anyone with the resulting URL can view the trace at /d/<id>. Only
+    the original requester can create a share — we enforce that via
+    the job's `user` field. Trace is copied (not referenced) so it
+    survives the job dict's natural GC.
+
+    No DB — keeps Render-free-tier ops simple. The 5k-entry LRU cap
+    means a runaway share-spam attempt eventually evicts old entries.
+    """
+    if job_id not in _jobs:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown job")
+    j = _jobs[job_id]
+    if j.get("user") != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your job to share")
+    if j.get("status") != "done" or not j.get("result"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Decision not finished yet")
+
+    share_id = uuid.uuid4().hex[:12]
+    # Strip user-facing fields that are job-internal: we want the public
+    # view to be just the decision artifact, not the job metadata.
+    payload = {
+        "share_id": share_id,
+        "result": j["result"],            # the DecisionTrace dict
+        "mode": j.get("mode"),            # "real_llm" / "mock" / "cached"
+        "lessons_injected": j.get("lessons_injected", False),
+        "shared_at": time.time(),
+    }
+    # LRU eviction: if we hit the cap, drop the oldest 100 entries by
+    # `shared_at`. Cheap and simple — share storage is best-effort.
+    if len(_shared_decisions) >= _SHARE_LIMIT:
+        oldest = sorted(_shared_decisions.items(), key=lambda kv: kv[1].get("shared_at", 0))[:100]
+        for k, _ in oldest:
+            _shared_decisions.pop(k, None)
+    _shared_decisions[share_id] = payload
+    return {"share_id": share_id}
+
+
+@app.get("/v1/decisions/share/{share_id}")
+def get_shared_decision(share_id: str) -> dict:
+    """Public, no-auth read of a shared decision. Returns 404 if the
+    share id is unknown or has been evicted."""
+    rec = _shared_decisions.get(share_id)
+    if not rec:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Share not found or expired")
+    return rec
 
 
 @app.post("/v1/backtests", response_model=JobResponse)

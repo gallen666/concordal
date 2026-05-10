@@ -9,6 +9,7 @@ import {
   BarChart3,
   Briefcase,
   CheckCircle2,
+  Copy,
   Gavel,
   Globe,
   LineChart,
@@ -17,6 +18,7 @@ import {
   Newspaper,
   Play,
   RefreshCw,
+  Share2,
   ShieldCheck,
   Sparkles,
   TrendingDown,
@@ -125,6 +127,8 @@ export default function DecisionPage() {
   const [progress, setProgress] = useState<DecisionProgress | null>(null);
   // Did the Manager prompt get reflection memory injected this run?
   const [lessonsInjected, setLessonsInjected] = useState(false);
+  // Job id of the just-finished decision — used as the source for share()
+  const [jobId, setJobId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!auth.isLoggedIn()) return;
@@ -153,6 +157,7 @@ export default function DecisionPage() {
         locale,
         use_cache: !forceRefresh,
       });
+      setJobId(job.job_id);
       setStage(t("decision.running"));
       // Poll the job status with **gentle backoff** — first 5 seconds we
       // poll fast (1s) so the user sees the early stages light up, then
@@ -290,12 +295,12 @@ export default function DecisionPage() {
         </>
       )}
 
-      {result && <DecisionView trace={result} />}
+      {result && <DecisionView trace={result} jobId={jobId} />}
     </div>
   );
 }
 
-function DecisionView({ trace }: { trace: DecisionTrace }) {
+function DecisionView({ trace, jobId }: { trace: DecisionTrace; jobId: string | null }) {
   const { t } = useT();
   const d = trace.decision;
   const style = SIDE_STYLES[d.side] || SIDE_STYLES.HOLD;
@@ -428,7 +433,10 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
         </Section>
       )}
 
-      <FeedbackBar trace={trace} />
+      <div className="flex items-center justify-between flex-wrap gap-3 pt-3 border-t border-border-subtle">
+        <FeedbackBar trace={trace} />
+        {jobId && <ShareButton jobId={jobId} />}
+      </div>
     </div>
   );
 }
@@ -482,6 +490,76 @@ function FeedbackBar({ trace }: { trace: DecisionTrace }) {
         <span>{t("feedback.notHelpful")}</span>
       </button>
     </div>
+  );
+}
+
+/** Share button — generates a /d/[shareId] public URL the user can paste anywhere. */
+function ShareButton({ jobId }: { jobId: string }) {
+  const { t } = useT();
+  const [busy, setBusy] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function generate() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { share_id } = await api.shareDecision(jobId);
+      const url = `${window.location.origin}/d/${share_id}`;
+      setShareUrl(url);
+    } catch (e: unknown) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy() {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore
+    }
+  }
+
+  if (shareUrl) {
+    return (
+      <div className="flex items-center gap-2 surface px-3 py-1.5 text-xs">
+        <code className="font-mono truncate max-w-[280px] sm:max-w-md">{shareUrl}</code>
+        <button onClick={copy} className="btn-ghost text-xs px-2 py-1">
+          {copied ? (
+            <>
+              <CheckCircle2 className="w-3.5 h-3.5 text-accent" />
+              {t("share.copied")}
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5" />
+              {t("share.copy")}
+            </>
+          )}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button onClick={generate} disabled={busy} className="btn-secondary text-sm">
+      {busy ? (
+        <>
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          {t("share.creating")}
+        </>
+      ) : (
+        <>
+          <Share2 className="w-3.5 h-3.5" />
+          {t("share.button")}
+        </>
+      )}
+    </button>
   );
 }
 
@@ -1084,12 +1162,11 @@ function MockBanner() {
         </p>
       </div>
       <Link
-        href="https://github.com/gallen666/trading-agents-platform/issues"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="btn-ghost text-xs whitespace-nowrap"
+        href="/pricing#pro"
+        className="btn-primary text-xs whitespace-nowrap"
       >
-        {t("mockBanner.contact")}
+        <Sparkles className="w-3.5 h-3.5" />
+        {t("pricing.cta.pro")}
       </Link>
     </div>
   );

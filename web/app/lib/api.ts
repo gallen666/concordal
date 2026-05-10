@@ -197,6 +197,43 @@ export const api = {
     _fetch<MyDecision[]>("/v1/me/decisions?enrich_pnl=true&limit=200"),
 
   /**
+   * Mint a public share-id for the just-finished decision. Anyone with
+   * the resulting URL can view it at /d/<id>. Only the user who created
+   * the decision can share it.
+   */
+  shareDecision: (job_id: string) =>
+    _fetch<{ share_id: string }>(`/v1/decisions/job/${job_id}/share`, {
+      method: "POST",
+    }),
+
+  /**
+   * Public, no-auth read of a shared decision. Used by /d/[shareId].
+   * Bypasses the JWT-injection helper since this endpoint is unauthed.
+   */
+  getSharedDecision: (share_id: string) =>
+    fetch(`${BASE}/v1/decisions/share/${share_id}`).then(async (r) => {
+      if (!r.ok) throw new Error(`${r.status}`);
+      return r.json() as Promise<{
+        share_id: string;
+        result: DecisionTrace;
+        mode?: string;
+        lessons_injected?: boolean;
+        shared_at: number;
+      }>;
+    }),
+
+  /**
+   * Begin an upgrade flow for a paid tier. Returns the URL the frontend
+   * should open. Today this is a Tally/Payment-Link URL; once Stripe is
+   * wired the backend swaps in a Stripe Checkout Session — no client change.
+   */
+  upgradeCheckout: (req: { tier: "pro" | "team" }) =>
+    _fetch<{ url: string; tier: string }>("/v1/upgrade/checkout", {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+
+  /**
    * Thumbs up / down on a specific decision. Stored to a JSONL log for
    * later prompt iteration and (eventually) RLHF training data.
    */
