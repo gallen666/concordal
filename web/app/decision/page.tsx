@@ -10,6 +10,7 @@ import {
   Briefcase,
   CheckCircle2,
   Gavel,
+  Globe,
   LineChart,
   Loader2,
   MessageCircle,
@@ -354,7 +355,7 @@ function DecisionView({ trace }: { trace: DecisionTrace }) {
             />
             <StatCell
               label={t("decision.reports")}
-              value={`${trace.analyst_reports.length} / 4`}
+              value={`${trace.analyst_reports.length} / 5`}
               mono
             />
           </div>
@@ -566,7 +567,7 @@ function Section({
 
 const ANALYST_META: Record<
   string,
-  { icon: React.ReactNode; color: string; labelKey: "decision.fundamentals" | "decision.sentiment" | "decision.news" | "decision.technical" }
+  { icon: React.ReactNode; color: string; labelKey: "decision.fundamentals" | "decision.sentiment" | "decision.news" | "decision.technical" | "decision.macro" }
 > = {
   fundamentals: {
     icon: <BarChart3 className="w-4 h-4" />,
@@ -587,6 +588,11 @@ const ANALYST_META: Record<
     icon: <LineChart className="w-4 h-4" />,
     color: "text-purple-400",
     labelKey: "decision.technical",
+  },
+  macro: {
+    icon: <Globe className="w-4 h-4" />,
+    color: "text-signal-info",
+    labelKey: "decision.macro",
   },
 };
 
@@ -796,6 +802,7 @@ function useStages() {
     { key: "sentiment", label: t("decision.sentiment"), icon: <Users className="w-3.5 h-3.5" /> },
     { key: "news", label: t("decision.news"), icon: <Newspaper className="w-3.5 h-3.5" /> },
     { key: "technical", label: t("decision.technical"), icon: <LineChart className="w-3.5 h-3.5" /> },
+    { key: "macro", label: t("decision.macro"), icon: <Globe className="w-3.5 h-3.5" /> },
     {
       key: "researcher",
       label: `${t("decision.bull")} / ${t("decision.bear")}`,
@@ -812,7 +819,7 @@ function PipelineTimeline({ trace }: { trace: DecisionTrace }) {
   const reports = new Set(trace.analyst_reports.map((r) => r.analyst));
   const completed = (k: string) => {
     if (k === "quote") return true;
-    if (["fundamentals", "sentiment", "news", "technical"].includes(k))
+    if (["fundamentals", "sentiment", "news", "technical", "macro"].includes(k))
       return reports.has(k);
     if (k === "researcher") return !!trace.researcher_debate;
     if (k === "trader") return !!trace.trader_plan;
@@ -871,6 +878,7 @@ const LIVE_STAGES: Array<{
     | "progress.sentiment"
     | "progress.news"
     | "progress.technical"
+    | "progress.macro"
     | "progress.researcher_debate"
     | "progress.trader"
     | "progress.risk_debate"
@@ -882,6 +890,7 @@ const LIVE_STAGES: Array<{
   { key: "sentiment", labelKey: "progress.sentiment", icon: <Users className="w-3.5 h-3.5" /> },
   { key: "news", labelKey: "progress.news", icon: <Newspaper className="w-3.5 h-3.5" /> },
   { key: "technical", labelKey: "progress.technical", icon: <LineChart className="w-3.5 h-3.5" /> },
+  { key: "macro", labelKey: "progress.macro", icon: <Globe className="w-3.5 h-3.5" /> },
   { key: "researcher_debate", labelKey: "progress.researcher_debate", icon: <MessageCircle className="w-3.5 h-3.5" /> },
   { key: "trader", labelKey: "progress.trader", icon: <Briefcase className="w-3.5 h-3.5" /> },
   { key: "risk_debate", labelKey: "progress.risk_debate", icon: <ShieldCheck className="w-3.5 h-3.5" /> },

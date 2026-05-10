@@ -16,12 +16,14 @@ from datetime import date, datetime, timedelta, timezone
 from ..core.regime import US_EQUITY
 from ..core.types import (
     Fundamentals,
+    MacroSnapshot,
     NewsItem,
     Quote,
     SentimentSummary,
     TechnicalSnapshot,
 )
 from .base import AdapterError, MarketAdapter
+from .macro_openbb import fetch_macro_snapshot
 from .mock import MockAdapter
 
 log = logging.getLogger(__name__)
@@ -251,3 +253,14 @@ class YahooUSEquityAdapter(MarketAdapter):
         except Exception as e:
             log.warning("Yahoo price history failed (%s)", e)
             return self._fallback.get_price_history(ticker, start, end)
+
+    # ---- macro context (OpenBB / FRED) -----------------------------------
+
+    def get_macro(self, asof: date) -> MacroSnapshot | None:
+        """Top-down US macro snapshot.
+
+        Tries OpenBB first, falls back to direct FRED REST. Returns None
+        if neither backend is available — the pipeline will then skip
+        the Macro analyst stage gracefully.
+        """
+        return fetch_macro_snapshot(asof, region="US")

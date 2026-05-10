@@ -23,6 +23,7 @@ from datetime import date, datetime
 from ..core.regime import RegimeProfile
 from ..core.types import (
     Fundamentals,
+    MacroSnapshot,
     NewsItem,
     Quote,
     SentimentSummary,
@@ -79,6 +80,21 @@ class MarketAdapter(ABC):
         self, ticker: str, start: date, end: date
     ) -> list[Quote]:
         """Used by the backtester (its only data source)."""
+
+    # ---- optional accessors (default no-op) ---------------------------------
+
+    def get_macro(self, asof: date) -> MacroSnapshot | None:
+        """Top-down macro context for the Macro analyst.
+
+        Default: returns None, which causes the Macro analyst stage to be
+        skipped. Adapters that have access to a macro data source (FRED
+        via OpenBB, NBS via akshare, etc.) should override.
+
+        We keep this OPTIONAL on purpose — macro adds latency and cost,
+        and not every market / decision benefits from it. Markets where
+        macro is essential (rates trades, FX) override; others default.
+        """
+        return None
 
     # ---- helpers (default implementations) -----------------------------------
 

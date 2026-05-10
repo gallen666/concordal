@@ -19,12 +19,14 @@ from typing import Any
 from ..core.regime import A_SHARE
 from ..core.types import (
     Fundamentals,
+    MacroSnapshot,
     NewsItem,
     Quote,
     SentimentSummary,
     TechnicalSnapshot,
 )
 from .base import AdapterError, MarketAdapter
+from .macro_openbb import fetch_macro_snapshot
 from .mock import MockAdapter
 
 log = logging.getLogger(__name__)
@@ -464,3 +466,14 @@ class CnEquityAdapter(MarketAdapter):
         except Exception as e:
             log.warning("akshare price history failed (%s)", e)
             return self._fallback.get_price_history(ticker, start, end)
+
+    # ---- macro context (OpenBB / FRED, region=CN) ------------------------
+
+    def get_macro(self, asof: date) -> MacroSnapshot | None:
+        """Top-down macro snapshot for A-share decisions.
+
+        We pass region="CN" so OpenBB pulls China-specific series (CPI,
+        PMI, LPR) when available. Falls back gracefully if neither
+        OpenBB nor FRED can serve the data.
+        """
+        return fetch_macro_snapshot(asof, region="CN")

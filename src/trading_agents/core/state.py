@@ -16,6 +16,7 @@ from .types import (
     DebateTranscript,
     Decision,
     Fundamentals,
+    MacroSnapshot,
     NewsItem,
     Quote,
     SentimentSummary,
@@ -37,12 +38,15 @@ class DecisionState(TypedDict, total=False):
     sentiment: SentimentSummary
     technical: TechnicalSnapshot
     quote: Quote
+    # Optional: top-down macro context. None => Macro analyst is skipped.
+    macro: MacroSnapshot
 
     # --- analyst outputs ---
     fundamentals_report: AnalystReport
     sentiment_report: AnalystReport
     news_report: AnalystReport
     technical_report: AnalystReport
+    macro_report: AnalystReport
 
     # --- researcher debate ---
     researcher_debate: DebateTranscript

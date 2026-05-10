@@ -23,6 +23,7 @@ STAGES = [
     "sentiment",
     "news",
     "technical",
+    "macro",
     "researcher_debate",
     "trader",
     "risk_debate",
@@ -32,6 +33,7 @@ STAGES = [
 from ..adapters.base import MarketAdapter
 from ..agents.analysts import (
     fundamentals_node,
+    macro_node,
     news_node,
     quote_node,
     sentiment_node,
@@ -69,6 +71,7 @@ def _try_langgraph(adapter, pack, llm, debate_rounds):
     g.add_node("sentiment", wrap(sentiment_node, **deps))
     g.add_node("news", wrap(news_node, **deps))
     g.add_node("technical", wrap(technical_node, **deps))
+    g.add_node("macro", wrap(macro_node, **deps))
     g.add_node(
         "researcher_debate",
         wrap(researcher_debate_node, rounds=debate_rounds, **deps),
@@ -82,7 +85,8 @@ def _try_langgraph(adapter, pack, llm, debate_rounds):
     g.add_edge("fundamentals", "sentiment")
     g.add_edge("sentiment", "news")
     g.add_edge("news", "technical")
-    g.add_edge("technical", "researcher_debate")
+    g.add_edge("technical", "macro")
+    g.add_edge("macro", "researcher_debate")
     g.add_edge("researcher_debate", "trader")
     g.add_edge("trader", "risk_debate")
     g.add_edge("risk_debate", "manager")
@@ -141,6 +145,7 @@ def _fallback_runner(
     state = _step("sentiment", sentiment_node, state, progress_cb=progress_cb, **deps)
     state = _step("news", news_node, state, progress_cb=progress_cb, **deps)
     state = _step("technical", technical_node, state, progress_cb=progress_cb, **deps)
+    state = _step("macro", macro_node, state, progress_cb=progress_cb, **deps)
     state = _step(
         "researcher_debate", researcher_debate_node, state,
         progress_cb=progress_cb, rounds=debate_rounds, **deps,
@@ -224,6 +229,7 @@ def run_decision(
                 result.get("sentiment_report"),
                 result.get("news_report"),
                 result.get("technical_report"),
+                result.get("macro_report"),  # may be missing if adapter has no macro
             ) if r is not None
         ],
         researcher_debate=result.get("researcher_debate"),

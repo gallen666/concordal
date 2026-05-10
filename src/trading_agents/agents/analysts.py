@@ -77,6 +77,16 @@ def _fetch_technical(a: MarketAdapter, s: DecisionState):
     return a.get_technical(s["ticker"], s["asof"])
 
 
+def _fetch_macro(a: MarketAdapter, s: DecisionState):
+    """Try to fetch a macro snapshot. Returns None if the adapter doesn't
+    support it; the macro_node treats None as "skip this stage"."""
+    try:
+        return a.get_macro(s["asof"])
+    except Exception:
+        # Macro is opportunistic — never break the pipeline if it fails.
+        return None
+
+
 fundamentals_node = _make_analyst(
     "fundamentals", "fundamentals_analyst_system", _fetch_fundamentals,
     "fundamentals", "fundamentals_report",
@@ -93,6 +103,53 @@ technical_node = _make_analyst(
     "technical", "technical_analyst_system", _fetch_technical,
     "technical", "technical_report",
 )
+
+
+def macro_node(
+    state: DecisionState,
+    *,
+    adapter: MarketAdapter,
+    pack: PromptPack,
+    llm: LLMRouter,
+) -> DecisionState:
+    """Macro analyst — runs only if the adapter returned a MacroSnapshot.
+
+    When the adapter has no macro data (no OpenBB, no FRED key, etc.),
+    this stage is a no-op and the rest of the pipeline carries on with
+    just the four micro-level analysts. We treat macro as enrichment,
+    not as a blocker.
+    """
+    if "macro" not in state:
+        state["macro"] = _fetch_macro(adapter, state)  # type: ignore[index]
+    if not state.get("macro"):
+        # No macro context available — skip without writing a report.
+        return state
+    if not getattr(pack, "macro_analyst_system", None):
+        # Pack hasn't defined a macro prompt — skip.
+        return state
+    rendered = pack.render_analyst_user("macro", state)
+    resp = llm.complete(
+        tier=Tier.MID,
+        system=pack.macro_analyst_system,  # type: ignore[attr-defined]
+        user=rendered,
+    )
+    signals = extract_json(resp.text) or {}
+    if (
+        isinstance(signals, dict)
+        and len(signals) == 1
+        and "signals" in signals
+        and isinstance(signals["signals"], dict)
+    ):
+        signals = signals["signals"]
+    state["macro_report"] = AnalystReport(  # type: ignore[index]
+        analyst="macro",
+        ticker=state["ticker"],
+        asof=state["asof"],
+        body=resp.text,
+        signals=signals,
+    )
+    state.setdefault("usage", []).append(resp.usage)  # type: ignore[index]
+    return state
 
 
 def quote_node(state: DecisionState, *, adapter: MarketAdapter, **_) -> DecisionState:

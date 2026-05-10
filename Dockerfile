@@ -41,6 +41,14 @@ ENV PYTHONPATH=/app/src \
 # To get persistence, mount a Render persistent disk at /var/data and
 # set TA_DATA_DIR=/var/data/tradingagents in the service env settings.
 # Long-term fix: move to Postgres (Supabase free tier handles this well).
+#
+# Macro Analyst (5th analyst, FRED-backed):
+#   * Set FRED_API_KEY=<key> in Render env to enable.
+#     Get free key: https://fred.stlouisfed.org/docs/api/api_key.html
+#   * Without the key, the macro stage is silently skipped — pipeline
+#     still works with just the four micro analysts.
+#   * Optional: `pip install openbb` enables the OpenBB SDK path
+#     (preferred when available; richer transforms + auto YoY).
 
 # Railway / Fly inject $PORT; default to 8000 locally.
 ENV PORT=8000

@@ -80,6 +80,37 @@ Emit JSON `signals`:
 """
 
 
+_MACRO = """\
+You are the macro / top-down strategist on a long-only equity desk.
+You receive a structured MacroSnapshot (CPI YoY, unemployment, Fed funds,
+2Y/10Y yields, PMI, GDP YoY, retail sales, M2, DXY, etc.) sourced from
+OpenBB / FRED / BLS. Some fields may be null when the data feed is
+incomplete — note that explicitly rather than fabricating.
+
+Produce <= 250 words covering:
+  - Where we are in the macro cycle: expansion / late-cycle / contraction.
+  - Inflation regime: cooling / sticky / re-accelerating.
+  - Yield curve shape: normal / flat / inverted, and what that historically
+    implied for equity risk over the next 6-12 months.
+  - Liquidity backdrop: tight / neutral / loose (use M2 YoY and policy rate).
+  - The one or two macro signals MOST relevant to this specific ticker
+    given its sector / business model. Be specific — e.g. "rates falling
+    from 5.5% → 4.5% over the past 6m relieves duration pressure on
+    long-duration tech names like AAPL".
+
+Then emit JSON `signals`:
+  cycle_phase: "early"|"mid"|"late"|"contraction"
+  inflation_regime: "cooling"|"sticky"|"re_accelerating"
+  yield_curve: "normal"|"flat"|"inverted"
+  liquidity: "tight"|"neutral"|"loose"
+  macro_tilt: "risk_on"|"neutral"|"risk_off"
+  ticker_relevance: float in [0,1]   # how much macro matters for THIS ticker
+
+Be a hawk on lookahead bias — never reference data dated AFTER the asof date.
+Be honest about missing fields rather than imagining values.
+"""
+
+
 _BULL = """\
 You are the BULL researcher in an equity research roundtable.
 You have read all four analyst reports.
@@ -201,11 +232,23 @@ class _USPack(PromptPack):
         if role == "technical":
             t = state.get("technical")
             return f"Ticker: {ticker}\nAsof: {asof}\nTechnical: {t.model_dump_json(indent=2) if t else 'n/a'}"
+        if role == "macro":
+            m = state.get("macro")
+            return (
+                f"Ticker: {ticker}\nAsof: {asof}\n"
+                f"Macro snapshot: {m.model_dump_json(indent=2) if m else 'n/a'}"
+            )
         raise KeyError(role)
 
     def render_debate_user(self, side: str, round_index: int, state: dict) -> str:
         reports = []
-        for key in ("fundamentals_report", "sentiment_report", "news_report", "technical_report"):
+        for key in (
+            "fundamentals_report",
+            "sentiment_report",
+            "news_report",
+            "technical_report",
+            "macro_report",
+        ):
             r = state.get(key)
             if r:
                 reports.append(f"### {key}\n{r.body}\nSignals: {r.signals}")
@@ -240,4 +283,5 @@ US_EQUITY_EN = _USPack(
     risk_conservative_system=_RISK_CONSERVATIVE,
     fund_manager_system=_MANAGER,
     reflection_system=_REFLECTION,
+    macro_analyst_system=_MACRO,
 )

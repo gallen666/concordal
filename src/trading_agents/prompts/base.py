@@ -39,6 +39,12 @@ class PromptPack:
 
     reflection_system: str
 
+    # Optional: macro analyst (top-down view via OpenBB / FRED / IMF / BLS).
+    # Defaults to empty so older packs still construct cleanly. When empty,
+    # the macro stage is skipped at runtime — see `macro_node` in
+    # agents/analysts.py.
+    macro_analyst_system: str = ""
+
     # Per-stage user-message templates - take a state dict and produce a string.
     # Implementations live alongside the system prompts to keep packs cohesive.
     def render_analyst_user(

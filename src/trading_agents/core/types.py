@@ -96,6 +96,46 @@ class SentimentSummary(BaseModel):
     notable_posts: list[str] = Field(default_factory=list)
 
 
+class MacroSnapshot(BaseModel):
+    """Top-down macro context — sourced from OpenBB / FRED / IMF / BLS.
+
+    Optional snapshot. When the adapter doesn't provide one, the Macro
+    analyst stage is skipped. All numeric fields are point-in-time as of
+    `asof` (no lookahead). Free-form `notes` may include qualitative
+    context like "FOMC raised 25bp at last meeting" that the analyst can
+    quote.
+
+    Source values are kept generic so the same shape works for US-equity
+    decisions (FRED-led) and CN/EM decisions (PBoC / NBS / IMF-led).
+    """
+
+    asof: date
+    region: str = "US"  # "US" | "CN" | "EU" | "JP" | "EM"
+    # ---- inflation ----
+    cpi_yoy: float | None = None        # headline CPI year-over-year %
+    core_cpi_yoy: float | None = None   # ex food & energy
+    pce_yoy: float | None = None        # Fed-preferred inflation gauge
+    # ---- labor ----
+    unemployment_rate: float | None = None
+    nfp_change_3mo_avg: float | None = None  # nonfarm payrolls 3-month avg
+    # ---- rates / yield curve ----
+    policy_rate: float | None = None    # Fed funds upper / PBoC LPR / ECB depo
+    yield_2y: float | None = None
+    yield_10y: float | None = None
+    yield_curve_2y10y: float | None = None  # 10y - 2y, negative = inverted
+    # ---- growth ----
+    gdp_yoy: float | None = None
+    ism_pmi_manufacturing: float | None = None  # >50 expansion, <50 contraction
+    ism_pmi_services: float | None = None
+    retail_sales_yoy: float | None = None
+    # ---- liquidity ----
+    m2_yoy: float | None = None
+    dxy_level: float | None = None      # US dollar index — risk-on/off proxy
+    # ---- free-form context ----
+    sources: list[str] = Field(default_factory=list)
+    notes: str | None = None
+
+
 class TechnicalSnapshot(BaseModel):
     ticker: str
     asof: date
@@ -130,7 +170,7 @@ class AnalystReport(BaseModel):
     consume to avoid information loss across the relay.
     """
 
-    analyst: Literal["fundamentals", "sentiment", "news", "technical"]
+    analyst: Literal["fundamentals", "sentiment", "news", "technical", "macro"]
     ticker: str
     asof: date
     body: str
