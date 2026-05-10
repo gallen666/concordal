@@ -84,11 +84,40 @@ _maybe_init_sentry()
 
 app = FastAPI(
     title="TradingAgents Platform API",
-    version="0.1.0",
+    version="0.2.0",
     description=(
-        "Multi-agent LLM decision-support API. "
-        "NOT investment advice. Closed beta."
+        "**Multi-agent LLM decision-support API.**\n\n"
+        "Five-analyst pipeline (fundamentals + sentiment + news + technical + macro) "
+        "running over real public data: SEC EDGAR (point-in-time fundamentals), "
+        "Reddit + 东方财富股吧 (retail sentiment), OpenBB / FRED (macro), CCXT "
+        "(crypto), akshare (A-share). Every decision is independently cross-validated "
+        "against the Backtrader broker simulator.\n\n"
+        "**Auth:** Bearer JWT issued via `POST /v1/auth/redeem`. Anonymous calls to "
+        "decision endpoints are allowed but rate-limited to 2/day.\n\n"
+        "**Pricing:** Free 5/day · Pro $29/mo (~30/day, real LLM) · API/Team $99+. "
+        "See [/pricing](https://trading-agents-platform.vercel.app/pricing).\n\n"
+        "**⚠️ Decision support, not investment advice.** Outputs are not personalised "
+        "and do not constitute a recommendation under any securities law."
     ),
+    contact={
+        "name": "TradingAgents",
+        "url": "https://github.com/gallen666/trading-agents-platform",
+    },
+    license_info={
+        "name": "Apache 2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0",
+    },
+    servers=[
+        {"url": "https://trading-agents-platform.onrender.com", "description": "Production"},
+        {"url": "http://localhost:8000", "description": "Local dev"},
+    ],
+    openapi_tags=[
+        {"name": "decisions", "description": "Run a 5-analyst decision pipeline on a ticker."},
+        {"name": "backtests", "description": "Replay strategies on history with optional Backtrader cross-validation."},
+        {"name": "auth", "description": "Invite-code redemption for JWT bearer tokens."},
+        {"name": "openbb-workspace", "description": "OpenBB Workspace custom widgets."},
+        {"name": "ecosystem", "description": "Catalog of integrated OSS projects."},
+    ],
 )
 
 app.add_middleware(
@@ -673,6 +702,70 @@ def upgrade_checkout(
         f"https://tally.so/r/upgrade?tier={req.tier}&user={user.id}",
     )
     return {"url": base, "tier": req.tier}
+
+
+@app.post("/v1/cron/weekly-digest", tags=["auth"])
+def weekly_digest(
+    request: Request,
+) -> dict:
+    """Send the weekly decision digest to every email-bound user.
+
+    Cron-style endpoint — called by an external scheduler (UptimeRobot,
+    cron-job.org, GitHub Actions). Protected by `TA_CRON_SECRET` shared
+    secret in the `X-Cron-Secret` header so randos can't spam our users.
+
+    For each user with decisions in the last 7 days, fetches their
+    history (with forward-return enrichment) and emails the digest via
+    Resend. No-op when RESEND_API_KEY isn't configured — endpoint still
+    returns the count of would-be sends.
+    """
+    secret = os.environ.get("TA_CRON_SECRET")
+    if secret:
+        provided = request.headers.get("X-Cron-Secret", "")
+        if provided != secret:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Bad cron secret")
+
+    from .email_send import is_configured, weekly_digest_email
+    sent = 0
+    skipped = 0
+
+    # Walk every known user via memory store. A real implementation would
+    # join against a users table; for now we derive from decision history.
+    users_with_emails: dict[str, list[dict]] = {}
+    cutoff = datetime.utcnow() - timedelta(days=7)
+
+    for entry in memory.iter_all():
+        try:
+            user_id = entry.user_id or ""
+        except Exception:
+            continue
+        if not user_id or "@" not in user_id:
+            skipped += 1
+            continue
+        # Only include decisions from the last 7 days
+        try:
+            d_date = entry.decision_date
+            if isinstance(d_date, date):
+                ts = datetime.combine(d_date, datetime.min.time())
+            else:
+                ts = datetime.fromisoformat(str(d_date))
+            if ts < cutoff:
+                continue
+        except Exception:
+            continue
+        users_with_emails.setdefault(user_id, []).append(entry.model_dump(mode="json"))
+
+    for email, decisions in users_with_emails.items():
+        if weekly_digest_email(email, decisions):
+            sent += 1
+
+    return {
+        "ok": True,
+        "users_with_decisions_this_week": len(users_with_emails),
+        "emails_sent": sent,
+        "emails_skipped_no_address": skipped,
+        "resend_configured": is_configured(),
+    }
 
 
 @app.get("/v1/ecosystem")

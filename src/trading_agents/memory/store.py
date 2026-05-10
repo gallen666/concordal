@@ -88,3 +88,24 @@ class MemoryStore:
             return []
         rows = path.read_text().splitlines()[-n:]
         return [ReflectionEntry.model_validate_json(r) for r in rows if r.strip()]
+
+    def iter_all(self):
+        """Iterate every persisted decision across all tickers.
+
+        Used by /v1/cron/weekly-digest to assemble per-user digests
+        without paying for a separate users table. Yields ReflectionEntry
+        objects, oldest-first, in undefined order across files.
+        """
+        if not self.root.exists():
+            return
+        for path in self.root.glob("*.jsonl"):
+            try:
+                for line in path.read_text().splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        yield ReflectionEntry.model_validate_json(line)
+                    except Exception:
+                        continue
+            except Exception:
+                continue

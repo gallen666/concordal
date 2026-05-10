@@ -25,6 +25,15 @@ interface Props {
   params: Promise<{ ticker: string }>;
 }
 
+/**
+ * Pre-render the known-ticker pages at build time so they're served as
+ * static HTML — faster TTFB + Google indexes them first. Unknown
+ * tickers fall back to dynamic SSR via the catch-all path.
+ */
+export async function generateStaticParams() {
+  return Object.keys(KNOWN_TICKERS).map((ticker) => ({ ticker }));
+}
+
 const KNOWN_TICKERS: Record<string, { name: string; market: string; sector: string }> = {
   // US large caps
   AAPL: { name: "Apple Inc.", market: "us_equity", sector: "Technology" },
