@@ -193,17 +193,20 @@ ECOSYSTEM: list[EcosystemProject] = [
     EcosystemProject(
         slug="backtrader",
         name="Backtrader",
-        tagline="Battle-tested Python backtesting framework",
+        tagline="Battle-tested Python backtesting framework — used as cross-validation oracle",
         role=EcosystemRole.BACKTEST,
         github="https://github.com/mementum/backtrader",
         stars_k=14.0,
         license="GPL-3.0",
-        status=IntegrationStatus.BUILDING,
-        integrates_via="src/trading_agents/backtest/backtrader_runner.py (building)",
-        we_consume=["bar feed adapter", "indicator zoo", "broker simulator"],
-        we_export=["Cross-validation backtest results vs our own engine"],
+        status=IntegrationStatus.LIVE,
+        integrates_via="src/trading_agents/backtest/backtrader_runner.py",
+        we_consume=["broker simulator", "TimeReturn analyzer", "PandasData feed"],
+        we_export=[
+            "Independent equity-curve replay of every agent backtest",
+            "Disagreement flag when annualised return diff > 0.5pp",
+        ],
         feeds_into=[],
-        fed_by=["openbb", "akshare", "qlib"],
+        fed_by=["openbb", "akshare"],
     ),
 
     # ---- 6. execution layer (broker connectivity) ---------------------

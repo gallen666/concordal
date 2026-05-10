@@ -47,6 +47,7 @@ from ..llm.router import LLMRouter, Tier
 from .engine import Backtester, BacktestResult
 from .metrics import Metrics, compute_metrics
 from .baselines import BUILTIN_BASELINES
+from .backtrader_runner import cross_validate as backtrader_cross_validate
 
 log = logging.getLogger("ta.backtest.agent")
 
@@ -85,6 +86,10 @@ class AgentBacktestConfig:
     # Cost / safety
     max_cost_usd: float = 100.0  # hard stop
     skip_on_error: bool = True   # don't crash whole run on one bad date
+    # Cross-validation: when True, replay each ticker through Backtrader
+    # too and report any per-ticker disagreement > 0.5pp annualised. Free
+    # bug detector. Adds ~2s per ticker. Off by default to keep CI cheap.
+    cross_validate_with_backtrader: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +108,8 @@ class TickerOutcome:
     bh_curve: list[float]
     rebalance_dates: list[str]       # ISO dates we re-decided
     decisions: list[dict]            # serialized Decision objects per rebalance
+    # Cross-validation (only populated when cfg.cross_validate_with_backtrader=True):
+    cross_validation: dict | None = None
 
 
 @dataclass
@@ -212,6 +219,39 @@ def _per_ticker_run(
     except StopIteration:
         pass
 
+    # Optional cross-validation: replay the same weights through Backtrader
+    # and flag disagreement > 0.5pp annualised. This is the cheap "second
+    # opinion" that catches subtle bugs in our hand-rolled walker.
+    cv_payload: dict | None = None
+    if cfg.cross_validate_with_backtrader:
+        try:
+            quotes = adapter.get_price_history(spec.ticker, cfg.start, cfg.end)
+            cv = backtrader_cross_validate(
+                ours=agent_result,
+                quotes=quotes,
+                weights=agent_result.weights,
+                initial_capital=cfg.initial_capital,
+                commission_bps=bt.commission_bps,
+                slippage_bps=bt.slippage_bps,
+                sell_tax_bps=bt.sell_tax_bps,
+            )
+            if cv is not None:
+                cv_payload = {
+                    "backtrader_metrics": asdict(cv.backtrader_metrics),
+                    "ann_return_diff_pct": cv.ann_return_diff_pct,
+                    "sharpe_diff": cv.sharpe_diff,
+                    "max_dd_diff_pct": cv.max_dd_diff_pct,
+                    "flagged_disagreement": cv.flagged_disagreement,
+                    "notes": cv.notes,
+                }
+                if cv.flagged_disagreement:
+                    log.warning(
+                        "[%s] CROSS-VALIDATION DISAGREEMENT: %s",
+                        spec.ticker, cv.notes,
+                    )
+        except Exception as e:
+            log.warning("[%s] cross-validation skipped: %s", spec.ticker, e)
+
     return TickerOutcome(
         ticker=spec.ticker,
         market=spec.market,
@@ -222,6 +262,7 @@ def _per_ticker_run(
         bh_curve=bh_result.equity_curve,
         rebalance_dates=rebalance_dates,
         decisions=[d for d in decisions_out if d["ticker"] == spec.ticker],
+        cross_validation=cv_payload,
     )
 
 
@@ -365,6 +406,12 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Smoke test: only first 3 tickers, last 4 weeks",
     )
+    p.add_argument(
+        "--cross-validate",
+        action="store_true",
+        help="Replay each ticker through Backtrader as a sanity check; "
+             "flags any disagreement > 0.5pp annualised in the report",
+    )
     return p.parse_args()
 
 
@@ -394,6 +441,7 @@ def main() -> int:
         locale=args.locale,
         debate_rounds=args.debate_rounds,
         max_cost_usd=args.max_cost,
+        cross_validate_with_backtrader=args.cross_validate,
     )
 
     log.info(

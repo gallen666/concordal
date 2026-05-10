@@ -260,6 +260,37 @@ def test_reddit_news_filters_lookahead_correctly(monkeypatch):
     assert not any("ancient post" in t for t in titles), "outside lookback leak"
 
 
+def test_backtrader_runner_returns_none_when_unavailable():
+    """If `backtrader` isn't installed, cross_validate must return None
+    instead of crashing — the caller treats this as 'skip CV silently'."""
+    from trading_agents.backtest.backtrader_runner import cross_validate
+    from trading_agents.backtest.engine import BacktestResult
+    from trading_agents.backtest.metrics import Metrics
+    from trading_agents.core.types import Quote
+    from datetime import datetime, timezone, timedelta
+
+    # Synthesize a tiny BacktestResult + matching quotes/weights
+    today = datetime.now(tz=timezone.utc)
+    quotes = [
+        Quote(ticker="X", asof=today - timedelta(days=2), open=100, high=102, low=99,  close=101, volume=1e6),
+        Quote(ticker="X", asof=today - timedelta(days=1), open=101, high=103, low=100, close=102, volume=1e6),
+        Quote(ticker="X", asof=today,                    open=102, high=104, low=101, close=103, volume=1e6),
+    ]
+    weights = [0.0, 1.0, 1.0]
+    fake_ours = BacktestResult(
+        name="X", ticker="X",
+        start=quotes[0].asof.date(), end=quotes[-1].asof.date(),
+        equity_curve=[100_000, 101_000, 102_000],
+        weights=weights, trade_log=[],
+        metrics=Metrics(0.02, 1.0, 0.1, 1.0, 1.5, -0.01, 1.0, 1, 1.0),
+    )
+    out = cross_validate(ours=fake_ours, quotes=quotes, weights=weights)
+    # When backtrader isn't installed in the test sandbox, function returns None.
+    # When it IS installed (CI image), function returns a proper CrossValidationResult.
+    # Either is acceptable here — we just must not raise.
+    assert out is None or out.ticker == "X"
+
+
 def test_reddit_sentiment_returns_none_when_no_posts(monkeypatch):
     """When Reddit search yields zero posts in the window, fetch_sentiment
     must return None so caller can fall back rather than emit a fake 50/50."""

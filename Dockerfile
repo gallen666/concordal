@@ -27,7 +27,8 @@ RUN pip install --upgrade pip && \
         "google-genai>=0.3.0" \
         "yfinance>=0.2.40" \
         "akshare>=1.16.0" "beautifulsoup4>=4.12" "lxml>=4.9" \
-        "ccxt>=4.4"
+        "ccxt>=4.4" \
+        "backtrader>=1.9.78"
 
 # Copy app
 COPY src/ ./src/
