@@ -26,6 +26,7 @@ from ..core.types import (
     SentimentSummary,
     TechnicalSnapshot,
 )
+from ..factors import compute_factors
 from .base import AdapterError, MarketAdapter
 from .mock import MockAdapter
 from .social_reddit import (
@@ -220,6 +221,14 @@ class CcxtCryptoAdapter(MarketAdapter):
             else:
                 rsi14 = None
 
+            # Alpha158-lite quant factors from the same OHLCV bar series.
+            try:
+                factor_quotes = [self._bar_to_quote(b, ticker.upper()) for b in bars]
+                factors = compute_factors(factor_quotes)
+            except Exception as e:
+                log.debug("compute_factors failed for %s: %s", ticker, e)
+                factors = {}
+
             return TechnicalSnapshot(
                 ticker=ticker.upper(),
                 asof=asof,
@@ -232,6 +241,7 @@ class CcxtCryptoAdapter(MarketAdapter):
                 macd=macd,
                 macd_signal=None,
                 rsi_14=rsi14,
+                factors=factors,
                 notes=f"Computed from {len(closes)} daily bars on {self._exchange_id}",
             )
         except Exception as e:

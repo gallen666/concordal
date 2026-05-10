@@ -31,6 +31,7 @@ manager — produce a fully traceable buy / overweight / hold / underweight
 * **Reflection loop**: prior decisions on a ticker, enriched with realised forward return, get injected into the Manager prompt.
 * **Honest cost model**: 10bp round-trip US, 15bp A-share with stamp tax — defaults are pessimistic by design.
 * **Backtrader cross-validation**: pass `--cross-validate` to `agent_backtest`; every ticker's equity curve gets replayed through the battle-tested Backtrader broker simulator. Disagreement > 0.5pp annualised is flagged in the report — a free bug detector for our hand-rolled walker.
+* **Alpha158-inspired factors**: every TechnicalSnapshot now ships with 10 quant factors (ROC_5/20/60, STD_20, VSTD_20, BIAS_5/20, RSV_5, MA_DIFF, KMID) computed inline from OHLCV. Same naming as Microsoft Qlib, no Qlib SDK install required. The technical analyst's prompt references them directly — momentum / volatility / mean-reversion priors on top of classic SMA/RSI.
 * **Self-diagnosis**: `GET /v1/health` lists every feature flag + env var status; missing keys surface as a "warnings" badge in the header.
 * **6 LLM providers** auto-detected: Gemini, OpenAI, Anthropic, plus the Chinese tier — **DeepSeek** (V3 + R1 reasoner), **Qwen** (DashScope), **GLM** (智谱). Same fallback-chain mechanism applies — a provider rate-limit drops to its own family's cheaper tier, then mock. Set any of `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `ZHIPU_API_KEY` to opt in. CN-locale users get better Chinese output and ~10× lower cost.
 

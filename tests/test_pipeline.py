@@ -260,6 +260,51 @@ def test_reddit_news_filters_lookahead_correctly(monkeypatch):
     assert not any("ancient post" in t for t in titles), "outside lookback leak"
 
 
+def test_alpha158_factors_produce_all_keys_with_enough_history():
+    """compute_factors should populate every named factor when given >=60 bars."""
+    from trading_agents.factors import compute_factors, FACTOR_NAMES
+    from trading_agents.core.types import Quote
+    from datetime import timezone
+
+    today = datetime.now(tz=timezone.utc)
+    quotes = []
+    # 80 ascending-but-noisy bars
+    for i in range(80):
+        c = 100.0 + i * 0.3 + (i % 3) * 0.5
+        quotes.append(Quote(
+            ticker="X",
+            asof=today - timedelta(days=80 - i),
+            open=c - 0.2, high=c + 0.5, low=c - 0.5, close=c,
+            volume=1_000_000 + (i % 5) * 50_000,
+        ))
+    f = compute_factors(quotes)
+    for name in FACTOR_NAMES:
+        assert name in f, f"missing factor {name}"
+    # ROC_5 should be positive given monotonically rising prices
+    assert f["ROC_5"] > 0, "expected positive 5-day ROC on rising series"
+    # MA_DIFF: SMA20 above SMA60 in a rising market => positive
+    assert f["MA_DIFF"] > 0
+
+
+def test_alpha158_factors_short_history_no_crash():
+    """With only 5 bars, compute_factors should not crash; missing factors
+    default to 0.0 so analyst prompt's structured input has no holes."""
+    from trading_agents.factors import compute_factors
+    from trading_agents.core.types import Quote
+    from datetime import timezone
+
+    today = datetime.now(tz=timezone.utc)
+    quotes = [
+        Quote(ticker="X", asof=today - timedelta(days=4-i),
+              open=100.0+i, high=101.0+i, low=99.0+i, close=100.5+i, volume=1e6)
+        for i in range(5)
+    ]
+    f = compute_factors(quotes)
+    # All names present, even if zero
+    assert f["ROC_60"] == 0.0  # not enough history
+    assert f["KMID"] != 0.0   # only needs the latest bar
+
+
 def test_backtrader_runner_returns_none_when_unavailable():
     """If `backtrader` isn't installed, cross_validate must return None
     instead of crashing — the caller treats this as 'skip CV silently'."""

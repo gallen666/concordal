@@ -22,6 +22,7 @@ from ..core.types import (
     SentimentSummary,
     TechnicalSnapshot,
 )
+from ..factors import compute_factors
 from .base import AdapterError, MarketAdapter
 from .macro_openbb import fetch_macro_snapshot
 from .mock import MockAdapter
@@ -259,6 +260,29 @@ class YahooUSEquityAdapter(MarketAdapter):
             down = (-delta.clip(upper=0)).rolling(14).mean()
             rs = (up / down).iloc[-1]
             rsi = float(100 - 100 / (1 + rs)) if rs else 50.0
+
+            # Alpha158-lite quant factors — computed from the full bar
+            # series so the technical analyst can reference momentum /
+            # volatility / mean-reversion / pattern signals beyond the
+            # classic SMA/RSI vocabulary. Uses only OHLCV; no extra deps.
+            factor_quotes = [
+                Quote(
+                    ticker=ticker,
+                    asof=ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else ts,
+                    open=float(row["Open"]),
+                    high=float(row["High"]),
+                    low=float(row["Low"]),
+                    close=float(row["Close"]),
+                    volume=float(row["Volume"]),
+                )
+                for ts, row in hist.iterrows()
+            ]
+            try:
+                factors = compute_factors(factor_quotes)
+            except Exception as e:
+                log.debug("compute_factors failed for %s: %s", ticker, e)
+                factors = {}
+
             return TechnicalSnapshot(
                 ticker=ticker,
                 asof=asof,
@@ -271,6 +295,7 @@ class YahooUSEquityAdapter(MarketAdapter):
                 macd=macd,
                 macd_signal=signal,
                 rsi_14=rsi,
+                factors=factors,
                 notes=(
                     f"Trend: {'up' if last > sma50 else 'down'} vs SMA50; "
                     f"RSI={rsi:.1f}; MACD={macd:.2f}."

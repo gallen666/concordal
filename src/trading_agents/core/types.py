@@ -154,6 +154,11 @@ class TechnicalSnapshot(BaseModel):
     bollinger_upper: float | None = None
     bollinger_lower: float | None = None
     atr_14: float | None = None
+    # Alpha158-inspired factor priors (ROC_*, STD_*, VSTD_*, BIAS_*, RSV_5,
+    # MA_DIFF, KMID) computed inline from price/volume history. Populated
+    # by adapters that have a price-history endpoint; empty dict means the
+    # adapter declined to compute (e.g. <60 bars available).
+    factors: dict[str, float] = Field(default_factory=dict)
     notes: str | None = None
 
 
