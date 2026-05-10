@@ -184,6 +184,15 @@ const dict = {
   "decision.signals":           { en: "Signals",                            zh: "关键信号" },
   "decision.sources":           { en: "Sources",                            zh: "数据来源" },
   "decision.noReports":         { en: "No analyst reports.",                zh: "暂无分析师报告。" },
+  "decision.quickPicks":        { en: "Quick picks",                        zh: "常用代码" },
+  "decision.quickPicks.us":     { en: "US",                                 zh: "美股" },
+  "decision.quickPicks.cn":     { en: "A-share",                            zh: "A股" },
+  "decision.quickPicks.crypto": { en: "Crypto",                             zh: "加密" },
+  "decision.lessonsInjected":   { en: "Reflection memory injected",         zh: "已注入反思记忆" },
+  "decision.lessonsBody":       {
+    en: "The Fund Manager saw your prior decisions on this ticker (with realised forward returns) before making this call. The system is learning from your history.",
+    zh: "基金经理在做这次决策前看到了你在这只票上的历史决策 + 已实现回报。系统正在从你的历史里学。",
+  },
 
   // ---- Live progress (per-stage labels shown while the pipeline runs) ----
   "progress.heading":           { en: "Live progress",                       zh: "实时进度" },
@@ -321,6 +330,14 @@ const dict = {
   },
   "eco.dataFlow":               { en: "Live data flow",                     zh: "实时数据流" },
   "eco.wiredToday":             { en: "Wired today",                        zh: "今日已接通" },
+  "eco.honesty.title":          { en: "Be honest about what's shipping",    zh: "诚实标注上线状态" },
+  "eco.honesty.body":           {
+    en: "Of these 10 projects, only those with a green Live badge actually flow data through our pipeline today. Building / Roadmap items are committed work-in-progress with adapter stubs and clear extension points — not aspirational marketing. We update this page from the live registry, not a slide deck.",
+    zh: "这 10 个项目里，只有打绿色「Live」徽章的今天真在我们的 pipeline 里跑数据。Building / Roadmap 是有 adapter 桩和明确扩展点的进行中工作，不是 PPT 上的愿望。这页内容从生产 registry 实时拉取，不是我自己手写的。",
+  },
+  "eco.section.live":           { en: "Live integrations",                  zh: "已上线集成" },
+  "eco.section.building":       { en: "In active development",              zh: "开发中" },
+  "eco.section.roadmap":        { en: "Roadmap (specced, not built)",       zh: "路线图（已规划，未实现）" },
   "eco.notWired":               { en: "Not wired yet",                      zh: "尚未接通" },
 
   // ---- /integrations page (OpenBB Workspace etc.) -----------------------

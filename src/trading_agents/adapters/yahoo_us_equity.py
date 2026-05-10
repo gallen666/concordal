@@ -25,6 +25,7 @@ from ..core.types import (
 from .base import AdapterError, MarketAdapter
 from .macro_openbb import fetch_macro_snapshot
 from .mock import MockAdapter
+from .sec_edgar import get_pit_fundamentals
 
 log = logging.getLogger(__name__)
 
@@ -74,24 +75,27 @@ class YahooUSEquityAdapter(MarketAdapter):
             return self._fallback.get_quote(ticker, asof)
 
     def get_fundamentals(self, ticker: str, asof: date) -> Fundamentals:
-        # ---- backtest-safety guard (runs BEFORE the live/mock branch) ---
-        # yfinance's .info returns the *current* snapshot of marketCap,
-        # trailingPE, revenueGrowth, etc. — there is no point-in-time path
-        # via this endpoint. For any historical asof (older than ~7 days)
-        # we MUST NOT return current data, or we'd inject lookahead bias
-        # into every backtest decision. Return a stub Fundamentals object
-        # with notes explaining the gap; the analyst prompt instructs the
-        # LLM to be honest about missing fields rather than hallucinate.
-        # Mock fallback also gets the stub so backtests never see fake
-        # numbers presented as if real.
+        # ---- backtest path: SEC EDGAR (point-in-time) -------------------
+        # yfinance's .info is current-only — useless for historical asof.
+        # For any asof older than ~7 days we hit SEC EDGAR's XBRL company
+        # concept API, which is keyed by actual filing date and therefore
+        # PIT-safe. If EDGAR doesn't have the ticker (foreign issuer, ETF,
+        # SPAC, etc.) or the network call fails, fall through to a stub
+        # so the analyst prompt knows to skip rather than hallucinate.
         if (date.today() - asof).days > 7:
+            try:
+                edgar = get_pit_fundamentals(ticker, asof)
+                if edgar is not None:
+                    return edgar
+            except Exception as e:
+                log.warning("EDGAR PIT fetch failed for %s @ %s: %s", ticker, asof, e)
             return Fundamentals(
                 ticker=ticker,
                 asof=asof,
                 notes=(
-                    "Point-in-time fundamentals not available for backtest "
-                    "dates. Treat this analyst slot as intentionally empty "
-                    "— do not fabricate metrics."
+                    f"PIT fundamentals via SEC EDGAR not available for {ticker} "
+                    f"as of {asof}. Treat this analyst slot as intentionally "
+                    "empty — do not fabricate metrics."
                 ),
             )
         if not self._available:

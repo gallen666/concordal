@@ -112,16 +112,25 @@ def test_regime_lookup():
 # ---- backtest accuracy guards (regression tests for the audit fixes) ------
 
 
-def test_fundamentals_returns_stub_for_historical_asof():
-    """Yahoo .info has no point-in-time path. For backtest dates we must
-    return an empty Fundamentals stub instead of injecting current data."""
+def test_fundamentals_returns_stub_for_historical_asof_when_edgar_unavailable(monkeypatch):
+    """Yahoo .info has no point-in-time path. For backtest dates we now
+    try SEC EDGAR first; if EDGAR is unreachable (no network in tests)
+    or doesn't have the ticker, we must fall through to an empty stub
+    instead of injecting current data."""
     from trading_agents.adapters.yahoo_us_equity import YahooUSEquityAdapter
+    from trading_agents.adapters import yahoo_us_equity as yus
+
+    # Force EDGAR to act as unavailable so we exercise the stub fallback
+    monkeypatch.setattr(yus, "get_pit_fundamentals", lambda t, a: None)
     a = YahooUSEquityAdapter()
     old = date(2023, 1, 15)
     f = a.get_fundamentals("AAPL", old)
     assert f.market_cap is None
     assert f.pe_ratio is None
-    assert f.notes and "backtest" in f.notes.lower()
+    # Stub message references either EDGAR or "intentionally empty"
+    assert f.notes and (
+        "edgar" in f.notes.lower() or "intentionally empty" in f.notes.lower()
+    )
 
 
 def test_cn_sentiment_returns_stub_for_historical_asof():
@@ -163,6 +172,63 @@ def test_metrics_annualisation_uses_elapsed_days_when_provided():
     had gaps. With elapsed_days=365 a +10% curve should annualise to 10%."""
     m = compute_metrics([100.0, 110.0], elapsed_days=365)
     assert abs(m.annual_return - 0.10) < 0.001
+
+
+def test_sec_edgar_pit_lookahead_filter():
+    """EDGAR adapter must drop any filing with `filed > asof`."""
+    from trading_agents.adapters import sec_edgar
+
+    # Synthesize a concept response with two filings: one before, one after asof
+    fake_rows = [
+        {"end": "2023-12-31", "filed": "2024-02-01", "fp": "Q4", "val": 100.0},
+        {"end": "2024-03-31", "filed": "2024-05-01", "fp": "Q1", "val": 110.0},
+        {"end": "2024-06-30", "filed": "2024-08-01", "fp": "Q2", "val": 120.0},  # AFTER asof
+    ]
+    asof = date(2024, 7, 15)  # before the Q2 filing date
+    v = sec_edgar._latest_value_before(fake_rows, asof)
+    assert v == 110.0, f"expected the Q1 filing (filed 2024-05-01), got {v}"
+
+
+def test_sec_edgar_ttm_sum_uses_4_quarters():
+    """TTM aggregator must take exactly the 4 most-recent quarters whose
+    `filed <= asof`, not 5 and not the FY annual figure when quarters exist."""
+    from trading_agents.adapters import sec_edgar
+
+    fake_rows = [
+        {"end": "2023-03-31", "filed": "2023-05-01", "fp": "Q1", "val": 1.0},
+        {"end": "2023-06-30", "filed": "2023-08-01", "fp": "Q2", "val": 2.0},
+        {"end": "2023-09-30", "filed": "2023-11-01", "fp": "Q3", "val": 3.0},
+        {"end": "2023-12-31", "filed": "2024-02-01", "fp": "Q4", "val": 4.0},
+        {"end": "2024-03-31", "filed": "2024-05-01", "fp": "Q1", "val": 5.0},
+        {"end": "2023-12-31", "filed": "2024-02-15", "fp": "FY", "val": 10.0},  # decoy
+    ]
+    asof = date(2024, 6, 1)
+    ttm = sec_edgar._ttm_sum(fake_rows, asof)
+    # Q2..Q4 of 2023 + Q1 of 2024 = 2+3+4+5 = 14
+    assert ttm == 14.0, f"expected 14.0 (Q2'23 + Q3'23 + Q4'23 + Q1'24), got {ttm}"
+
+
+def test_yahoo_adapter_uses_edgar_for_historical_asof(monkeypatch):
+    """When asof > 7 days old, Yahoo adapter should call SEC EDGAR before
+    falling back to an empty stub."""
+    from trading_agents.adapters.yahoo_us_equity import YahooUSEquityAdapter
+    from trading_agents.adapters import yahoo_us_equity as yus
+
+    sentinel = pytest.importorskip("trading_agents.core.types").Fundamentals(
+        ticker="AAPL",
+        asof=date(2024, 6, 1),
+        revenue_ttm=999_999_999_999.0,
+        notes="from EDGAR (test)",
+    )
+
+    def fake_pit(ticker: str, asof: date):
+        return sentinel
+
+    monkeypatch.setattr(yus, "get_pit_fundamentals", fake_pit)
+    a = YahooUSEquityAdapter()
+    out = a.get_fundamentals("AAPL", date(2024, 6, 1))
+    assert out.revenue_ttm == 999_999_999_999.0
+    assert "EDGAR" in (out.notes or "")
 
 
 def test_regime_unknown_raises():

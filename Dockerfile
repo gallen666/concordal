@@ -26,7 +26,8 @@ RUN pip install --upgrade pip && \
         "openai>=1.30" "anthropic>=0.30" \
         "google-genai>=0.3.0" \
         "yfinance>=0.2.40" \
-        "akshare>=1.16.0" "beautifulsoup4>=4.12" "lxml>=4.9"
+        "akshare>=1.16.0" "beautifulsoup4>=4.12" "lxml>=4.9" \
+        "ccxt>=4.4"
 
 # Copy app
 COPY src/ ./src/

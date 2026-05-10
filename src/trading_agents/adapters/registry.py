@@ -28,6 +28,7 @@ def _register_builtins() -> None:
     from .mock import MockAdapter
     from .yahoo_us_equity import YahooUSEquityAdapter
     from .cn_equity import CnEquityAdapter
+    from .crypto_ccxt import CcxtCryptoAdapter
 
     register_adapter("mock", MockAdapter)
     # Real US-equity data via Yahoo Finance. Falls back to MockAdapter
@@ -36,7 +37,9 @@ def _register_builtins() -> None:
     # Real A-share data via akshare (东方财富 / 新浪 / 腾讯). Falls back to
     # MockAdapter if akshare is missing or upstream fails.
     register_adapter("a_share", CnEquityAdapter)
-    register_adapter("crypto", MockAdapter)
+    # Real crypto data via CCXT (default exchange = Binance, override via
+    # TA_CRYPTO_EXCHANGE env). Public market data only — no API keys needed.
+    register_adapter("crypto", CcxtCryptoAdapter)
 
 
 _register_builtins()

@@ -27,6 +27,7 @@ before each project's adapter is written.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -115,6 +116,11 @@ class UniversalDataBus:
         self._cache: dict[tuple, tuple[float, Any]] = {}
         self._cache_ttl_sec = 86400  # 24h default
         self._telemetry: list[TelemetryRecord] = []
+        # In-flight dedup: when two agents request the same Need at the
+        # same time, only one HTTP call should fire — the second waits
+        # for the first to finish, then reads the cache.
+        self._inflight: dict[tuple, threading.Event] = {}
+        self._inflight_lock = threading.Lock()
         self._register_builtin()
 
     # ---- registration ---------------------------------------------------
@@ -155,6 +161,11 @@ class UniversalDataBus:
         Lookahead bias is enforced at the source level (each adapter has
         its own asof guard). The bus just routes — it doesn't second-
         guess what the source returns.
+
+        In-flight requests are de-duplicated: if a fetch for the same
+        cache key is currently running, we wait for it instead of firing
+        a parallel HTTP call. This matters when two analyst nodes ask
+        for the same macro snapshot in the same decision run.
         """
         cache_key = (need.kind.value, _hashable(need.params))
         cached = self._cache_get(cache_key)
@@ -167,49 +178,74 @@ class UniversalDataBus:
             ))
             return cached
 
-        sources = self._sources.get(need.kind) or []
-        if not sources:
-            log.warning("DataBus: no source for need.kind=%s", need.kind.value)
-            self._telemetry.append(TelemetryRecord(
-                need_kind=need.kind.value, source=None,
-                cache_hit=False, elapsed_ms=0.0,
-                error="no source registered",
-            ))
+        # Dedup: claim the inflight slot or wait on an existing fetch.
+        with self._inflight_lock:
+            existing = self._inflight.get(cache_key)
+            if existing is not None:
+                # Another caller is already fetching — wait + read cache.
+                ev = existing
+                claimed_self = False
+            else:
+                ev = threading.Event()
+                self._inflight[cache_key] = ev
+                claimed_self = True
+
+        if not claimed_self:
+            ev.wait(timeout=30)
+            return self._cache_get(cache_key)
+
+        # Wrap the source loop so we always release the inflight slot,
+        # even if a handler raises.
+        try:
+            sources = self._sources.get(need.kind) or []
+            if not sources:
+                log.warning("DataBus: no source for need.kind=%s", need.kind.value)
+                self._telemetry.append(TelemetryRecord(
+                    need_kind=need.kind.value, source=None,
+                    cache_hit=False, elapsed_ms=0.0,
+                    error="no source registered",
+                ))
+                return None
+
+            last_err: Exception | None = None
+            for src in sources:
+                t0 = time.time()
+                try:
+                    result = src.handler(need)
+                    elapsed_ms = (time.time() - t0) * 1000
+                    self._telemetry.append(TelemetryRecord(
+                        need_kind=need.kind.value,
+                        source=src.project_slug,
+                        cache_hit=False,
+                        elapsed_ms=round(elapsed_ms, 2),
+                    ))
+                    if result is not None:
+                        self._cache_put(cache_key, result)
+                        return result
+                except Exception as e:
+                    elapsed_ms = (time.time() - t0) * 1000
+                    self._telemetry.append(TelemetryRecord(
+                        need_kind=need.kind.value,
+                        source=src.project_slug,
+                        cache_hit=False,
+                        elapsed_ms=round(elapsed_ms, 2),
+                        error=str(e),
+                    ))
+                    last_err = e
+                    log.debug("DataBus: %s failed for %s: %s", src.project_slug, need.kind.value, e)
+
+            if last_err:
+                log.info(
+                    "DataBus: all %d sources for %s failed; last error: %s",
+                    len(sources), need.kind.value, last_err,
+                )
             return None
-
-        last_err: Exception | None = None
-        for src in sources:
-            t0 = time.time()
-            try:
-                result = src.handler(need)
-                elapsed_ms = (time.time() - t0) * 1000
-                self._telemetry.append(TelemetryRecord(
-                    need_kind=need.kind.value,
-                    source=src.project_slug,
-                    cache_hit=False,
-                    elapsed_ms=round(elapsed_ms, 2),
-                ))
-                if result is not None:
-                    self._cache_put(cache_key, result)
-                    return result
-            except Exception as e:
-                elapsed_ms = (time.time() - t0) * 1000
-                self._telemetry.append(TelemetryRecord(
-                    need_kind=need.kind.value,
-                    source=src.project_slug,
-                    cache_hit=False,
-                    elapsed_ms=round(elapsed_ms, 2),
-                    error=str(e),
-                ))
-                last_err = e
-                log.debug("DataBus: %s failed for %s: %s", src.project_slug, need.kind.value, e)
-
-        if last_err:
-            log.info(
-                "DataBus: all %d sources for %s failed; last error: %s",
-                len(sources), need.kind.value, last_err,
-            )
-        return None
+        finally:
+            # Wake any waiters on this Need and clear the inflight entry.
+            with self._inflight_lock:
+                done_ev = self._inflight.pop(cache_key, None)
+            if done_ev is not None:
+                done_ev.set()
 
     # ---- introspection (for /ecosystem live status panel) ---------------
 

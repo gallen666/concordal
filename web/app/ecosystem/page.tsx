@@ -17,6 +17,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUpRight,
   CheckCircle2,
@@ -168,6 +169,19 @@ export default function EcosystemPage() {
         </p>
       </div>
 
+      {/* Honesty banner — explicit about live vs roadmap */}
+      <div className="surface border-signal-info/30 bg-signal-info_soft/40 p-4 mb-8 flex gap-3 items-start">
+        <AlertTriangle className="w-5 h-5 text-signal-info shrink-0 mt-0.5" />
+        <div className="flex-1 text-sm">
+          <div className="font-semibold text-ink-primary">
+            {t("eco.honesty.title")}
+          </div>
+          <p className="text-ink-secondary mt-1 leading-relaxed">
+            {t("eco.honesty.body")}
+          </p>
+        </div>
+      </div>
+
       {/* Stats strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-10">
         <StatCard label={t("eco.statTotal")} value={String(stats.total_projects)} accent />
@@ -208,26 +222,28 @@ export default function EcosystemPage() {
         </div>
       </section>
 
-      {/* Per-role grouped grids */}
+      {/* Status-grouped sections — Live first to spotlight what actually works */}
       <section className="mb-12 space-y-8">
-        {ROLE_ORDER.filter((r) => groupedByRole[r]?.length).map((role) => (
-          <div key={role}>
-            <div className="flex items-baseline gap-3 mb-3">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                <span className="text-ink-tertiary">{ROLE_ICON[role]}</span>
-                {t(`eco.role.${role}` as `eco.role.${Role}`)}
-              </h2>
-              <span className="text-xs text-ink-tertiary font-mono">
-                {(groupedByRole[role] ?? []).length}
-              </span>
-            </div>
-            <div className="grid md:grid-cols-2 gap-3">
-              {(groupedByRole[role] ?? []).map((p) => (
-                <ProjectCard key={p.slug} project={p} wired={wired_sources} />
-              ))}
-            </div>
-          </div>
-        ))}
+        <StatusSection
+          title={t("eco.section.live")}
+          icon={<CheckCircle2 className="w-4 h-4 text-signal-buy" />}
+          projects={projects.filter((p) => p.status === "live")}
+          wired={wired_sources}
+        />
+        <StatusSection
+          title={t("eco.section.building")}
+          icon={<Wrench className="w-4 h-4 text-signal-warn" />}
+          projects={projects.filter((p) => p.status === "building")}
+          wired={wired_sources}
+        />
+        <StatusSection
+          title={t("eco.section.roadmap")}
+          icon={<Clock className="w-4 h-4 text-ink-tertiary" />}
+          projects={projects.filter(
+            (p) => p.status === "planned" || p.status === "beta"
+          )}
+          wired={wired_sources}
+        />
       </section>
 
       {/* How it works explainer */}
@@ -253,6 +269,38 @@ export default function EcosystemPage() {
 }
 
 // ---- Sub-components -------------------------------------------------------
+
+function StatusSection({
+  title,
+  icon,
+  projects,
+  wired,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  projects: Project[];
+  wired: Record<string, string[]>;
+}) {
+  if (projects.length === 0) return null;
+  return (
+    <div>
+      <div className="flex items-baseline gap-3 mb-3">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          {icon}
+          {title}
+        </h2>
+        <span className="text-xs text-ink-tertiary font-mono">
+          {projects.length}
+        </span>
+      </div>
+      <div className="grid md:grid-cols-2 gap-3">
+        {projects.map((p) => (
+          <ProjectCard key={p.slug} project={p} wired={wired} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function StatCard({
   label,

@@ -123,6 +123,8 @@ export default function DecisionPage() {
   // Live progress reported by the backend job; populated while the
   // pipeline runs so the UI can highlight the currently-working agent.
   const [progress, setProgress] = useState<DecisionProgress | null>(null);
+  // Did the Manager prompt get reflection memory injected this run?
+  const [lessonsInjected, setLessonsInjected] = useState(false);
 
   useEffect(() => {
     if (!auth.isLoggedIn()) return;
@@ -152,16 +154,24 @@ export default function DecisionPage() {
         use_cache: !forceRefresh,
       });
       setStage(t("decision.running"));
-      // Poll the job status; the response includes a `progress` object
-      // that updates as each agent reports start/done. We forward it
-      // straight to <LiveProgress/>.
-      for (let i = 0; i < 240; i++) {
-        await new Promise((r) => setTimeout(r, 1000));
+      // Poll the job status with **gentle backoff** — first 5 seconds we
+      // poll fast (1s) so the user sees the early stages light up, then
+      // we slow down to every 3s. This keeps the LiveProgress feeling
+      // responsive without hammering the backend with 90+ polls per
+      // 90-second decision (which on Render free tier can saturate one
+      // worker).
+      const MAX_WAIT_SEC = 240;
+      let elapsed = 0;
+      while (elapsed < MAX_WAIT_SEC) {
+        const intervalMs = elapsed < 5 ? 1000 : 3000;
+        await new Promise((r) => setTimeout(r, intervalMs));
+        elapsed += intervalMs / 1000;
         const j = await api.getDecision(job.job_id);
         if (j.progress) setProgress(j.progress);
         if (j.status === "done") {
           setResult(j.result);
           setMode(j.mode || null);
+          setLessonsInjected(!!j.lessons_injected);
           setGeneratedAt(new Date());
           setStage("done");
           break;
@@ -193,14 +203,21 @@ export default function DecisionPage() {
       </div>
 
       <div className="surface-elev p-3 flex flex-col sm:flex-row gap-3">
-        <input
-          value={ticker}
-          onChange={(e) => setTicker(e.target.value.toUpperCase())}
-          placeholder="AAPL"
-          className="input flex-1 sm:max-w-xs font-mono uppercase tracking-wider"
-          disabled={loading}
-          spellCheck={false}
-        />
+        <div className="flex-1 sm:max-w-xs flex flex-col gap-2">
+          <input
+            value={ticker}
+            onChange={(e) => setTicker(e.target.value.toUpperCase())}
+            placeholder="AAPL · 600519 · BTC"
+            className="input font-mono uppercase tracking-wider"
+            disabled={loading}
+            spellCheck={false}
+          />
+          <QuickPicks
+            disabled={loading}
+            current={ticker}
+            onPick={(t) => setTicker(t)}
+          />
+        </div>
         <button
           onClick={() => run()}
           disabled={loading || !ticker}
@@ -233,7 +250,7 @@ export default function DecisionPage() {
 
       {/* Mode + timestamp banner above the result */}
       {result && mode && generatedAt && (
-        <div className="mt-3 flex items-center gap-2 text-xs text-ink-tertiary">
+        <div className="mt-3 flex items-center gap-2 text-xs text-ink-tertiary flex-wrap">
           {mode === "cached" ? (
             <span className="pill bg-bg-hover text-ink-secondary">
               {t("decision.cached")}
@@ -242,6 +259,15 @@ export default function DecisionPage() {
             <span className="pill bg-signal-buy_soft text-signal-buy">
               <Sparkles className="w-3 h-3" />
               {t("decision.fresh")}
+            </span>
+          )}
+          {lessonsInjected && (
+            <span
+              className="pill bg-accent-muted text-accent border border-accent/30 cursor-help"
+              title={t("decision.lessonsBody")}
+            >
+              <Sparkles className="w-3 h-3" />
+              {t("decision.lessonsInjected")}
             </span>
           )}
           <span className="font-mono">
@@ -967,6 +993,51 @@ function LiveProgress({ progress }: { progress: DecisionProgress | null }) {
       <p className="text-xs text-ink-tertiary mt-3">
         {t("progress.subheading")}
       </p>
+    </div>
+  );
+}
+
+/** Quick-pick ticker chips so users don't have to type. Three groups
+ *  (US / A-share / Crypto) so the auto-routing path gets exercised. */
+function QuickPicks({
+  current,
+  disabled,
+  onPick,
+}: {
+  current: string;
+  disabled: boolean;
+  onPick: (t: string) => void;
+}) {
+  const { t } = useT();
+  const groups: Array<{ label: string; items: string[] }> = [
+    { label: t("decision.quickPicks.us"), items: ["AAPL", "NVDA", "TSLA", "MSFT"] },
+    { label: t("decision.quickPicks.cn"), items: ["600519", "000001", "300750", "002594"] },
+    { label: t("decision.quickPicks.crypto"), items: ["BTC", "ETH", "SOL"] },
+  ];
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="label-cap">{t("decision.quickPicks")}</span>
+      <div className="flex flex-wrap gap-1">
+        {groups.flatMap((g) =>
+          g.items.map((sym) => (
+            <button
+              key={sym}
+              disabled={disabled}
+              onClick={() => onPick(sym)}
+              className={cn(
+                "pill border whitespace-nowrap text-2xs font-mono transition-colors",
+                current === sym
+                  ? "bg-accent-muted text-accent border-accent/30"
+                  : "bg-bg-subtle text-ink-secondary border-border-subtle hover:bg-bg-hover hover:text-ink-primary",
+                disabled && "opacity-50 cursor-not-allowed"
+              )}
+              title={`${g.label} · ${sym}`}
+            >
+              {sym}
+            </button>
+          ))
+        )}
+      </div>
     </div>
   );
 }

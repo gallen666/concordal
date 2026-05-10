@@ -166,8 +166,17 @@ class BacktestRequest(BaseModel):
 # Ticker syntactic checks per market.
 #  - US equities: 1–5 letter codes with optional class suffix (AAPL, BRK-B, BF.B)
 #  - A-shares  : 6 digits (301308, 600519, 000001) — akshare picks SH/SZ/BJ
+#  - Crypto   : "BTC", "ETH", or pair "BTC/USDT" — distinguishable by /
 _US_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,8}$")
 _CN_TICKER_RE = re.compile(r"^\d{6}$")
+# Common crypto tickers we auto-route to the CCXT adapter even when the
+# frontend sent market="us_equity". Keep this list narrow — anything not
+# in here, the user can still hit by selecting market="crypto" explicitly.
+_CRYPTO_TICKERS = {
+    "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "DOT",
+    "AVAX", "MATIC", "LINK", "TRX", "LTC", "TON", "SHIB",
+    "BCH", "ATOM", "NEAR", "ETC", "XLM", "APT", "ARB", "OP",
+}
 
 
 def _is_supported_us_ticker(ticker: str) -> bool:
@@ -181,17 +190,24 @@ def _is_supported_cn_ticker(ticker: str) -> bool:
     return bool(_CN_TICKER_RE.fullmatch((ticker or "").strip()))
 
 
-def _auto_route_market(ticker: str, market: str) -> str:
-    """Auto-detect market when the user typed a ticker that obviously
-    belongs to a different market than the one the request came in on.
+def _is_crypto_ticker(ticker: str) -> bool:
+    s = (ticker or "").upper().strip()
+    if "/" in s:
+        return True  # explicit pair like "BTC/USDT"
+    return s in _CRYPTO_TICKERS
 
-    Pattern: a 6-digit numeric ticker is unambiguously an A-share code,
-    so even if the request says `market="us_equity"` (the frontend default)
-    we route it to `a_share`. This means users don't need a market picker
-    to try 中文股票.
+
+def _auto_route_market(ticker: str, market: str) -> str:
+    """Auto-detect market from ticker shape so the user doesn't need a
+    market picker for the common cases:
+      - 6-digit numeric → A-share
+      - known crypto symbol or contains "/" → crypto
+      - everything else → leave as-is (defaults to us_equity from the form)
     """
     if _is_supported_cn_ticker(ticker):
         return "a_share"
+    if _is_crypto_ticker(ticker):
+        return "crypto"
     return market
 
 
@@ -310,6 +326,11 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
                 os.environ["TA_MODE"] = prev_mode
 
         cache.put(trace, cache_market)
+        # Surface "did we inject reflection memory?" so the frontend can
+        # show the user that the system used their history. Without this,
+        # the reflection loop is invisible.
+        _jobs[job_id]["lessons_injected"] = bool(lessons)
+        _jobs[job_id]["lessons_chars"] = len(lessons) if lessons else 0
         # Snapshot the close at decision time so forward return can be
         # computed later (e.g. on the user's history page) without
         # re-fetching adjusted prices.
@@ -380,14 +401,119 @@ def _new_job(user: CurrentUser) -> str:
 
 @app.get("/v1/health")
 def health() -> dict:
+    """Health + capability report.
+
+    Lists every feature flag, env var, and integration status — so a
+    user / SRE looking at the deployment can immediately see what's
+    actually running vs silently disabled. No more "macro stage shows
+    in UI but never fired because FRED_API_KEY isn't set."
+    """
+    # Feature availability checks — all best-effort, no exceptions raised.
+    features: dict[str, dict] = {}
+
+    # LLM provider
+    has_gemini = bool(os.getenv("GEMINI_API_KEY"))
+    has_openai = bool(os.getenv("OPENAI_API_KEY"))
+    has_anthropic = bool(os.getenv("ANTHROPIC_API_KEY"))
+    features["llm"] = {
+        "ok": has_gemini or has_openai or has_anthropic,
+        "providers": {
+            "gemini": has_gemini,
+            "openai": has_openai,
+            "anthropic": has_anthropic,
+        },
+        "note": "" if (has_gemini or has_openai) else "no LLM key set — all decisions will be mock",
+    }
+
+    # Macro analyst
+    has_fred = bool(os.getenv("FRED_API_KEY"))
+    try:
+        import openbb  # noqa: F401
+        has_openbb = True
+    except ImportError:
+        has_openbb = False
+    features["macro_analyst"] = {
+        "ok": has_fred or has_openbb,
+        "fred_api_key_set": has_fred,
+        "openbb_sdk_installed": has_openbb,
+        "note": (
+            "" if (has_fred or has_openbb)
+            else "macro stage will silently skip — set FRED_API_KEY to enable"
+        ),
+    }
+
+    # Data adapters
+    try:
+        import yfinance  # noqa: F401
+        has_yfinance = True
+    except ImportError:
+        has_yfinance = False
+    try:
+        import akshare  # noqa: F401
+        has_akshare = True
+    except ImportError:
+        has_akshare = False
+    features["adapters"] = {
+        "yfinance": {"installed": has_yfinance},
+        "akshare": {"installed": has_akshare},
+        "ccxt": {"installed": _has_pkg("ccxt")},
+        "note": (
+            "" if (has_yfinance and has_akshare)
+            else "missing optional adapters fall back to MockAdapter — users won't see this in UI"
+        ),
+    }
+
+    # Persistence
+    data_dir = os.getenv("TA_DATA_DIR", "/app/.tradingagents")
+    features["persistence"] = {
+        "data_dir": data_dir,
+        "warning": (
+            "ephemeral filesystem detected — decisions wiped on redeploy"
+            if data_dir.startswith("/app") else ""
+        ),
+    }
+
+    # Auth
+    using_default_secret = (
+        cfg.jwt_secret == "dev-secret-change-me"
+    )
+    features["auth"] = {
+        "require_invite": cfg.require_invite_code,
+        "real_llm_user_count": len(cfg.real_llm_user_ids),
+        "warning": (
+            "JWT_SECRET is the dev default — all signed tokens are insecure"
+            if using_default_secret else ""
+        ),
+    }
+
+    # OpenBB widget
+    features["openbb_widget"] = {"manifest": "/openbb/widgets.json"}
+
+    # Aggregate readiness — anything with a non-empty "warning" fails.
+    warnings = [
+        f["warning"] for f in features.values() if f.get("warning")
+    ] + [
+        f["note"] for f in features.values() if f.get("note")
+    ]
     return {
-        "status": "ok",
+        "status": "ok" if not warnings else "degraded",
         "version": "0.1.0",
         "env": cfg.env,
         "mode": os.getenv("TA_MODE", "mock"),
         "emergency_stop": cfg.emergency_stop_decisions,
+        "features": features,
+        "warnings": warnings,
         "disclaimer": "decision_support_only",
     }
+
+
+def _has_pkg(name: str) -> bool:
+    """Return True if `name` can be imported."""
+    try:
+        __import__(name)
+        return True
+    except ImportError:
+        return False
 
 
 @app.get("/v1/ecosystem")

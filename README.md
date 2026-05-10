@@ -11,13 +11,25 @@ so the demo never burns through the API quota.
 
 A multi-agent LLM trading **decision-support** platform inspired by the
 [TradingAgents paper](https://arxiv.org/abs/2412.20138)
-(Xiao, Sun, Luo, Wang — UCLA / MIT / Tauric Research). Seven specialized
-LLM agents — fundamentals analyst, sentiment analyst, news analyst,
-technical analyst, bull/bear researcher debate, trader, three-way risk
-committee, fund manager — produce a fully traceable buy / overweight / hold
-/ underweight / sell recommendation per ticker.
+(Xiao, Sun, Luo, Wang — UCLA / MIT / Tauric Research). Specialized
+LLM agents — fundamentals, sentiment, news, technical, **macro**,
+bull/bear researcher debate, trader, three-way risk committee, fund
+manager — produce a fully traceable buy / overweight / hold / underweight
+/ sell recommendation per ticker.
 
 > ⚠️ **Decision support, not investment advice.** See `docs/COMPLIANCE.md`.
+
+## What ships today
+
+* **Multi-market**: US equities (yfinance), A-share (akshare), **crypto via CCXT**.
+* **5-analyst pipeline**: fundamentals + sentiment + news + technical + **macro** (FRED/IMF via OpenBB SDK).
+* **Point-in-time fundamentals** for backtests via SEC EDGAR XBRL — no lookahead bias.
+* **Live progress**: every stage reports start/done so the UI shows a live timeline instead of a 90s spinner.
+* **OpenBB Workspace integration**: 3 widgets (Decision / Macro Brief / Track Record) — paste `<host>/openbb/widgets.json` into OpenBB Workspace settings.
+* **Ecosystem hub** (`/ecosystem`): registry of 10 best-of-breed OSS quant projects + universal data bus + cross-pollination.
+* **Reflection loop**: prior decisions on a ticker, enriched with realised forward return, get injected into the Manager prompt.
+* **Honest cost model**: 10bp round-trip US, 15bp A-share with stamp tax — defaults are pessimistic by design.
+* **Self-diagnosis**: `GET /v1/health` lists every feature flag + env var status; missing keys surface as a "warnings" badge in the header.
 
 ## Why this codebase exists vs. the paper repo
 

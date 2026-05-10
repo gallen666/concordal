@@ -30,6 +30,12 @@ def _bootstrap() -> None:
     # (涨跌停板、T+1、ST 股、流通市值 vs 总市值、限售解禁).
     register_pack("a_share", US_EQUITY_EN)
     register_pack("a_share:zh", US_EQUITY_EN)
+    # Crypto reuses the US pack for now (the analyst prompts are market-
+    # agnostic and the Fundamentals adapter returns honest "no traditional
+    # fundamentals" notes for crypto, which the prompt already handles).
+    # Future: dedicated crypto pack with on-chain / tokenomics framing.
+    register_pack("crypto", US_EQUITY_EN)
+    register_pack("crypto:en", US_EQUITY_EN)
 
 
 _bootstrap()

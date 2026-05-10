@@ -152,6 +152,8 @@ export const api = {
       error: string | null;
       mode?: string;
       progress?: DecisionProgress | null;
+      lessons_injected?: boolean;
+      lessons_chars?: number;
     }>(`/v1/decisions/job/${id}`),
 
   createBacktest: (req: {

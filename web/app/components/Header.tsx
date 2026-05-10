@@ -2,18 +2,35 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { LogOut, Beaker, Sparkles, Languages } from "lucide-react";
+import { LogOut, Beaker, Sparkles, Languages, AlertTriangle } from "lucide-react";
 import { auth, api, type CurrentUser } from "../lib/api";
 import { Logo } from "./Logo";
 import { cn } from "../lib/cn";
 import { useT } from "../lib/i18n";
 
+const API_BASE = process.env.NEXT_PUBLIC_API || "http://localhost:8000";
+
+interface HealthSnapshot {
+  status: "ok" | "degraded";
+  mode: string;
+  warnings: string[];
+}
+
 export default function Header() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [health, setHealth] = useState<HealthSnapshot | null>(null);
   const { t, locale, toggle } = useT();
 
   useEffect(() => {
+    // Always pull /v1/health (public) so mode + degraded warnings are
+    // visible to logged-out visitors too — they shouldn't have to log in
+    // to discover that the backend is in mock mode.
+    fetch(`${API_BASE}/v1/health`)
+      .then((r) => r.json())
+      .then((h: HealthSnapshot) => setHealth(h))
+      .catch(() => undefined);
+
     if (!auth.isLoggedIn()) {
       setLoaded(true);
       return;
@@ -37,11 +54,11 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-30 border-b border-border-subtle bg-bg-base/70 backdrop-blur-xl">
-      <div className="max-w-6xl mx-auto h-14 flex items-center justify-between px-6">
-        <Link href="/" className="flex items-center">
+      <div className="max-w-6xl mx-auto h-14 flex items-center justify-between px-4 sm:px-6 gap-2">
+        <Link href="/" className="flex items-center shrink-0">
           <Logo />
         </Link>
-        <nav className="flex items-center gap-1 text-sm">
+        <nav className="flex items-center gap-1 text-sm overflow-x-auto no-scrollbar">
           {loaded && user ? (
             <>
               <NavLink href="/decision">{t("header.newDecision")}</NavLink>
@@ -53,6 +70,9 @@ export default function Header() {
               <NavLink href="/ecosystem">{t("header.ecosystem")}</NavLink>
               <NavLink href="/integrations">{t("header.integrations")}</NavLink>
               <ModeBadge real={user.real_llm} />
+              {health && health.warnings.length > 0 && (
+                <DegradedBadge warnings={health.warnings} />
+              )}
               <span className="hidden sm:inline-flex text-xs text-ink-tertiary px-2">
                 {user.id}
               </span>
@@ -75,6 +95,12 @@ export default function Header() {
               <NavLink href="/track-record">{t("header.trackRecord")}</NavLink>
               <NavLink href="/ecosystem">{t("header.ecosystem")}</NavLink>
               <NavLink href="/integrations">{t("header.integrations")}</NavLink>
+              {/* Show backend mode + degradation warnings to logged-out
+                  visitors too — honesty by default. */}
+              {health && <ModeBadge real={health.mode === "live"} />}
+              {health && health.warnings.length > 0 && (
+                <DegradedBadge warnings={health.warnings} />
+              )}
               <LangToggle
                 label={toggleLabel}
                 title={toggleTitle}
@@ -121,6 +147,22 @@ function LangToggle({
       <Languages className="w-3.5 h-3.5" />
       <span className="font-medium">{label}</span>
     </button>
+  );
+}
+
+function DegradedBadge({ warnings }: { warnings: string[] }) {
+  // Tooltip lists every warning the backend reported (env vars not set,
+  // optional packages missing, etc.) — gives the user a one-glance view
+  // of which features are silently disabled.
+  const tip = warnings.join("\n• ");
+  return (
+    <span
+      className="pill ml-1 bg-signal-warn_soft text-signal-warn cursor-help"
+      title={`Backend warnings:\n• ${tip}`}
+    >
+      <AlertTriangle className="w-3 h-3" />
+      {warnings.length} warning{warnings.length === 1 ? "" : "s"}
+    </span>
   );
 }
 
