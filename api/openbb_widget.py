@@ -51,7 +51,14 @@ from trading_agents.core.graph import run_decision
 
 log = logging.getLogger("ta.openbb")
 
-router = APIRouter(prefix="/openbb", tags=["openbb-workspace"])
+# `include_in_schema=False` keeps these endpoints out of /docs and the
+# auto-generated OpenAPI JSON — they're a presentation layer for OpenBB
+# Workspace, not part of the public developer API surface.
+router = APIRouter(
+    prefix="/openbb",
+    tags=["openbb-workspace"],
+    include_in_schema=False,
+)
 
 # Re-use the same cache singleton that /v1/decisions uses, so OpenBB calls
 # get warm-cached results from frontend runs and vice versa.
@@ -62,25 +69,52 @@ _cache = TickerCache()
 # Tiny IP-based rate limit (OpenBB calls don't carry user_id)
 # ---------------------------------------------------------------------------
 
-_LIMIT_PER_HOUR = int(os.environ.get("TA_OPENBB_LIMIT_PER_HOUR", "20"))
+# Per-IP limit + a global decision-cost ceiling. Real LLM calls are now
+# routed through these endpoints (we removed the forced-mock downgrade),
+# so two separate guards: 5/hour per IP, AND a global ceiling that
+# prevents a swarm of new IPs from drowning our LLM budget.
+_LIMIT_PER_HOUR = int(os.environ.get("TA_OPENBB_LIMIT_PER_HOUR", "5"))
+_GLOBAL_DECISIONS_PER_HOUR = int(os.environ.get("TA_OPENBB_GLOBAL_PER_HOUR", "60"))
 _ip_buckets: dict[str, list[float]] = {}
+_global_decisions_log: list[float] = []
 
 
 def _rate_limit_ip(request: Request) -> None:
+    """Per-IP throttle for all OpenBB widget endpoints."""
     import time
     ip = request.client.host if request.client else "anonymous"
     now = time.time()
     bucket = _ip_buckets.setdefault(ip, [])
-    # Drop entries older than 1 hour
     cutoff = now - 3600
     bucket[:] = [t for t in bucket if t > cutoff]
     if len(bucket) >= _LIMIT_PER_HOUR:
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             f"OpenBB widget rate limit ({_LIMIT_PER_HOUR}/hour per IP). "
-            "Try again later or set up your own backend.",
+            "Try again later or self-host the backend (it's open source).",
         )
     bucket.append(now)
+
+
+def _global_decision_budget() -> None:
+    """Hard ceiling on the rate of real-LLM decisions served via OpenBB
+    widgets, regardless of IP. Each decision costs us ~$0.05-$0.20, so
+    `_GLOBAL_DECISIONS_PER_HOUR=60` caps the worst-case burn at roughly
+    $3-$12/hour. Anyone past the ceiling sees a friendly 429 nudging
+    them to self-host or upgrade to Pro for their own quota."""
+    import time
+    now = time.time()
+    cutoff = now - 3600
+    # Trim in place — keep recent entries only
+    _global_decisions_log[:] = [t for t in _global_decisions_log if t > cutoff]
+    if len(_global_decisions_log) >= _GLOBAL_DECISIONS_PER_HOUR:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "OpenBB-widget global decision budget exhausted for this hour. "
+            "Upgrade to a paid tier (/pricing) for your own quota, "
+            "or self-host the backend.",
+        )
+    _global_decisions_log.append(now)
 
 
 # ---------------------------------------------------------------------------
@@ -326,10 +360,14 @@ def widget_decision(
     market = _auto_market(ticker)
     asof = date.today()
 
-    # Cache hit?
+    # Cache hit? Free, no budget impact.
     cached = _cache.get(ticker.upper(), asof, market)
     if cached:
         return _format_decision_markdown(cached.model_dump(mode="json"), locale=locale)
+
+    # Cache miss => we're about to spend real LLM money. Check the
+    # global budget BEFORE firing the pipeline.
+    _global_decision_budget()
 
     # OpenBB widget calls run with the same real-LLM pipeline as the
     # website. IP-rate-limit (~20/hour) + the LLM provider chain itself

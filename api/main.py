@@ -180,45 +180,84 @@ _ANON_DAILY_CAP = int(os.environ.get("TA_ANON_DAILY_DECISIONS", "2"))
 _daily_count: dict[tuple[str, str], int] = {}  # (user_id, "YYYY-MM-DD") -> count
 
 
-def _daily_cap_check(user: CurrentUser) -> None:
-    """Enforce per-user daily decision cap for free-tier users.
+_PRO_DAILY_CAP = int(os.environ.get("TA_PRO_DAILY_DECISIONS", "30"))
 
-    Returns None on success; raises HTTPException(402) when the user has
-    used up their daily allotment, with an `X-Upgrade-Url` header so the
-    frontend can deep-link to /pricing#pro on the response.
+
+def _bucket_key(user: CurrentUser, request: Request | None) -> tuple[str, str]:
+    """Resolve the (identifier, day) bucket used for daily-cap accounting.
+
+    For authenticated users we key on email (user.id). For anonymous
+    callers we MUST key on IP — otherwise every anonymous request shares
+    one global bucket and the first 2 visitors lock out everybody else.
+
+    When `request` is None (e.g. cron / internal calls) we fall back to
+    user.id so callers without HTTP context still work.
     """
-    if user.real_llm:
-        return  # Pro/Team users have their own (much higher) limits
     today = datetime.utcnow().strftime("%Y-%m-%d")
-    key = (user.id, today)
-    cap = _ANON_DAILY_CAP if user.id == "anonymous" else _FREE_DAILY_CAP
-    used = _daily_count.get(key, 0)
+    if user.id == "anonymous" and request is not None:
+        # X-Forwarded-For first (Render + Vercel both set it), else
+        # the direct client IP. Take the first hop only — downstream
+        # hops are spoofable.
+        fwd = request.headers.get("x-forwarded-for", "")
+        ip = fwd.split(",")[0].strip() if fwd else (
+            request.client.host if request.client else "unknown"
+        )
+        return (f"anon:{ip}", today)
+    return (user.id, today)
+
+
+def _daily_cap_check(user: CurrentUser, request: Request | None = None) -> None:
+    """Enforce daily decision cap. Raises 402 with upgrade hint on overflow.
+
+    Tier mapping:
+      anon          → 2 / day per IP   (TA_ANON_DAILY_DECISIONS)
+      free          → 5 / day per user (TA_FREE_DAILY_DECISIONS)
+      pro / team    → 30+/day per user (TA_PRO_DAILY_DECISIONS)
+    """
+    # Even Pro/Team get a (very high) cap as a runaway-spam guard.
+    today_key = _bucket_key(user, request)
+    if user.id == "anonymous":
+        cap = _ANON_DAILY_CAP
+        tier = "anon"
+    elif not user.real_llm:
+        cap = _FREE_DAILY_CAP
+        tier = "free"
+    else:
+        cap = _PRO_DAILY_CAP
+        tier = "pro"
+    used = _daily_count.get(today_key, 0)
     if used >= cap:
         raise HTTPException(
-            status_code=402,                       # Payment Required
+            status_code=402,
             detail={
                 "error": "daily_cap_exceeded",
                 "message": (
-                    f"You've used your daily {cap} free decisions. "
-                    "Upgrade to Pro for ~30/day."
+                    f"You've used your daily {cap} decisions on the {tier} tier. "
+                    "Upgrade to Pro for ~30/day, or come back tomorrow."
                 ),
                 "used": used,
                 "cap": cap,
+                "tier": tier,
                 "upgrade_url": "/pricing#pro",
-                "tier": "pro",
             },
         )
-    _daily_count[key] = used + 1
+    _daily_count[today_key] = used + 1
 
 
-def _daily_cap_status(user: CurrentUser) -> dict:
-    """Read-only view used by the frontend's usage banner."""
-    if user.real_llm:
-        return {"used": 0, "cap": None, "tier": "pro"}
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    cap = _ANON_DAILY_CAP if user.id == "anonymous" else _FREE_DAILY_CAP
-    used = _daily_count.get((user.id, today), 0)
-    return {"used": used, "cap": cap, "tier": "free"}
+def _daily_cap_status(user: CurrentUser, request: Request | None = None) -> dict:
+    """Read-only view used by the frontend's usage badge."""
+    today_key = _bucket_key(user, request)
+    if user.id == "anonymous":
+        cap = _ANON_DAILY_CAP
+        tier = "anon"
+    elif not user.real_llm:
+        cap = _FREE_DAILY_CAP
+        tier = "free"
+    else:
+        cap = _PRO_DAILY_CAP
+        tier = "pro"
+    used = _daily_count.get(today_key, 0)
+    return {"used": used, "cap": cap, "tier": tier}
 
 
 # --- request models ------------------------------------------------------
@@ -648,6 +687,17 @@ def health() -> dict:
         ),
     }
 
+    # Cron — weekly-digest endpoint is callable by anyone unless we have
+    # a shared secret to gate it. Loud warning so operator notices.
+    features["cron"] = {
+        "weekly_digest_protected": bool(os.getenv("TA_CRON_SECRET")),
+        "warning": (
+            ""
+            if os.getenv("TA_CRON_SECRET")
+            else "TA_CRON_SECRET not set — /v1/cron/weekly-digest is open to the public"
+        ),
+    }
+
     # OpenBB widget
     features["openbb_widget"] = {"manifest": "/openbb/widgets.json"}
 
@@ -702,12 +752,18 @@ def upgrade_checkout(
     """
     if req.tier not in ("pro", "team"):
         raise HTTPException(400, f"Unknown tier: {req.tier}")
-    base = os.environ.get(
-        "TA_UPGRADE_URL_" + req.tier.upper(),
-        # Default: a Tally / Google Form / waitlist URL
-        f"https://tally.so/r/upgrade?tier={req.tier}&user={user.id}",
-    )
-    return {"url": base, "tier": req.tier}
+    configured = os.environ.get("TA_UPGRADE_URL_" + req.tier.upper())
+    if configured:
+        return {"url": configured, "tier": req.tier, "configured": True}
+    # No upgrade URL configured — degrade gracefully back to the
+    # /pricing page rather than handing out a Tally URL that 404s.
+    # Frontend treats `configured=false` as "show contact form" later.
+    site = os.environ.get("TA_SITE_URL", "https://trading-agents-platform.vercel.app")
+    return {
+        "url": f"{site}/pricing#{req.tier}",
+        "tier": req.tier,
+        "configured": False,
+    }
 
 
 @app.post("/v1/cron/weekly-digest", tags=["auth"])
@@ -804,6 +860,7 @@ def auth_me(user: CurrentUser = Depends(get_current_user)) -> dict:
 def create_decision(
     req: DecisionRequest,
     bg: BackgroundTasks,
+    request: Request,
     user: CurrentUser = Depends(get_optional_user),
 ) -> JobResponse:
     if cfg.emergency_stop_decisions:
@@ -812,22 +869,24 @@ def create_decision(
             "Decision engine is temporarily disabled. Try again later.",
         )
     _rate_limit(user.id)
-    # Free-tier daily cap (Pro/Team skip). Returns 402 with upgrade hint
-    # when exceeded — the frontend uses this to switch to a paywall view.
-    _daily_cap_check(user)
+    # Daily cap: keyed on IP for anonymous, user.id for authenticated.
+    # Returns 402 with upgrade hint when exceeded.
+    _daily_cap_check(user, request)
     jid = _new_job(user)
     bg.add_task(_run_decision_job, jid, req, user)
     return JobResponse(job_id=jid, status="queued")
 
 
 @app.get("/v1/me/usage")
-def get_usage(user: CurrentUser = Depends(get_current_user)) -> dict:
+def get_usage(
+    request: Request,
+    user: CurrentUser = Depends(get_optional_user),
+) -> dict:
     """Return daily-cap status so the frontend can render a usage badge.
 
-    Output shape: `{used: int, cap: int|null, tier: "free"|"pro"}`.
-    `cap=null` means unlimited (Pro/Team).
+    Output shape: `{used: int, cap: int, tier: "anon"|"free"|"pro"}`.
     """
-    return _daily_cap_status(user)
+    return _daily_cap_status(user, request)
 
 
 @app.get("/v1/decisions/job/{job_id}")

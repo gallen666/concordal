@@ -58,7 +58,7 @@ const FEATURE_MATRIX: Array<{
     free: true, pro: true, team: true },
   { label_en: "Decisions per day",
     label_zh: "每日决策次数",
-    free: "5", pro: "30", team: "100 / seat" },
+    free: "5 (signed in) · 2 anon", pro: "30", team: "100 / seat" },
   { label_en: "Decision history (persisted)",
     label_zh: "决策历史持久化",
     free: "Local only", pro: true, team: true },

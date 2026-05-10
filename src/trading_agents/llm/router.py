@@ -603,6 +603,19 @@ class LLMRouter:
             return self._glm
         return self._mock
 
+    def has_any_real_provider(self) -> bool:
+        """True iff at least one real LLM provider is configured.
+
+        Used by /v1/health to honestly tell users "you'll get mock
+        output" when no keys are set, and by `complete()` to relabel
+        TokenUsage.model so the cost ledger doesn't claim we paid GPT
+        prices for a mock-served response.
+        """
+        return any((
+            self._openai, self._anthropic, self._gemini,
+            self._deepseek, self._qwen, self._glm,
+        ))
+
     # Per-family fallback chains. The router cycles through these on
     # transient errors (rate limit / 5xx) so a single quota exhaustion
     # can't bring the pipeline down. Each chain only fires for models
@@ -667,7 +680,20 @@ class LLMRouter:
             provider = self._provider_for(m)
             log.debug("LLM %s -> %s (%s)", tier.value, m, provider.name)
             try:
-                return provider.complete(sys_with_lang, user, m, temperature=temperature)
+                resp = provider.complete(sys_with_lang, user, m, temperature=temperature)
+                # Honesty: if we silently fell through to mock (because
+                # the configured model had no real provider — e.g. user
+                # set TA_MODEL_DEEP=gemini-3.1-pro-preview but never set
+                # GEMINI_API_KEY), the response's TokenUsage.model would
+                # still say "gemini-3.1-pro-preview" and the cost ledger
+                # would claim we paid Gemini prices for a template
+                # response. Relabel to a mock-* model name so the UI +
+                # billing know what really happened.
+                if provider is self._mock and not m.startswith("mock-"):
+                    fake_model = "mock-deep" if tier == Tier.DEEP else "mock-mid"
+                    resp.usage.model = fake_model
+                    resp.usage.usd_cost = 0.0
+                return resp
             except Exception as e:
                 last_err = e
                 msg = str(e)

@@ -39,7 +39,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE}/track-record`, lastModified: now, changeFrequency: "weekly",  priority: 0.6 },
     { url: `${SITE}/hot`,          lastModified: now, changeFrequency: "daily",   priority: 0.6 },
     { url: `${SITE}/backtest`,     lastModified: now, changeFrequency: "monthly", priority: 0.6 },
-    { url: `${SITE}/redeem`,       lastModified: now, changeFrequency: "monthly", priority: 0.5 },
+    // /redeem is disallowed in robots.txt — keep it out of the sitemap
+    // to avoid a "disallowed URL in sitemap" warning in Search Console.
     { url: `${SITE}/terms`,        lastModified: now, changeFrequency: "yearly",  priority: 0.3 },
     { url: `${SITE}/privacy`,      lastModified: now, changeFrequency: "yearly",  priority: 0.3 },
     { url: `${SITE}/disclaimer`,   lastModified: now, changeFrequency: "yearly",  priority: 0.3 },

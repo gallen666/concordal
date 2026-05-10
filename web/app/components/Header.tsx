@@ -100,9 +100,11 @@ export default function Header() {
               <NavLink href="/integrations">{t("header.integrations")}</NavLink>
               <NavLink href="/proof">{t("header.proof")}</NavLink>
               <NavLink href="/pricing">{t("header.pricing")}</NavLink>
-              {/* Show backend mode + degradation warnings to logged-out
-                  visitors too — honesty by default. */}
-              {health && <ModeBadge real={health.mode === "live"} />}
+              {/* Mode badge removed for logged-out visitors — every user
+                  now hits the real LLM pipeline, so the mock/real
+                  distinction adds noise without adding signal. We
+                  still surface DegradedBadge when env keys are missing
+                  (e.g. mock-fallback risk), so honesty isn't lost. */}
               {health && health.warnings.length > 0 && (
                 <DegradedBadge warnings={health.warnings} />
               )}

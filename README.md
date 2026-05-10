@@ -2,10 +2,12 @@
 
 ### 👉 Live site: **[trading-agents-platform.vercel.app](https://trading-agents-platform.vercel.app)**
 
-Closed beta — invite code `trial` lets anyone in to try the demo. Friend codes
-`gallen-fr-1` … `gallen-fr-10` are also active. Real-LLM mode (Gemini 3.1 Pro
-Preview) is gated to allowlisted accounts; everyone else sees the mock pipeline
-so the demo never burns through the API quota.
+**Real-only mode** — every visitor, including anonymous, hits the same real-LLM
+pipeline (Gemini 3.1 Pro / DeepSeek / Claude, with auto-fallback). Quota
+protection is done via per-tier daily caps (anon 2/day per IP · free 5/day
+per user · Pro 30/day), not LLM-tier downgrade. Mock provider only fires as
+the final fallback when every real provider has failed — and the response
+honestly relabels itself as `mock-*` so the cost ledger doesn't lie.
 
 ---
 
