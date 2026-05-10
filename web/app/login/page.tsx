@@ -13,7 +13,7 @@
  * always show the same "check your inbox" success view regardless.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Loader2, Mail } from "lucide-react";
 import { api } from "../lib/api";
@@ -26,6 +26,17 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<{ devLink?: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Stash any ?ref=XXX referral code in localStorage so /auth/verify can
+  // claim it for the user once they finish the magic-link flow. We keep
+  // this in localStorage (not a cookie) so it survives the round trip
+  // through email without crossing domain or SameSite barriers.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    if (ref) localStorage.setItem("ta_pending_ref", ref);
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

@@ -397,6 +397,42 @@ const dict = {
     zh: "每天 2 次免费真 LLM 决策——无需邮箱。邀请码登录后 5 次/天，升级 Pro 后 30 次/天。",
   },
 
+  // ---- /me/referral (viral loop) -----------------------------------------
+  "header.referral":            { en: "Refer & earn",                         zh: "邀请赚配额" },
+  "referral.label":             { en: "INVITE FRIENDS",                       zh: "邀请朋友" },
+  "referral.heading":           { en: "Both of you get +5 decisions/day for 7 days", zh: "每邀请一人，双方都得 +5 决策/天 × 7 天" },
+  "referral.subheading":        {
+    en: "Share your link below. When someone signs up through it, both you and your friend get bonus quota stacked on top of your existing tier — at no cost to either.",
+    zh: "分享下面的链接。有人通过它注册，你和他都会在原有 tier 之上叠加 bonus 配额——对双方都零成本。",
+  },
+  "referral.yourLink":          { en: "Your invite link",                     zh: "你的邀请链接" },
+  "referral.copy":              { en: "Copy",                                 zh: "复制" },
+  "referral.copied":            { en: "Copied!",                              zh: "已复制！" },
+  "referral.stats.invitees":    { en: "Friends invited",                      zh: "已邀请" },
+  "referral.stats.bonusActive": { en: "Bonus active",                         zh: "Bonus 状态" },
+  "referral.stats.bonusYes":    { en: "Yes — +{n}/day",                       zh: "活跃 — +{n}/天" },
+  "referral.stats.bonusNo":     { en: "No — invite someone to activate",      zh: "未激活 — 邀请一人激活" },
+
+  // ---- /sponsor (income channels) ---------------------------------------
+  "header.sponsor":             { en: "Support",                              zh: "支持我们" },
+  "sponsor.label":              { en: "WAYS TO SUPPORT",                      zh: "支持渠道" },
+  "sponsor.heading":            { en: "Keep the platform free for everyone",  zh: "让平台对所有人保持免费" },
+  "sponsor.subheading":         {
+    en: "TradingAgents is open-source and free forever. If you want to help us keep the LLM bill paid + extend the analyst pipeline, any of these channels works — pick whichever you already use.",
+    zh: "TradingAgents 是开源的，永久免费。如果想帮我们 cover LLM 账单 + 加新分析师能力，下面任意一个渠道都行——选你已经在用的。",
+  },
+  "sponsor.oneTime.title":      { en: "One-time tips",                        zh: "一次性打赏" },
+  "sponsor.recurring.title":    { en: "Recurring sponsorship",                zh: "定期赞助" },
+  "sponsor.affiliate.title":    { en: "Open an account via these brokers",    zh: "通过这些券商开户" },
+  "sponsor.affiliate.body":     {
+    en: "When you open a brokerage account through these links and trade on real money, the broker pays us a small referral fee. Costs you nothing extra.",
+    zh: "通过这些链接开户并真实交易，券商会给我们小额返佣。对你没有任何额外成本。",
+  },
+  "sponsor.notConfigured":      {
+    en: "(This channel isn't set up yet — operator can add their handle to env vars.)",
+    zh: "（这个渠道还没配置——运营方可以把账号 handle 加到 env 变量。）",
+  },
+
   // ---- /login (magic-link auth) -----------------------------------------
   "header.signIn":              { en: "Sign in",                              zh: "登录" },
   "login.label":                { en: "SIGN IN",                              zh: "登录" },

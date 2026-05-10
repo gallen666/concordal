@@ -64,6 +64,7 @@ export default function Header() {
               <NavLink href="/decision">{t("header.newDecision")}</NavLink>
               <NavLink href="/hot">{t("header.hot")}</NavLink>
               <NavLink href="/me/history">{t("header.myHistory")}</NavLink>
+              <NavLink href="/me/referral">{t("header.referral")}</NavLink>
               <NavLink href="/watchlist">{t("header.watchlist")}</NavLink>
               <NavLink href="/track-record">{t("header.trackRecord")}</NavLink>
               <NavLink href="/how-it-works">{t("header.howItWorks")}</NavLink>
@@ -72,6 +73,7 @@ export default function Header() {
               <NavLink href="/proof">{t("header.proof")}</NavLink>
               <NavLink href="/developers">{t("header.developers")}</NavLink>
               <NavLink href="/pricing">{t("header.pricing")}</NavLink>
+              <NavLink href="/sponsor">{t("header.sponsor")}</NavLink>
               <ModeBadge real={user.real_llm} />
               {health && health.warnings.length > 0 && (
                 <DegradedBadge warnings={health.warnings} />
@@ -100,6 +102,7 @@ export default function Header() {
               <NavLink href="/integrations">{t("header.integrations")}</NavLink>
               <NavLink href="/proof">{t("header.proof")}</NavLink>
               <NavLink href="/pricing">{t("header.pricing")}</NavLink>
+              <NavLink href="/sponsor">{t("header.sponsor")}</NavLink>
               {/* Mode badge removed for logged-out visitors — every user
                   now hits the real LLM pipeline, so the mock/real
                   distinction adds noise without adding signal. We

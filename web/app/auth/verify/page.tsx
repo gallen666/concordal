@@ -34,10 +34,21 @@ export default function VerifyPage() {
     }
     api
       .magicLinkVerify({ token })
-      .then((r) => {
+      .then(async (r) => {
         auth.setToken(r.token);
+        // If a referral code was stashed on /login?ref=XXX, claim it now
+        // — both inviter and invitee get +5 decisions/day for 7 days.
+        // Fire-and-forget so a failure here doesn't break sign-in.
+        const pendingRef = localStorage.getItem("ta_pending_ref");
+        if (pendingRef) {
+          localStorage.removeItem("ta_pending_ref");
+          try {
+            await api.referralClaim({ code: pendingRef });
+          } catch {
+            // ignore — referral is best-effort
+          }
+        }
         setState("ok");
-        // Redirect after a brief "success" beat so the user sees confirmation
         setTimeout(() => {
           window.location.href = "/decision";
         }, 900);

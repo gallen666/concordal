@@ -186,6 +186,62 @@ _daily_count: dict[tuple[str, str], int] = {}  # (user_id, "YYYY-MM-DD") -> coun
 
 _PRO_DAILY_CAP = int(os.environ.get("TA_PRO_DAILY_DECISIONS", "30"))
 
+# --- Referral program ----------------------------------------------------
+# Each user has a deterministic 8-char referral code derived from their
+# email. When a new user signs up via /login?ref=XXXX:
+#   1. The new user gets +5 bonus decisions/day for 7 days
+#   2. The referring user (whose code matches) gets the same bonus
+#
+# State lives in memory; on production swap to Postgres / Redis. Format:
+#   _referrals[referee_email] = referrer_email
+#   _referral_bonus[email] = expires_at_epoch_seconds
+import hashlib
+_referrals: dict[str, str] = {}
+_referral_bonus: dict[str, float] = {}
+# Seen-users registry — populated lazily whenever an authenticated request
+# arrives, so the referral reverse-lookup knows about emails that haven't
+# yet claimed or been claimed. Bounded set so a brute-force attacker can't
+# fill memory with junk emails.
+_known_users: set[str] = set()
+_KNOWN_USERS_CAP = 100_000
+_REFERRAL_BONUS_DAYS = int(os.environ.get("TA_REFERRAL_BONUS_DAYS", "7"))
+_REFERRAL_BONUS_DECISIONS = int(os.environ.get("TA_REFERRAL_BONUS_DECISIONS", "5"))
+
+
+def _referral_code(email: str) -> str:
+    """Deterministic 8-char code per email. Same email → same code,
+    so a user can share a stable link without us minting state."""
+    h = hashlib.sha256(email.encode("utf-8")).hexdigest()
+    return h[:8]
+
+
+def _email_for_code(code: str, all_known_emails: list[str]) -> str | None:
+    """Reverse lookup: which email's referral_code is this? Brute force
+    over the known-emails list (cheap for <10k users; swap to a
+    materialised reverse index when that becomes a hot path)."""
+    for e in all_known_emails:
+        if _referral_code(e) == code:
+            return e
+    return None
+
+
+def _grant_referral_bonus(email: str) -> None:
+    """Stack the 7-day bonus onto a user. Idempotent: multiple wins
+    just extend the expiry, they don't compound the per-day quota."""
+    now = time.time()
+    new_exp = now + _REFERRAL_BONUS_DAYS * 86400
+    current = _referral_bonus.get(email, 0.0)
+    _referral_bonus[email] = max(current, new_exp)
+
+
+def _bonus_cap_for(email: str) -> int:
+    """How many extra decisions/day the bonus contributes for `email`
+    right now. 0 once the bonus has expired."""
+    exp = _referral_bonus.get(email, 0.0)
+    if exp > time.time():
+        return _REFERRAL_BONUS_DECISIONS
+    return 0
+
 
 def _bucket_key(user: CurrentUser, request: Request | None) -> tuple[str, str]:
     """Resolve the (identifier, day) bucket used for daily-cap accounting.
@@ -210,25 +266,27 @@ def _bucket_key(user: CurrentUser, request: Request | None) -> tuple[str, str]:
     return (user.id, today)
 
 
+def _base_cap_and_tier(user: CurrentUser) -> tuple[int, str]:
+    if user.id == "anonymous":
+        return _ANON_DAILY_CAP, "anon"
+    if not user.real_llm:
+        return _FREE_DAILY_CAP, "free"
+    return _PRO_DAILY_CAP, "pro"
+
+
 def _daily_cap_check(user: CurrentUser, request: Request | None = None) -> None:
     """Enforce daily decision cap. Raises 402 with upgrade hint on overflow.
 
-    Tier mapping:
+    Tier mapping (base, before referral bonus):
       anon          → 2 / day per IP   (TA_ANON_DAILY_DECISIONS)
       free          → 5 / day per user (TA_FREE_DAILY_DECISIONS)
       pro / team    → 30+/day per user (TA_PRO_DAILY_DECISIONS)
+    A 7-day referral bonus adds +5/day on top for both inviter + invitee.
     """
-    # Even Pro/Team get a (very high) cap as a runaway-spam guard.
     today_key = _bucket_key(user, request)
-    if user.id == "anonymous":
-        cap = _ANON_DAILY_CAP
-        tier = "anon"
-    elif not user.real_llm:
-        cap = _FREE_DAILY_CAP
-        tier = "free"
-    else:
-        cap = _PRO_DAILY_CAP
-        tier = "pro"
+    base, tier = _base_cap_and_tier(user)
+    bonus = _bonus_cap_for(user.id) if user.id != "anonymous" else 0
+    cap = base + bonus
     used = _daily_count.get(today_key, 0)
     if used >= cap:
         raise HTTPException(
@@ -241,6 +299,8 @@ def _daily_cap_check(user: CurrentUser, request: Request | None = None) -> None:
                 ),
                 "used": used,
                 "cap": cap,
+                "base_cap": base,
+                "bonus_cap": bonus,
                 "tier": tier,
                 "upgrade_url": "/pricing#pro",
             },
@@ -251,17 +311,16 @@ def _daily_cap_check(user: CurrentUser, request: Request | None = None) -> None:
 def _daily_cap_status(user: CurrentUser, request: Request | None = None) -> dict:
     """Read-only view used by the frontend's usage badge."""
     today_key = _bucket_key(user, request)
-    if user.id == "anonymous":
-        cap = _ANON_DAILY_CAP
-        tier = "anon"
-    elif not user.real_llm:
-        cap = _FREE_DAILY_CAP
-        tier = "free"
-    else:
-        cap = _PRO_DAILY_CAP
-        tier = "pro"
+    base, tier = _base_cap_and_tier(user)
+    bonus = _bonus_cap_for(user.id) if user.id != "anonymous" else 0
     used = _daily_count.get(today_key, 0)
-    return {"used": used, "cap": cap, "tier": tier}
+    return {
+        "used": used,
+        "cap": base + bonus,
+        "base_cap": base,
+        "bonus_cap": bonus,
+        "tier": tier,
+    }
 
 
 # --- request models ------------------------------------------------------
@@ -906,6 +965,74 @@ def create_decision(
     jid = _new_job(user)
     bg.add_task(_run_decision_job, jid, req, user)
     return JobResponse(job_id=jid, status="queued")
+
+
+class ReferralClaimRequest(BaseModel):
+    code: str
+
+
+def _remember_user(email: str) -> None:
+    """Track authenticated users so the referral reverse-lookup can find
+    them. Bounded set — old entries silently drop when the cap is hit."""
+    if not email or "@" not in email:
+        return
+    if len(_known_users) >= _KNOWN_USERS_CAP:
+        return  # silent backpressure
+    _known_users.add(email)
+
+
+@app.post("/v1/me/referral/claim", tags=["auth"])
+def referral_claim(
+    req: ReferralClaimRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """Bind the current (newly-signed-in) user to a referral code.
+
+    Both inviter and invitee get a 7-day +5/day bonus. Idempotent.
+    Self-referral rejected. Unknown codes return `unknown_code`.
+    """
+    if user.id == "anonymous":
+        raise HTTPException(401, "Sign in first")
+    _remember_user(user.id)
+    code = req.code.strip().lower()
+    if not code or code == _referral_code(user.id):
+        return {"ok": False, "reason": "invalid_or_self"}
+    if user.id in _referrals:
+        return {"ok": False, "reason": "already_claimed"}
+
+    inviter = _email_for_code(code, list(_known_users))
+    if not inviter:
+        return {"ok": False, "reason": "unknown_code"}
+
+    _referrals[user.id] = inviter
+    _grant_referral_bonus(user.id)
+    _grant_referral_bonus(inviter)
+    return {
+        "ok": True,
+        "inviter": inviter,
+        "bonus_days": _REFERRAL_BONUS_DAYS,
+        "bonus_decisions_per_day": _REFERRAL_BONUS_DECISIONS,
+    }
+
+
+@app.get("/v1/me/referral", tags=["auth"])
+def referral_status(user: CurrentUser = Depends(get_current_user)) -> dict:
+    """Return the current user's referral code + how many invitees they've
+    landed + whether the bonus is still active."""
+    if user.id == "anonymous":
+        raise HTTPException(401, "Sign in first")
+    _remember_user(user.id)
+    code = _referral_code(user.id)
+    invitees = [u for u, inv in _referrals.items() if inv == user.id]
+    bonus_expiry = _referral_bonus.get(user.id, 0.0)
+    return {
+        "code": code,
+        "share_url_suffix": f"?ref={code}",
+        "invitees_count": len(invitees),
+        "bonus_active": bonus_expiry > time.time(),
+        "bonus_expires_at": int(bonus_expiry) if bonus_expiry else None,
+        "bonus_decisions_per_day": _REFERRAL_BONUS_DECISIONS,
+    }
 
 
 @app.get("/v1/me/usage")

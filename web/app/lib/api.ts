@@ -193,6 +193,28 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
+  /** Claim a referral code (8-char hex). Both inviter + invitee get +5
+   *  decisions/day for 7 days. Idempotent; replay is a no-op. */
+  referralClaim: (req: { code: string }) =>
+    _fetch<{
+      ok: boolean;
+      reason?: string;
+      inviter?: string;
+      bonus_days?: number;
+      bonus_decisions_per_day?: number;
+    }>("/v1/me/referral/claim", { method: "POST", body: JSON.stringify(req) }),
+
+  /** Get the current user's referral code + invitee count + bonus status. */
+  referralStatus: () =>
+    _fetch<{
+      code: string;
+      share_url_suffix: string;
+      invitees_count: number;
+      bonus_active: boolean;
+      bonus_expires_at: number | null;
+      bonus_decisions_per_day: number;
+    }>("/v1/me/referral"),
+
   me: () => _fetch<CurrentUser>("/v1/auth/me"),
 
   createDecision: (req: {
