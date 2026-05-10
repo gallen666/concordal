@@ -36,6 +36,8 @@ from trading_agents.adapters import get_adapter
 from trading_agents.backtest.engine import Backtester
 from trading_agents.cache.ticker_cache import TickerCache
 from trading_agents.core.graph import run_decision
+from trading_agents.ecosystem.data_bus import bus as data_bus
+from trading_agents.ecosystem.registry import to_json as ecosystem_json, stats as ecosystem_stats
 from trading_agents.memory.reflection import collect_lessons
 from trading_agents.memory.store import MemoryStore
 
@@ -385,6 +387,22 @@ def health() -> dict:
         "mode": os.getenv("TA_MODE", "mock"),
         "emergency_stop": cfg.emergency_stop_decisions,
         "disclaimer": "decision_support_only",
+    }
+
+
+@app.get("/v1/ecosystem")
+def ecosystem() -> dict:
+    """Public catalog of every OSS project we integrate with.
+
+    Powers the /ecosystem page on the frontend. Returns the full
+    registry plus a live `wired_sources` map showing which need-kinds
+    actually have a registered handler in the data bus right now —
+    so users can distinguish "specced" from "shipping today".
+    """
+    return {
+        "projects": ecosystem_json(),
+        "stats": ecosystem_stats(),
+        "wired_sources": data_bus.registered_sources(),
     }
 
 
