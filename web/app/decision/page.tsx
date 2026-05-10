@@ -29,6 +29,7 @@ import {
 import {
   api,
   auth,
+  PaywallError,
   type DecisionTrace,
   type DebateTranscript,
   type AnalystReport,
@@ -129,11 +130,20 @@ export default function DecisionPage() {
   const [lessonsInjected, setLessonsInjected] = useState(false);
   // Job id of the just-finished decision — used as the source for share()
   const [jobId, setJobId] = useState<string | null>(null);
+  // Daily-cap usage for the conversion banner. Refreshes after each run.
+  const [usage, setUsage] = useState<{ used: number; cap: number | null; tier: string } | null>(null);
+  // Set when a 402 comes back so we can render a paywall modal.
+  const [paywall, setPaywall] = useState<PaywallError["detail"] | null>(null);
 
   useEffect(() => {
     if (!auth.isLoggedIn()) return;
     api.me().then(setUser).catch(() => undefined);
   }, []);
+
+  // Pull usage so we can render the badge for both anon + logged-in users.
+  useEffect(() => {
+    api.myUsage().then(setUsage).catch(() => undefined);
+  }, [result]); // refresh after each completed decision
 
   // Read ?ticker=XXX from the URL so /hot, /watchlist etc. can deep-link.
   useEffect(() => {
@@ -188,7 +198,12 @@ export default function DecisionPage() {
         }
       }
     } catch (e: unknown) {
-      setError((e as Error).message);
+      if (e instanceof PaywallError) {
+        // Free-tier daily cap exceeded — switch to paywall modal flow.
+        setPaywall(e.detail);
+      } else {
+        setError((e as Error).message);
+      }
     } finally {
       setLoading(false);
     }
@@ -196,7 +211,12 @@ export default function DecisionPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
+      {paywall && <PaywallModal detail={paywall} onClose={() => setPaywall(null)} />}
+      {/* Anonymous visitors get a friendly "try without signup" banner so
+          the homepage CTA can deep-link them straight here. */}
+      {!auth.isLoggedIn() && <DemoBanner />}
       {user && !user.real_llm && <MockBanner />}
+      {usage && usage.cap !== null && <UsageBadge usage={usage} />}
       <div className="mb-6">
         <span className="label-cap">{t("decision.label")}</span>
         <h1 className="text-2xl font-semibold mt-1">
@@ -433,6 +453,7 @@ function DecisionView({ trace, jobId }: { trace: DecisionTrace; jobId: string | 
         </Section>
       )}
 
+      <BrokerLinks trace={trace} />
       <div className="flex items-center justify-between flex-wrap gap-3 pt-3 border-t border-border-subtle">
         <FeedbackBar trace={trace} />
         {jobId && <ShareButton jobId={jobId} />}
@@ -490,6 +511,72 @@ function FeedbackBar({ trace }: { trace: DecisionTrace }) {
         <span>{t("feedback.notHelpful")}</span>
       </button>
     </div>
+  );
+}
+
+/** BrokerLinks — affiliate hand-off after the decision is made.
+ *
+ *  We never execute trades on the user's behalf, but each market has a
+ *  set of brokers the user might want to open the position with. These
+ *  are affiliate links (operator earns referral when the user opens an
+ *  account). Set TA_AFFILIATE_* env vars / NEXT_PUBLIC_AFFILIATE_*
+ *  prefixes to plug your own ref codes.
+ *
+ *  Per-market broker map keeps US users from seeing CN brokers and vice
+ *  versa. Crypto market gets exchange links instead (Binance, Coinbase).
+ */
+const BROKER_LINKS: Record<string, { name: string; href: string; note?: string }[]> = {
+  us_equity: [
+    { name: "Interactive Brokers", href: "https://www.interactivebrokers.com/?aff=tradingagents" },
+    { name: "Alpaca",               href: "https://alpaca.markets/?ref=tradingagents" },
+    { name: "Robinhood",            href: "https://join.robinhood.com/tradingagents" },
+  ],
+  a_share: [
+    { name: "富途 Futu",            href: "https://www.futunn.com/?ref=tradingagents", note: "支持 A股 + 港美股" },
+    { name: "老虎 Tiger",           href: "https://www.tigerbrokers.com/?ref=tradingagents", note: "国际券商" },
+  ],
+  crypto: [
+    { name: "Binance",              href: "https://www.binance.com/en/register?ref=tradingagents" },
+    { name: "Coinbase",             href: "https://coinbase.com/join/tradingagents" },
+    { name: "OKX",                  href: "https://www.okx.com/join/tradingagents" },
+  ],
+};
+
+function BrokerLinks({ trace }: { trace: DecisionTrace }) {
+  const { t } = useT();
+  // Infer market from the decision: ticker shape → market
+  const ticker = trace.ticker.toUpperCase();
+  let market: keyof typeof BROKER_LINKS = "us_equity";
+  if (/^\d{6}$/.test(ticker)) market = "a_share";
+  else if (ticker.includes("/") || ["BTC","ETH","SOL","BNB","XRP","ADA","DOGE","DOT"].includes(ticker)) market = "crypto";
+
+  const brokers = BROKER_LINKS[market] || [];
+  if (brokers.length === 0) return null;
+
+  // Don't show broker links on flat / hold decisions — no trade to execute
+  if (trace.decision.side === "HOLD") return null;
+
+  return (
+    <section className="surface p-5">
+      <div className="label-cap mb-2">{t("broker.label")}</div>
+      <p className="text-sm text-ink-secondary mb-3 leading-relaxed">{t("broker.body")}</p>
+      <div className="flex flex-wrap gap-2">
+        {brokers.map((b) => (
+          <a
+            key={b.name}
+            href={b.href}
+            target="_blank"
+            rel="noopener noreferrer sponsored"
+            className="btn-ghost text-sm"
+            title={b.note}
+          >
+            {b.name}
+            <ArrowRight className="w-3.5 h-3.5" />
+          </a>
+        ))}
+      </div>
+      <p className="text-2xs text-ink-tertiary mt-3">{t("broker.disclaimer")}</p>
+    </section>
   );
 }
 
@@ -1148,6 +1235,98 @@ function SkeletonReport() {
  * looks like analysis but is unrelated to the actual ticker — without this
  * banner, friends might mistake mock for real signal. Honest by default.
  */
+/** Compact usage progress bar — visible to free-tier and anonymous
+ *  users so they see their daily quota burning down. Hidden for Pro. */
+function UsageBadge({ usage }: { usage: { used: number; cap: number | null; tier: string } }) {
+  const { t } = useT();
+  if (usage.cap == null) return null;
+  const pct = Math.min(100, (usage.used / usage.cap) * 100);
+  const nearCap = usage.used >= usage.cap - 1;
+  return (
+    <div className="mb-3 flex items-center gap-3 text-xs text-ink-secondary">
+      <span className="font-mono">
+        {t("usage.freeUsed")
+          .replace("{used}", String(usage.used))
+          .replace("{cap}", String(usage.cap))}
+      </span>
+      <div className="flex-1 max-w-xs h-1 bg-bg-base rounded-full overflow-hidden">
+        <div
+          className={cn(
+            "h-full transition-all",
+            nearCap ? "bg-signal-warn" : "bg-accent",
+          )}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      {nearCap && (
+        <Link href="/pricing#pro" className="btn-secondary text-xs px-2 py-0.5">
+          {t("paywall.upgrade")}
+        </Link>
+      )}
+    </div>
+  );
+}
+
+/** Friendly banner shown to anonymous visitors so they know they can
+ *  try the system without signing up. */
+function DemoBanner() {
+  const { t } = useT();
+  return (
+    <div className="mb-6 surface border-accent/30 bg-accent-muted/30 p-4 flex gap-3 items-start">
+      <Sparkles className="w-5 h-5 text-accent shrink-0 mt-0.5" />
+      <div className="flex-1 text-sm">
+        <div className="font-semibold text-ink-primary">{t("demo.banner.title")}</div>
+        <p className="text-ink-secondary mt-1 leading-relaxed">{t("demo.banner.body")}</p>
+      </div>
+      <Link href="/redeem" className="btn-ghost text-xs whitespace-nowrap">
+        {t("header.redeemInvite")}
+      </Link>
+    </div>
+  );
+}
+
+/** Modal that pops when 402 comes back. The whole point is the upgrade
+ *  CTA; "tomorrow" is a passive secondary option. */
+function PaywallModal({
+  detail,
+  onClose,
+}: {
+  detail: PaywallError["detail"];
+  onClose: () => void;
+}) {
+  const { t } = useT();
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="surface-elev max-w-md w-full p-6 space-y-4 animate-fade-in"
+      >
+        <div className="flex items-center gap-3">
+          <span className="w-10 h-10 rounded-lg bg-signal-warn_soft text-signal-warn flex items-center justify-center">
+            <AlertTriangle className="w-5 h-5" />
+          </span>
+          <h2 className="text-lg font-semibold">{t("paywall.title")}</h2>
+        </div>
+        <p className="text-sm text-ink-secondary leading-relaxed">
+          {t("paywall.body").replace("{cap}", String(detail.cap))}
+        </p>
+        <div className="flex items-center gap-2 flex-wrap pt-2">
+          <Link href={detail.upgrade_url || "/pricing#pro"} className="btn-primary">
+            <Sparkles className="w-4 h-4" />
+            {t("paywall.upgrade")}
+          </Link>
+          <button onClick={onClose} className="btn-ghost text-sm">
+            {t("paywall.tomorrow")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MockBanner() {
   const { t } = useT();
   return (

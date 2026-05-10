@@ -80,6 +80,23 @@ export const auth = {
   },
 };
 
+/** Thrown when the backend returns 402 (free-tier daily cap exceeded).
+ *  Caller can read `.detail` to get `{message, used, cap, upgrade_url}`. */
+export class PaywallError extends Error {
+  detail: {
+    error: string;
+    message: string;
+    used: number;
+    cap: number;
+    upgrade_url: string;
+    tier: string;
+  };
+  constructor(detail: PaywallError["detail"]) {
+    super(detail.message);
+    this.detail = detail;
+  }
+}
+
 async function _fetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -93,6 +110,25 @@ async function _fetch<T>(path: string, init?: RequestInit): Promise<T> {
     auth.clearToken();
     if (typeof window !== "undefined") window.location.href = "/redeem";
     throw new Error("Session expired");
+  }
+  if (res.status === 402) {
+    // Free-tier daily cap exceeded — surface as a typed exception so
+    // pages like /decision can show a paywall modal instead of a toast.
+    let detail: PaywallError["detail"];
+    try {
+      const body = await res.json();
+      detail = (body.detail || body) as PaywallError["detail"];
+    } catch {
+      detail = {
+        error: "daily_cap_exceeded",
+        message: "Daily free-tier limit reached.",
+        used: 0,
+        cap: 0,
+        upgrade_url: "/pricing#pro",
+        tier: "pro",
+      };
+    }
+    throw new PaywallError(detail);
   }
   if (!res.ok) {
     let msg = `${res.status}`;
@@ -109,6 +145,13 @@ async function _fetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => _fetch<{ status: string; mode: string; emergency_stop: boolean }>("/v1/health"),
+
+  /**
+   * Daily-cap status for the current user (or anonymous). Used to
+   * render the "X / 5 free decisions today" usage badge on /decision.
+   */
+  myUsage: () =>
+    _fetch<{ used: number; cap: number | null; tier: "free" | "pro" }>("/v1/me/usage"),
 
   joinWaitlist: (req: { email: string; note?: string }) =>
     _fetch<{ ok: boolean; message: string }>("/v1/waitlist", {

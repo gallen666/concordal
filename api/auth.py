@@ -141,3 +141,29 @@ def get_current_user(
         real_llm=uid in cfg.real_llm_user_ids,
         real_data=uid in cfg.real_data_user_ids,
     )
+
+
+def get_optional_user(
+    authorization: Annotated[str | None, Header()] = None,
+) -> CurrentUser:
+    """Same as `get_current_user` but tolerates the no-auth case by
+    returning a synthetic 'anonymous' user with mock-only privileges.
+
+    Used on endpoints we want truly-anonymous visitors to be able to
+    hit, like the demo decision flow on /decision (free-tier cap is
+    enforced separately so we don't get hammered).
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return CurrentUser(id="anonymous", real_llm=False, real_data=False)
+    try:
+        token = authorization.split(" ", 1)[1].strip()
+        payload = _decode_token(token)
+        uid = payload.get("sub", "")
+        return CurrentUser(
+            id=uid,
+            real_llm=uid in cfg.real_llm_user_ids,
+            real_data=uid in cfg.real_data_user_ids,
+        )
+    except HTTPException:
+        # Bad / expired token — degrade to anon rather than 401
+        return CurrentUser(id="anonymous", real_llm=False, real_data=False)

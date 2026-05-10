@@ -18,9 +18,15 @@ export default function Footer() {
           <span>⚠️</span>
           <span>{disclaimer}</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
+          <a href="/terms" className="hover:text-ink-secondary">
+            {t("footer.terms")}
+          </a>
+          <a href="/privacy" className="hover:text-ink-secondary">
+            {t("footer.privacy")}
+          </a>
           <a href="/disclaimer" className="hover:text-ink-secondary">
-            {disclaimerLink}
+            {t("footer.disclaimer")}
           </a>
           <a
             href="https://github.com/gallen666/trading-agents-platform"

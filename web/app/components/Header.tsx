@@ -70,6 +70,7 @@ export default function Header() {
               <NavLink href="/ecosystem">{t("header.ecosystem")}</NavLink>
               <NavLink href="/integrations">{t("header.integrations")}</NavLink>
               <NavLink href="/proof">{t("header.proof")}</NavLink>
+              <NavLink href="/developers">{t("header.developers")}</NavLink>
               <NavLink href="/pricing">{t("header.pricing")}</NavLink>
               <ModeBadge real={user.real_llm} />
               {health && health.warnings.length > 0 && (

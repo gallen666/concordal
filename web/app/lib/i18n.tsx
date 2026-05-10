@@ -356,6 +356,59 @@ const dict = {
   "proof.section.openSource":   { en: "Fully open source",                  zh: "完全开源" },
   "proof.section.tests":        { en: "Tests + CI",                         zh: "测试 + CI" },
 
+  // ---- /developers landing ---------------------------------------------
+  "header.developers":          { en: "Developers",                          zh: "开发者" },
+  "dev.label":                  { en: "FOR DEVELOPERS",                      zh: "面向开发者" },
+  "dev.heading":                { en: "Use TradingAgents as your backend",   zh: "把 TradingAgents 当你的后端" },
+  "dev.subheading":             {
+    en: "Same 5-analyst pipeline, available as a JSON API. Add /v1/decisions to your stock terminal, Slack bot, internal dashboard, anything. $99/month for 500 decisions; cached repeats are free.",
+    zh: "同样的 5 分析师 pipeline，作为 JSON API 提供。把 /v1/decisions 接到你的行情终端、Slack 机器人、内部 dashboard、任何地方。$99/月 含 500 次决策，缓存复用免费。",
+  },
+  "dev.cta":                    { en: "Start building",                      zh: "开始接入" },
+  "dev.docs.intro":             { en: "Quick start (Python)",                zh: "快速开始（Python）" },
+
+  // ---- Broker affiliate links + testimonials ----------------------------
+  "broker.label":               { en: "Execute this trade",                  zh: "执行此交易" },
+  "broker.body":                {
+    en: "We don't execute trades — but we can hand you off to a broker. Affiliate links — we may earn a small referral when you open an account.",
+    zh: "我们不下单——但可以把你引到券商。下面是合作链接，开户成功我们可能拿小额返佣。",
+  },
+  "broker.disclaimer":          { en: "* affiliate · check your jurisdiction", zh: "* 合作 · 注意所在司法辖区" },
+  "testimonials.label":         { en: "WHAT USERS SAY",                       zh: "用户评价" },
+  "testimonials.heading":       { en: "Real quotes from beta users",          zh: "Beta 用户真实评价" },
+  "testimonials.placeholder":   {
+    en: "We're collecting testimonials. If you've used the platform and got value from it, ping us — we'll quote you here (with permission).",
+    zh: "我们正在收集用户评价。如果你用过这个平台并觉得有用，发邮件给我们——经你同意后会引用在这里。",
+  },
+
+  // ---- Usage / paywall --------------------------------------------------
+  "usage.freeUsed":             { en: "{used} / {cap} free decisions today",  zh: "今日已用 {used} / {cap} 免费决策" },
+  "usage.unlimited":            { en: "Pro · unlimited",                      zh: "Pro · 无限" },
+  "paywall.title":              { en: "Daily limit reached",                  zh: "今日已达上限" },
+  "paywall.body":               {
+    en: "You've used your {cap} free decisions for today. Upgrade to Pro for ~30 decisions/day with real LLM (Gemini 3.1 Pro / DeepSeek / etc.).",
+    zh: "今日免费 {cap} 次决策已用完。升级 Pro 解锁 ~30 次/天 真 LLM（Gemini 3.1 Pro / DeepSeek 等）。",
+  },
+  "paywall.upgrade":            { en: "Upgrade to Pro",                       zh: "升级 Pro" },
+  "paywall.tomorrow":           { en: "Or come back tomorrow",                zh: "或明天再来" },
+  "demo.banner.title":          { en: "Try without signing up",               zh: "免登录试一次" },
+  "demo.banner.body":           {
+    en: "Run 2 free decisions per day on mock LLM — no email needed. Unlock real LLM + 30/day with a free invite code or Pro.",
+    zh: "每天 2 次免费 mock 决策——无需邮箱。免费邀请码或 Pro 可解锁真 LLM + 30 次/天。",
+  },
+
+  // ---- Legal pages ------------------------------------------------------
+  "footer.terms":               { en: "Terms",                              zh: "服务条款" },
+  "footer.privacy":              { en: "Privacy",                            zh: "隐私" },
+  "footer.disclaimer":           { en: "Disclaimer",                         zh: "免责声明" },
+  "footer.contact":              { en: "Contact",                            zh: "联系" },
+  "footer.tagline":              { en: "Decision support, not investment advice.", zh: "决策支持，非投资建议。" },
+  "legal.lastUpdated":           { en: "Last updated",                       zh: "最后更新" },
+  "legal.boilerplateNote":       {
+    en: "This is a v1 placeholder document. Before commercial launch in regulated markets, replace with versions reviewed by qualified counsel in your jurisdiction.",
+    zh: "本页是 v1 占位文档。在合规市场商业化之前，请替换为本辖区合格律师审核过的版本。",
+  },
+
   // ---- Decision sharing -------------------------------------------------
   "share.button":               { en: "Share decision",                     zh: "分享决策" },
   "share.creating":              { en: "Creating link…",                    zh: "生成链接…" },

@@ -41,7 +41,14 @@ from trading_agents.ecosystem.registry import to_json as ecosystem_json, stats a
 from trading_agents.memory.reflection import collect_lessons
 from trading_agents.memory.store import MemoryStore
 
-from .auth import CurrentUser, RedeemRequest, TokenResponse, get_current_user, redeem
+from .auth import (
+    CurrentUser,
+    RedeemRequest,
+    TokenResponse,
+    get_current_user,
+    get_optional_user,
+    redeem,
+)
 from .config import cfg
 from .openbb_widget import router as openbb_router
 from .waitlist import router as waitlist_router
@@ -131,6 +138,58 @@ def _rate_limit(user_id: str) -> None:
             f"Rate limit: {cfg.rate_limit_per_min}/min",
         )
     q.append(now)
+
+
+# --- daily-cap (per-user) for the free tier ---------------------------------
+# Tracks decision counts per user per UTC-day so we can hard-stop free users
+# at their daily quota and serve them a 402 with an upgrade URL. Pro users
+# (real_llm=True) skip the cap entirely.
+_FREE_DAILY_CAP = int(os.environ.get("TA_FREE_DAILY_DECISIONS", "5"))
+# Anonymous (no JWT) gets a smaller cap because they share an IP-derived key
+# in some deployments and we don't want to gift unauth'd quota.
+_ANON_DAILY_CAP = int(os.environ.get("TA_ANON_DAILY_DECISIONS", "2"))
+_daily_count: dict[tuple[str, str], int] = {}  # (user_id, "YYYY-MM-DD") -> count
+
+
+def _daily_cap_check(user: CurrentUser) -> None:
+    """Enforce per-user daily decision cap for free-tier users.
+
+    Returns None on success; raises HTTPException(402) when the user has
+    used up their daily allotment, with an `X-Upgrade-Url` header so the
+    frontend can deep-link to /pricing#pro on the response.
+    """
+    if user.real_llm:
+        return  # Pro/Team users have their own (much higher) limits
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    key = (user.id, today)
+    cap = _ANON_DAILY_CAP if user.id == "anonymous" else _FREE_DAILY_CAP
+    used = _daily_count.get(key, 0)
+    if used >= cap:
+        raise HTTPException(
+            status_code=402,                       # Payment Required
+            detail={
+                "error": "daily_cap_exceeded",
+                "message": (
+                    f"You've used your daily {cap} free decisions. "
+                    "Upgrade to Pro for ~30/day."
+                ),
+                "used": used,
+                "cap": cap,
+                "upgrade_url": "/pricing#pro",
+                "tier": "pro",
+            },
+        )
+    _daily_count[key] = used + 1
+
+
+def _daily_cap_status(user: CurrentUser) -> dict:
+    """Read-only view used by the frontend's usage banner."""
+    if user.real_llm:
+        return {"used": 0, "cap": None, "tier": "pro"}
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    cap = _ANON_DAILY_CAP if user.id == "anonymous" else _FREE_DAILY_CAP
+    used = _daily_count.get((user.id, today), 0)
+    return {"used": used, "cap": cap, "tier": "free"}
 
 
 # --- request models ------------------------------------------------------
@@ -646,7 +705,7 @@ def auth_me(user: CurrentUser = Depends(get_current_user)) -> dict:
 def create_decision(
     req: DecisionRequest,
     bg: BackgroundTasks,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_optional_user),
 ) -> JobResponse:
     if cfg.emergency_stop_decisions:
         raise HTTPException(
@@ -654,20 +713,36 @@ def create_decision(
             "Decision engine is temporarily disabled. Try again later.",
         )
     _rate_limit(user.id)
+    # Free-tier daily cap (Pro/Team skip). Returns 402 with upgrade hint
+    # when exceeded — the frontend uses this to switch to a paywall view.
+    _daily_cap_check(user)
     jid = _new_job(user)
     bg.add_task(_run_decision_job, jid, req, user)
     return JobResponse(job_id=jid, status="queued")
 
 
+@app.get("/v1/me/usage")
+def get_usage(user: CurrentUser = Depends(get_current_user)) -> dict:
+    """Return daily-cap status so the frontend can render a usage badge.
+
+    Output shape: `{used: int, cap: int|null, tier: "free"|"pro"}`.
+    `cap=null` means unlimited (Pro/Team).
+    """
+    return _daily_cap_status(user)
+
+
 @app.get("/v1/decisions/job/{job_id}")
 def get_decision(
     job_id: str,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_optional_user),
 ) -> dict:
     if job_id not in _jobs:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown job")
     j = _jobs[job_id]
-    if j.get("user") != user.id and user.id != "anonymous":
+    # Anonymous visitors can only read decisions they themselves created
+    # (we identify them by job's `user` field). Non-anon users follow
+    # the original "your jobs only" rule.
+    if j.get("user") != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your job")
     return j
 

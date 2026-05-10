@@ -170,6 +170,17 @@ export default function PricingPage() {
         </table>
       </section>
 
+      {/* Testimonials placeholder — fills with real quotes once you have them */}
+      <section className="surface p-5 mb-12 max-w-3xl">
+        <span className="label-cap">{t("testimonials.label")}</span>
+        <h2 className="text-lg font-semibold mt-1 mb-2">
+          {t("testimonials.heading")}
+        </h2>
+        <p className="text-sm text-ink-secondary leading-relaxed">
+          {t("testimonials.placeholder")}
+        </p>
+      </section>
+
       {/* FAQ */}
       <section className="max-w-3xl">
         <h2 className="text-xl font-semibold mb-4">{t("pricing.faq.title")}</h2>
