@@ -47,19 +47,66 @@ class BacktestResult:
 
 @dataclass
 class Backtester:
+    """Strict-no-lookahead backtester with realistic friction model.
+
+    Cost model defaults are tuned for retail-scale execution and are
+    intentionally pessimistic — better to under-promise in backtests
+    than to over-promise in live. Override per-market via the cost
+    knobs below if you want to model an institutional execution path.
+    """
+
     adapter: MarketAdapter
     initial_capital: float = 100_000.0
 
-    # transaction-cost knobs
-    commission_bps: float = 1.0   # 0.01% per fill
-    slippage_bps: float = 2.0     # 0.02% slippage
+    # ---- transaction-cost model ------------------------------------
+    # Defaults reflect realistic retail friction.
+    #   commission_bps    : broker commission per fill (one side)
+    #   slippage_bps      : effective spread + market-impact (one side)
+    #   sell_tax_bps      : asymmetric tax charged on sells only.
+    #                       Mainly for A-shares where stamp tax (印花税)
+    #                       is currently 5bp on sells. Set to 0 elsewhere.
+    # Round-trip US: ~10bp.  Round-trip A-share: ~15bp (commission + tax + slip).
+    commission_bps: float = 5.0
+    slippage_bps: float = 5.0
+    sell_tax_bps: float = 0.0
 
     # ---- helpers ----------------------------------------------------------
 
     def _apply_costs(self, ret: float, weight_change: float) -> float:
-        # Cost is proportional to absolute weight change (turnover).
-        cost = abs(weight_change) * (self.commission_bps + self.slippage_bps) / 10_000
+        """Charge friction proportional to turnover.
+
+        weight_change > 0 => buying (entering or adding to long)
+        weight_change < 0 => selling (cutting or going short)
+
+        Both sides pay commission + slippage; sells additionally pay
+        sell_tax_bps so A-share stamp tax can be modeled.
+        """
+        turnover = abs(weight_change)
+        if turnover == 0:
+            return ret
+        # All trades pay commission + slippage.
+        per_side = (self.commission_bps + self.slippage_bps) / 10_000
+        cost = turnover * per_side
+        # Sells additionally pay the sell-side tax.
+        if weight_change < 0 and self.sell_tax_bps > 0:
+            cost += turnover * (self.sell_tax_bps / 10_000)
         return ret - cost
+
+    @classmethod
+    def for_market(cls, adapter: MarketAdapter, **overrides) -> "Backtester":
+        """Construct a Backtester with cost defaults tuned per market.
+
+        US equity:  10bp round-trip (5bp commission + 5bp slippage).
+        A-share:    15bp round-trip (5bp commission + 5bp slip + 5bp stamp tax).
+        Fallback:   10bp round-trip.
+        """
+        market = (getattr(adapter, "market", "") or "").lower()
+        if market in ("a_share", "cn_equity", "china_equity"):
+            defaults = dict(commission_bps=5.0, slippage_bps=5.0, sell_tax_bps=5.0)
+        else:
+            defaults = dict(commission_bps=5.0, slippage_bps=5.0, sell_tax_bps=0.0)
+        defaults.update(overrides)
+        return cls(adapter=adapter, **defaults)
 
     def _walk_with_weights(
         self,
@@ -94,6 +141,7 @@ class Backtester:
                     last_entry_idx = None
             prev_w = w
 
+        elapsed_days = (quotes[-1].asof.date() - quotes[0].asof.date()).days
         return BacktestResult(
             name=name,
             ticker=ticker,
@@ -102,7 +150,7 @@ class Backtester:
             equity_curve=equity,
             weights=list(weights),
             trade_log=trade_log,
-            metrics=compute_metrics(equity, trade_log),
+            metrics=compute_metrics(equity, trade_log, elapsed_days=elapsed_days),
         )
 
     # ---- public APIs ------------------------------------------------------

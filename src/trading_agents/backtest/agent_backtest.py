@@ -161,7 +161,9 @@ def _per_ticker_run(
 ) -> TickerOutcome:
     log.info("=== %s (%s) ===", spec.ticker, spec.market)
     adapter = get_adapter(spec.market)
-    bt = Backtester(adapter=adapter, initial_capital=cfg.initial_capital)
+    # Use market-aware cost defaults: A-shares pay 5bp stamp tax on sells,
+    # US equities don't. See Backtester.for_market for full breakdown.
+    bt = Backtester.for_market(adapter, initial_capital=cfg.initial_capital)
 
     # The agent itself
     decide_fn = _make_decide_fn(

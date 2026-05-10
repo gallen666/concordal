@@ -74,6 +74,26 @@ class YahooUSEquityAdapter(MarketAdapter):
             return self._fallback.get_quote(ticker, asof)
 
     def get_fundamentals(self, ticker: str, asof: date) -> Fundamentals:
+        # ---- backtest-safety guard (runs BEFORE the live/mock branch) ---
+        # yfinance's .info returns the *current* snapshot of marketCap,
+        # trailingPE, revenueGrowth, etc. — there is no point-in-time path
+        # via this endpoint. For any historical asof (older than ~7 days)
+        # we MUST NOT return current data, or we'd inject lookahead bias
+        # into every backtest decision. Return a stub Fundamentals object
+        # with notes explaining the gap; the analyst prompt instructs the
+        # LLM to be honest about missing fields rather than hallucinate.
+        # Mock fallback also gets the stub so backtests never see fake
+        # numbers presented as if real.
+        if (date.today() - asof).days > 7:
+            return Fundamentals(
+                ticker=ticker,
+                asof=asof,
+                notes=(
+                    "Point-in-time fundamentals not available for backtest "
+                    "dates. Treat this analyst slot as intentionally empty "
+                    "— do not fabricate metrics."
+                ),
+            )
         if not self._available:
             return self._fallback.get_fundamentals(ticker, asof)
         try:
@@ -177,9 +197,16 @@ class YahooUSEquityAdapter(MarketAdapter):
         try:
             import pandas as pd
 
+            # IMPORTANT: pass explicit start/end. Using `period="1y"` together
+            # with `end=...` was a lookahead trap — yfinance silently ignores
+            # `end` when `period` is set, so technicals were always trailing
+            # 1y ending today (not ending at asof). For a 2023 backtest,
+            # SMA200 / RSI14 would reflect 2026 prices.
+            start = (asof - timedelta(days=400)).isoformat()
+            end = (asof + timedelta(days=1)).isoformat()
             hist = self._yf(ticker).history(
-                period="1y",
-                end=(asof + timedelta(days=1)).isoformat(),
+                start=start,
+                end=end,
                 auto_adjust=False,
             )
             if hist.empty:

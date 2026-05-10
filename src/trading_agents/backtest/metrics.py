@@ -47,7 +47,16 @@ def compute_metrics(
     equity_curve: list[float],
     trade_log: list[dict] | None = None,
     periods_per_year: int = 252,
+    elapsed_days: float | None = None,
 ) -> Metrics:
+    """Compute headline metrics over an equity curve.
+
+    `periods_per_year` is used for vol / Sharpe scaling. If you also pass
+    `elapsed_days` (calendar days from first to last bar), the annualised
+    return uses calendar time — the previous formula `(1+cum)**(252/n) - 1`
+    silently overstated the annual return when the price series had gaps
+    (China holidays, halts, half-days, weekends-not-counted-as-bars).
+    """
     if not equity_curve or equity_curve[0] <= 0:
         return Metrics(0, 0, 0, 0, 0, 0, 0, 0, 0)
 
@@ -57,7 +66,12 @@ def compute_metrics(
         return Metrics(0, 0, 0, 0, 0, 0, 0, 0, 0)
 
     cum = equity_curve[-1] / equity_curve[0] - 1.0
-    annual = (1 + cum) ** (periods_per_year / n) - 1.0 if n else 0.0
+    # Prefer calendar-time annualisation when caller can provide it.
+    if elapsed_days and elapsed_days > 0:
+        years = elapsed_days / 365.25
+        annual = (1 + cum) ** (1.0 / years) - 1.0 if years > 0 else 0.0
+    else:
+        annual = (1 + cum) ** (periods_per_year / n) - 1.0 if n else 0.0
     mean = sum(rets) / n
     var = sum((r - mean) ** 2 for r in rets) / max(1, n - 1)
     vol = math.sqrt(var) * math.sqrt(periods_per_year)

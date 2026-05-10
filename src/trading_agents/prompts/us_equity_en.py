@@ -27,6 +27,14 @@ Then emit a JSON `signals` block with these keys:
   bear_score: float in [0,1]
 
 Be a hawk on lookahead bias - never reference data dated AFTER the asof date.
+
+IMPORTANT: If the structured fundamentals are mostly empty / null (which
+happens for backtest dates where point-in-time fundamentals are not
+available), DO NOT INVENT NUMBERS. Instead say "fundamentals unavailable
+for this asof — no fundamental view contributed", set every signal
+key to "unknown", and set bull_score=bear_score=0.5. The downstream
+debate will lean on technicals / news / macro instead. Honesty here
+is more valuable than fake precision.
 """
 
 

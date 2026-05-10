@@ -109,6 +109,62 @@ def test_regime_lookup():
     assert get_regime("crypto").trading_hours.weekdays_only is False
 
 
+# ---- backtest accuracy guards (regression tests for the audit fixes) ------
+
+
+def test_fundamentals_returns_stub_for_historical_asof():
+    """Yahoo .info has no point-in-time path. For backtest dates we must
+    return an empty Fundamentals stub instead of injecting current data."""
+    from trading_agents.adapters.yahoo_us_equity import YahooUSEquityAdapter
+    a = YahooUSEquityAdapter()
+    old = date(2023, 1, 15)
+    f = a.get_fundamentals("AAPL", old)
+    assert f.market_cap is None
+    assert f.pe_ratio is None
+    assert f.notes and "backtest" in f.notes.lower()
+
+
+def test_cn_sentiment_returns_stub_for_historical_asof():
+    """akshare hot-rank endpoints have no asof param — refuse to return
+    today's hotness for a 2-year-old backtest date."""
+    from trading_agents.adapters.cn_equity import CnEquityAdapter
+    a = CnEquityAdapter()
+    old = date(2023, 1, 15)
+    s = a.get_sentiment("600519", old)
+    assert s.mention_count == 0
+    assert s.bullish_share == 0.5 and s.bearish_share == 0.5
+
+
+def test_cost_model_us_round_trip_costs_10bp():
+    """US round-trip should cost ~10bp (5bp commission + 5bp slippage),
+    no stamp tax."""
+    class _A:
+        market = "us_equity"
+    bt = Backtester.for_market(_A())
+    # Buy 100% then sell 100% later. Each leg charges 10bp on 100% turnover.
+    # (10/10000) * 1.0 = 0.001 = 10bp per leg.
+    assert bt._apply_costs(0.0, +1.0) == pytest.approx(-0.001)
+    assert bt._apply_costs(0.0, -1.0) == pytest.approx(-0.001)
+
+
+def test_cost_model_a_share_charges_stamp_tax_on_sells_only():
+    """A-share sells pay an extra 5bp stamp tax."""
+    class _A:
+        market = "a_share"
+    bt = Backtester.for_market(_A())
+    # buy: 10bp commission+slip
+    assert bt._apply_costs(0.0, +1.0) == pytest.approx(-0.001)
+    # sell: 10bp + 5bp stamp = 15bp
+    assert bt._apply_costs(0.0, -1.0) == pytest.approx(-0.0015)
+
+
+def test_metrics_annualisation_uses_elapsed_days_when_provided():
+    """Old formula (252/n) silently overstated annual return when bars
+    had gaps. With elapsed_days=365 a +10% curve should annualise to 10%."""
+    m = compute_metrics([100.0, 110.0], elapsed_days=365)
+    assert abs(m.annual_return - 0.10) < 0.001
+
+
 def test_regime_unknown_raises():
     with pytest.raises(KeyError):
         get_regime("forex_3am_japan")

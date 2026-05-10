@@ -151,6 +151,22 @@ class CnEquityAdapter(MarketAdapter):
             return self._fallback.get_quote(ticker, asof)
 
     def get_fundamentals(self, ticker: str, asof: date) -> Fundamentals:
+        # ---- backtest-safety guard (runs BEFORE the live/mock branch) ---
+        # akshare's stock_individual_info_em + stock_individual_spot_xq both
+        # return CURRENT snapshots (总市值, P/E, P/B as of today), not
+        # point-in-time. For any historical asof we'd inject lookahead
+        # bias — refuse to do that even when falling back to mock so the
+        # backtest never sees fake numbers presented as if real.
+        if (date.today() - asof).days > 7:
+            return Fundamentals(
+                ticker=ticker,
+                asof=asof,
+                notes=(
+                    "回测模式 / Backtest mode: akshare 不提供历史 PIT 基本面，"
+                    "本期保留为空，请勿编造数字。Use realised price action "
+                    "and macro/news context instead of imagining metrics."
+                ),
+            )
         if not self._available:
             return self._fallback.get_fundamentals(ticker, asof)
         try:
@@ -294,6 +310,25 @@ class CnEquityAdapter(MarketAdapter):
 
         Falls back to mock on any error — akshare endpoints can change.
         """
+        # ---- backtest-safety guard (runs BEFORE the live/mock branch) ---
+        # Both `stock_hot_search_baidu(date=now())` and `stock_hot_rank_em()`
+        # return TODAY's hot rankings — there is no asof parameter on either
+        # endpoint. Returning current sentiment for a 2024 backtest leaks
+        # 2026 buzz; refuse to do that and emit an empty summary instead
+        # (mock fallback also gets the stub for the same honesty reason).
+        if (date.today() - asof).days > 7:
+            return SentimentSummary(
+                ticker=ticker,
+                asof=asof,
+                lookback_days=lookback_days,
+                mention_count=0,
+                bullish_share=0.5,
+                bearish_share=0.5,
+                top_themes=[],
+                notable_posts=[
+                    "回测模式：东方财富/百度热度榜不提供历史数据，本期保留为空。"
+                ],
+            )
         if not self._available:
             return self._fallback.get_sentiment(ticker, asof, lookback_days)
         try:
