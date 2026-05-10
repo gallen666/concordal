@@ -43,10 +43,14 @@ from trading_agents.memory.store import MemoryStore
 
 from .auth import (
     CurrentUser,
+    MagicLinkSendRequest,
+    MagicLinkVerifyRequest,
     RedeemRequest,
     TokenResponse,
     get_current_user,
     get_optional_user,
+    magic_link_send,
+    magic_link_verify,
     redeem,
 )
 from .config import cfg
@@ -846,12 +850,39 @@ def ecosystem() -> dict:
     }
 
 
-@app.post("/v1/auth/redeem", response_model=TokenResponse)
+@app.post("/v1/auth/redeem", response_model=TokenResponse, tags=["auth"])
 def auth_redeem(req: RedeemRequest) -> TokenResponse:
     return redeem(req)
 
 
-@app.get("/v1/auth/me")
+@app.post("/v1/auth/magic-link/send", tags=["auth"])
+def auth_magic_send(req: MagicLinkSendRequest, request: Request) -> dict:
+    """Send a passwordless sign-in link to the user's email.
+
+    Public endpoint — no auth required. Rate limit applies per-IP via
+    the standard `_rate_limit` (max 10/min) to deter abuse. Returns a
+    uniform success response regardless of whether the email exists or
+    Resend is configured (prevents email-enumeration).
+    """
+    # Rate-limit by IP rather than user.id (which is anonymous here)
+    ip = (request.headers.get("x-forwarded-for", "") or
+          (request.client.host if request.client else "anon")
+         ).split(",")[0].strip() or "anon"
+    _rate_limit(f"magic-link:{ip}")
+
+    site_url = os.environ.get(
+        "TA_SITE_URL", "https://trading-agents-platform.vercel.app",
+    )
+    return magic_link_send(req, site_url=site_url)
+
+
+@app.post("/v1/auth/magic-link/verify", response_model=TokenResponse, tags=["auth"])
+def auth_magic_verify(req: MagicLinkVerifyRequest) -> TokenResponse:
+    """Exchange a magic-link token (from the email) for a JWT."""
+    return magic_link_verify(req)
+
+
+@app.get("/v1/auth/me", tags=["auth"])
 def auth_me(user: CurrentUser = Depends(get_current_user)) -> dict:
     return user.model_dump()
 

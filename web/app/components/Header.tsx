@@ -113,7 +113,10 @@ export default function Header() {
                 title={toggleTitle}
                 onClick={toggle}
               />
-              <Link href="/redeem" className="btn-secondary text-xs">
+              <Link href="/login" className="btn-primary text-xs">
+                {t("header.signIn")}
+              </Link>
+              <Link href="/redeem" className="btn-ghost text-xs">
                 {t("header.redeemInvite")}
               </Link>
             </>

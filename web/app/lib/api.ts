@@ -171,6 +171,28 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
+  /** Public passwordless sign-up — sends a magic link to the email.
+   *  Response shape never reveals whether the email exists, so we
+   *  always show the same "check your inbox" state to the user. */
+  magicLinkSend: (req: { email: string }) =>
+    _fetch<{ ok: boolean; dev_link_shown_in_logs?: boolean }>(
+      "/v1/auth/magic-link/send",
+      { method: "POST", body: JSON.stringify(req) },
+    ),
+
+  /** Exchange a magic-link token (from the email URL) for a JWT. */
+  magicLinkVerify: (req: { token: string }) =>
+    _fetch<{
+      token: string;
+      user_id: string;
+      expires_at: number;
+      real_llm: boolean;
+      real_data: boolean;
+    }>("/v1/auth/magic-link/verify", {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+
   me: () => _fetch<CurrentUser>("/v1/auth/me"),
 
   createDecision: (req: {

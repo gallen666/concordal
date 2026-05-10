@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import time
 from typing import Annotated
 
@@ -27,6 +28,44 @@ from pydantic import BaseModel, EmailStr
 from .config import cfg
 
 log = logging.getLogger(__name__)
+
+
+# --- magic-link tokens ----------------------------------------------------
+# In-memory store: token -> (email, expires_at). Single-use; consumed on verify.
+# For multi-replica deployments switch to Redis — the token volume is tiny
+# but cross-replica visibility matters once we scale past one Render dyno.
+_MAGIC_TTL_SEC = 15 * 60
+_magic_tokens: dict[str, tuple[str, float]] = {}
+
+
+def _mint_magic_token(email: str) -> str:
+    """Generate a cryptographically random URL-safe magic-link token.
+
+    16 bytes → 22-char base64-url string. Single-use: removed on verify
+    or after TTL. Email is bound to the token so we can issue a JWT to
+    the right user when the link is clicked.
+    """
+    tok = secrets.token_urlsafe(16)
+    _magic_tokens[tok] = (email, time.time() + _MAGIC_TTL_SEC)
+    # Opportunistic GC — drop expired entries every time we add one,
+    # keeps the dict small without a background sweeper.
+    now = time.time()
+    for k in [k for k, (_, exp) in _magic_tokens.items() if exp < now]:
+        _magic_tokens.pop(k, None)
+    return tok
+
+
+def _consume_magic_token(tok: str) -> str | None:
+    """Validate a magic-link token. Returns the email it was issued to,
+    or None if the token is unknown / expired. Token is consumed on success
+    so each link is single-use."""
+    rec = _magic_tokens.pop(tok, None)
+    if not rec:
+        return None
+    email, exp = rec
+    if exp < time.time():
+        return None
+    return email
 
 
 # --- invite codes ---------------------------------------------------------
@@ -97,6 +136,67 @@ class TokenResponse(BaseModel):
     expires_at: int
     real_llm: bool          # whether this user gets real LLM or mock
     real_data: bool
+
+
+class MagicLinkSendRequest(BaseModel):
+    email: EmailStr
+
+
+class MagicLinkVerifyRequest(BaseModel):
+    token: str
+
+
+def magic_link_send(req: MagicLinkSendRequest, site_url: str) -> dict:
+    """Send a sign-in link to the requested email.
+
+    No invite-code gate — this is the public sign-up flow. Rate limits
+    + daily caps protect against abuse. When RESEND_API_KEY isn't
+    configured we still mint the token and LOG the link so a developer
+    running locally can grab it from stdout.
+
+    Returns `{ok: true, dev_link_shown_in_logs?: bool}`. We never echo
+    the actual link in the response — that would let a third party spam
+    "forgot login" emails to harvest the resulting URLs.
+    """
+    tok = _mint_magic_token(req.email)
+    link = f"{site_url.rstrip('/')}/auth/verify?token={tok}"
+
+    try:
+        from .email_send import magic_link_email, is_configured
+        if is_configured():
+            ok = magic_link_email(to=req.email, link=link)
+            log.info("magic-link sent to %s (ok=%s)", req.email, ok)
+            return {"ok": True, "dev_link_shown_in_logs": False}
+        # No Resend configured — surface the link in server logs so
+        # a self-host dev / Render operator can paste it manually.
+        log.warning(
+            "magic-link generated but RESEND_API_KEY unset. Link for %s: %s",
+            req.email, link,
+        )
+        return {"ok": True, "dev_link_shown_in_logs": True}
+    except Exception as e:
+        log.warning("magic-link send failed: %s", e)
+        # Don't leak the failure mode — uniform success response prevents
+        # email-enumeration attacks (yes/no signals).
+        return {"ok": True, "dev_link_shown_in_logs": False}
+
+
+def magic_link_verify(req: MagicLinkVerifyRequest) -> TokenResponse:
+    """Exchange a magic-link token for a JWT."""
+    email = _consume_magic_token(req.token)
+    if not email:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "Magic link is invalid or has expired. Request a new one.",
+        )
+    tok = _issue_token(email)
+    return TokenResponse(
+        token=tok,
+        user_id=email,
+        expires_at=int(time.time()) + cfg.jwt_ttl_hours * 3600,
+        real_llm=True,
+        real_data=True,
+    )
 
 
 def redeem(req: RedeemRequest) -> TokenResponse:

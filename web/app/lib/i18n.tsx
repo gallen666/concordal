@@ -397,6 +397,40 @@ const dict = {
     zh: "每天 2 次免费真 LLM 决策——无需邮箱。邀请码登录后 5 次/天，升级 Pro 后 30 次/天。",
   },
 
+  // ---- /login (magic-link auth) -----------------------------------------
+  "header.signIn":              { en: "Sign in",                              zh: "登录" },
+  "login.label":                { en: "SIGN IN",                              zh: "登录" },
+  "login.heading":              { en: "Sign in with your email",              zh: "用邮箱登录" },
+  "login.subheading":           {
+    en: "We'll email you a one-click sign-in link. No password, no signup form. Already have a friend invite code? Use /redeem.",
+    zh: "我们会发一个一键登录链接到你邮箱。无密码、无注册表单。已有邀请码？用 /redeem。",
+  },
+  "login.emailPlaceholder":     { en: "you@example.com",                      zh: "you@example.com" },
+  "login.submit":               { en: "Send sign-in link",                    zh: "发送登录链接" },
+  "login.sending":              { en: "Sending…",                             zh: "发送中…" },
+  "login.sent.title":           { en: "Check your inbox",                     zh: "请查看邮箱" },
+  "login.sent.body":            {
+    en: "If {email} is a valid address, a sign-in link is on its way. The link expires in 15 minutes.",
+    zh: "如果 {email} 是有效地址，登录链接已发送。15 分钟内有效。",
+  },
+  "login.devLink":              {
+    en: "(Dev mode: Resend isn't configured, so the link was printed to the server console — check Render logs.)",
+    zh: "（开发模式：Resend 未配置，链接已打印在服务端日志中——查看 Render 日志。）",
+  },
+  "login.tryAgain":              { en: "Send another link",                   zh: "再发一次" },
+  "login.alreadyHaveInvite":    { en: "Have an invite code? Use /redeem",     zh: "有邀请码？用 /redeem" },
+
+  // ---- /auth/verify (magic-link callback) ------------------------------
+  "verify.verifying":           { en: "Verifying your link…",                 zh: "验证登录链接…" },
+  "verify.success":             { en: "Signed in!",                           zh: "登录成功！" },
+  "verify.successBody":         { en: "Redirecting you to the decision page…", zh: "正在跳转到决策页…" },
+  "verify.failed.title":        { en: "This link doesn't work",               zh: "这个链接不可用" },
+  "verify.failed.body":         {
+    en: "It may have expired (links last 15 minutes) or already been used. Request a new one.",
+    zh: "可能已过期（15 分钟有效）或已使用。请重新申请。",
+  },
+  "verify.requestNew":          { en: "Request a new link",                   zh: "重新申请链接" },
+
   // ---- Legal pages ------------------------------------------------------
   "footer.terms":               { en: "Terms",                              zh: "服务条款" },
   "footer.privacy":              { en: "Privacy",                            zh: "隐私" },
