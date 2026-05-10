@@ -208,6 +208,51 @@ def test_sec_edgar_ttm_sum_uses_4_quarters():
     assert ttm == 14.0, f"expected 14.0 (Q2'23 + Q3'23 + Q4'23 + Q1'24), got {ttm}"
 
 
+def test_router_picks_deepseek_defaults_when_only_deepseek_key_set(monkeypatch):
+    """If DEEPSEEK_API_KEY is the only LLM key, the router should pick
+    deepseek-chat / deepseek-reasoner as defaults instead of falling
+    through to OpenAI / Anthropic models we don't have keys for."""
+    for k in (
+        "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
+        "GOOGLE_API_KEY", "DASHSCOPE_API_KEY", "QWEN_API_KEY",
+        "ZHIPU_API_KEY", "GLM_API_KEY",
+    ):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake")
+    monkeypatch.setenv("TA_MODE", "mock")
+
+    # Reload router module so __init__ re-reads env
+    import importlib
+    import trading_agents.llm.router as rt
+    importlib.reload(rt)
+    r = rt.LLMRouter()
+    assert r.models[rt.Tier.FAST].startswith("deepseek-")
+    assert r.models[rt.Tier.DEEP] == "deepseek-reasoner"
+    assert r._deepseek is not None
+
+
+def test_router_provider_routing_for_chinese_llms(monkeypatch):
+    """Each prefix routes to its dedicated provider when the key is set."""
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "fake")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "fake")
+    monkeypatch.setenv("ZHIPU_API_KEY", "fake")
+    # Don't force mock here so we exercise the real-provider routing path
+    monkeypatch.setenv("TA_MODE", "live")
+
+    import importlib
+    import trading_agents.llm.router as rt
+    importlib.reload(rt)
+    r = rt.LLMRouter()
+
+    from trading_agents.llm.router import OpenAICompatProvider
+    assert isinstance(r._provider_for("deepseek-chat"), OpenAICompatProvider)
+    assert isinstance(r._provider_for("qwen-max"), OpenAICompatProvider)
+    assert isinstance(r._provider_for("glm-4"), OpenAICompatProvider)
+    assert r._provider_for("deepseek-chat").name == "deepseek"
+    assert r._provider_for("qwen-max").name == "qwen"
+    assert r._provider_for("glm-4").name == "glm"
+
+
 def test_yahoo_adapter_uses_edgar_for_historical_asof(monkeypatch):
     """When asof > 7 days old, Yahoo adapter should call SEC EDGAR before
     falling back to an empty stub."""

@@ -55,6 +55,20 @@ _PRICES: dict[str, tuple[float, float]] = {
     "gemini-2.5-flash": (0.30, 2.50),
     "gemini-2.5-flash-lite": (0.10, 0.40),
     "gemini-2.0-flash": (0.10, 0.40),
+    # DeepSeek (USD/Mtoken; check live pricing on api-docs.deepseek.com).
+    # V3 chat: cheap; R1 reasoner: 5–10× cheaper than o1 for similar quality.
+    "deepseek-chat": (0.27, 1.10),
+    "deepseek-reasoner": (0.55, 2.19),
+    # Qwen / 通义千问 via DashScope OpenAI-compatible mode.
+    # qwen-max ~ Claude Sonnet tier; turbo and flash are cheap workhorses.
+    "qwen-max": (1.60, 6.40),
+    "qwen-plus": (0.40, 1.20),
+    "qwen-turbo": (0.05, 0.20),
+    "qwen-flash": (0.05, 0.20),
+    # GLM / 智谱 (open.bigmodel.cn). 4-plus ~ GPT-4o mid-tier in CN; flash is free-tier-ish.
+    "glm-4-plus": (0.69, 0.69),
+    "glm-4": (0.14, 0.14),
+    "glm-4-flash": (0.0, 0.0),
     # Mock
     "mock-fast": (0.0, 0.0),
     "mock-mid": (0.0, 0.0),
@@ -249,6 +263,67 @@ class OpenAIProvider(_ProviderBase):
         )
 
 
+class OpenAICompatProvider(_ProviderBase):
+    """Generic OpenAI-compatible provider — used for DeepSeek, Qwen, GLM.
+
+    All three (DeepSeek api.deepseek.com, Aliyun DashScope OpenAI-compat
+    endpoint, 智谱 open.bigmodel.cn /v4) accept OpenAI-shaped chat-completion
+    requests, so one class with a configurable base_url + key handles them.
+
+    Why direct httpx instead of `openai.OpenAI(base_url=...)`: avoids
+    version-coupling the openai sdk to all three vendors at once. Each
+    vendor occasionally breaks compat with the openai sdk's auto-retry
+    logic. A thin httpx call is more robust.
+    """
+
+    def __init__(self, *, name: str, api_key: str, base_url: str):
+        self.name = name
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
+
+    def complete(self, system: str, user: str, model: str, **kw) -> LLMResponse:
+        import httpx
+
+        url = f"{self._base_url}/chat/completions"
+        body = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": kw.get("temperature", 0.3),
+            "max_tokens": kw.get("max_tokens", 2048),
+        }
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        # Read timeout is 120s — DeepSeek-R1 can take 60s+ for deep reasoning.
+        with httpx.Client(timeout=httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=30.0)) as c:
+            resp = c.post(url, json=body, headers=headers)
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"{self.name} call failed: HTTP {resp.status_code} {resp.text[:300]}"
+            )
+        data = resp.json()
+        try:
+            text = data["choices"][0]["message"]["content"] or ""
+        except Exception:
+            text = ""
+        usage = data.get("usage") or {}
+        in_tok = int(usage.get("prompt_tokens") or 0)
+        out_tok = int(usage.get("completion_tokens") or 0)
+        in_p, out_p = _PRICES.get(model, (0.0, 0.0))
+        cost = in_tok / 1e6 * in_p + out_tok / 1e6 * out_p
+        return LLMResponse(
+            text=text,
+            usage=TokenUsage(
+                model=model, input_tokens=in_tok, output_tokens=out_tok,
+                usd_cost=round(cost, 6),
+            ),
+        )
+
+
 class AnthropicProvider(_ProviderBase):
     name = "anthropic"
 
@@ -400,6 +475,12 @@ class LLMRouter:
         self._openai: OpenAIProvider | None = None
         self._anthropic: AnthropicProvider | None = None
         self._gemini: GeminiProvider | None = None
+        # OpenAI-compatible 中文 LLMs — cheaper + better Chinese tuning + no
+        # Singapore IP blocking. Initialised lazily from their respective
+        # env vars below.
+        self._deepseek: OpenAICompatProvider | None = None
+        self._qwen: OpenAICompatProvider | None = None
+        self._glm: OpenAICompatProvider | None = None
 
         oa = os.getenv("OPENAI_API_KEY")
         if oa:
@@ -426,12 +507,67 @@ class LLMRouter:
             except Exception as e:
                 log.warning("Anthropic init failed: %s", e)
 
+        ds = os.getenv("DEEPSEEK_API_KEY")
+        if ds:
+            try:
+                self._deepseek = OpenAICompatProvider(
+                    name="deepseek",
+                    api_key=ds,
+                    base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1"),
+                )
+            except Exception as e:
+                log.warning("DeepSeek init failed: %s", e)
+
+        qw = os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY")
+        if qw:
+            try:
+                self._qwen = OpenAICompatProvider(
+                    name="qwen",
+                    api_key=qw,
+                    # DashScope OpenAI-compat endpoint (Aliyun's official path).
+                    base_url=os.getenv(
+                        "QWEN_API_BASE",
+                        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    ),
+                )
+            except Exception as e:
+                log.warning("Qwen init failed: %s", e)
+
+        gl = os.getenv("ZHIPU_API_KEY") or os.getenv("GLM_API_KEY")
+        if gl:
+            try:
+                self._glm = OpenAICompatProvider(
+                    name="glm",
+                    api_key=gl,
+                    base_url=os.getenv("GLM_API_BASE", "https://open.bigmodel.cn/api/paas/v4"),
+                )
+            except Exception as e:
+                log.warning("GLM init failed: %s", e)
+
         force_mock = os.getenv("TA_MODE", "mock").lower() == "mock"
         self._force_mock = force_mock
 
         # Default model strings per tier (override via env). Defaults pick a
-        # working free/cheap path based on which keys are present.
-        if self._gemini and not (self._openai or self._anthropic):
+        # working free/cheap path based on which keys are present. Order of
+        # preference reflects cost + Chinese-locale fitness:
+        #   1. DeepSeek (cheap + reasoning model)
+        #   2. Qwen (Chinese-tuned, cheap)
+        #   3. GLM (Chinese-tuned, free tier)
+        #   4. Gemini (good but quota-limited)
+        #   5. OpenAI/Anthropic (premium fallback)
+        if self._deepseek and not (self._openai or self._anthropic or self._gemini):
+            default_fast = "deepseek-chat"
+            default_mid = "deepseek-chat"
+            default_deep = "deepseek-reasoner"
+        elif self._qwen and not (self._openai or self._anthropic or self._gemini):
+            default_fast = "qwen-flash"
+            default_mid = "qwen-plus"
+            default_deep = "qwen-max"
+        elif self._glm and not (self._openai or self._anthropic or self._gemini or self._qwen):
+            default_fast = "glm-4-flash"
+            default_mid = "glm-4"
+            default_deep = "glm-4-plus"
+        elif self._gemini and not (self._openai or self._anthropic):
             default_fast = "gemini-2.5-flash-lite"
             default_mid = "gemini-2.5-flash"
             default_deep = "gemini-2.5-pro"
@@ -455,16 +591,35 @@ class LLMRouter:
             return self._openai
         if model.startswith("claude-") and self._anthropic:
             return self._anthropic
+        if model.startswith("deepseek-") and self._deepseek:
+            return self._deepseek
+        if model.startswith("qwen-") and self._qwen:
+            return self._qwen
+        if model.startswith("glm-") and self._glm:
+            return self._glm
         return self._mock
 
-    # Models we'll fall through to when the configured one rate-limits or
-    # otherwise errors. Tried in order. All are Gemini today (cheapest
-    # path); when other providers are configured the same idea applies but
-    # the chain extends naturally via _provider_for().
+    # Per-family fallback chains. The router cycles through these on
+    # transient errors (rate limit / 5xx) so a single quota exhaustion
+    # can't bring the pipeline down. Each chain only fires for models
+    # in that family; cross-family fallback is handled by the closing
+    # mock entry which never errors.
     _GEMINI_FALLBACK_CHAIN = [
         "gemini-2.5-pro",          # if 3.1-pro-preview is rate-limited
         "gemini-2.5-flash",        # cheap and high-quota
         "gemini-2.5-flash-lite",   # last resort before mock
+    ]
+    _DEEPSEEK_FALLBACK_CHAIN = [
+        "deepseek-chat",           # cheap V3 fallback if reasoner fails
+    ]
+    _QWEN_FALLBACK_CHAIN = [
+        "qwen-plus",
+        "qwen-turbo",
+        "qwen-flash",
+    ]
+    _GLM_FALLBACK_CHAIN = [
+        "glm-4",
+        "glm-4-flash",
     ]
 
     def complete(
@@ -483,14 +638,23 @@ class LLMRouter:
         sys_with_lang = self._with_lang_directive(system)
 
         # Build the model-fallback list: configured model first, then
-        # backup Gemini tiers, then mock as last resort. We try each on a
-        # rate-limit / 429 / 5xx error so a single agent can't bring down
-        # the whole pipeline when the user's free quota is exhausted.
+        # same-family backup tiers, then mock as last resort. We try each
+        # on a rate-limit / 429 / 5xx error so a single agent can't bring
+        # down the whole pipeline when the user's free quota is exhausted.
         chain: list[str] = [model]
         if model.startswith("gemini-"):
-            for m in self._GEMINI_FALLBACK_CHAIN:
-                if m not in chain:
-                    chain.append(m)
+            family = self._GEMINI_FALLBACK_CHAIN
+        elif model.startswith("deepseek-"):
+            family = self._DEEPSEEK_FALLBACK_CHAIN
+        elif model.startswith("qwen-"):
+            family = self._QWEN_FALLBACK_CHAIN
+        elif model.startswith("glm-"):
+            family = self._GLM_FALLBACK_CHAIN
+        else:
+            family = []
+        for m in family:
+            if m not in chain:
+                chain.append(m)
         # Always end with mock so the pipeline NEVER hard-fails.
         chain.append("mock-deep" if tier == Tier.DEEP else "mock-mid")
 

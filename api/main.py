@@ -412,17 +412,24 @@ def health() -> dict:
     features: dict[str, dict] = {}
 
     # LLM provider
-    has_gemini = bool(os.getenv("GEMINI_API_KEY"))
+    has_gemini = bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
     has_openai = bool(os.getenv("OPENAI_API_KEY"))
     has_anthropic = bool(os.getenv("ANTHROPIC_API_KEY"))
+    has_deepseek = bool(os.getenv("DEEPSEEK_API_KEY"))
+    has_qwen = bool(os.getenv("DASHSCOPE_API_KEY") or os.getenv("QWEN_API_KEY"))
+    has_glm = bool(os.getenv("ZHIPU_API_KEY") or os.getenv("GLM_API_KEY"))
+    has_any_llm = any((has_gemini, has_openai, has_anthropic, has_deepseek, has_qwen, has_glm))
     features["llm"] = {
-        "ok": has_gemini or has_openai or has_anthropic,
+        "ok": has_any_llm,
         "providers": {
             "gemini": has_gemini,
             "openai": has_openai,
             "anthropic": has_anthropic,
+            "deepseek": has_deepseek,
+            "qwen": has_qwen,
+            "glm": has_glm,
         },
-        "note": "" if (has_gemini or has_openai) else "no LLM key set — all decisions will be mock",
+        "note": "" if has_any_llm else "no LLM key set — all decisions will be mock",
     }
 
     # Macro analyst

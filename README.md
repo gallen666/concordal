@@ -30,6 +30,7 @@ manager — produce a fully traceable buy / overweight / hold / underweight
 * **Reflection loop**: prior decisions on a ticker, enriched with realised forward return, get injected into the Manager prompt.
 * **Honest cost model**: 10bp round-trip US, 15bp A-share with stamp tax — defaults are pessimistic by design.
 * **Self-diagnosis**: `GET /v1/health` lists every feature flag + env var status; missing keys surface as a "warnings" badge in the header.
+* **6 LLM providers** auto-detected: Gemini, OpenAI, Anthropic, plus the Chinese tier — **DeepSeek** (V3 + R1 reasoner), **Qwen** (DashScope), **GLM** (智谱). Same fallback-chain mechanism applies — a provider rate-limit drops to its own family's cheaper tier, then mock. Set any of `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `ZHIPU_API_KEY` to opt in. CN-locale users get better Chinese output and ~10× lower cost.
 
 ## Why this codebase exists vs. the paper repo
 
