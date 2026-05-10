@@ -544,7 +544,11 @@ class LLMRouter:
             except Exception as e:
                 log.warning("GLM init failed: %s", e)
 
-        force_mock = os.getenv("TA_MODE", "mock").lower() == "mock"
+        # `TA_MODE=live` (default) → use whatever LLM provider keys are set.
+        # `TA_MODE=mock` → force mock provider (used by tests / offline demos).
+        # We default to LIVE because the product is meant to be real
+        # analysis; mock is the test mode, not the production mode.
+        force_mock = os.getenv("TA_MODE", "live").lower() == "mock"
         self._force_mock = force_mock
 
         # Default model strings per tier (override via env). Defaults pick a

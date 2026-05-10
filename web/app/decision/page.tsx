@@ -213,9 +213,10 @@ export default function DecisionPage() {
     <div className="max-w-6xl mx-auto px-6 py-10">
       {paywall && <PaywallModal detail={paywall} onClose={() => setPaywall(null)} />}
       {/* Anonymous visitors get a friendly "try without signup" banner so
-          the homepage CTA can deep-link them straight here. */}
+          the homepage CTA can deep-link them straight here. Real-only
+          mode: every user (including anon) gets the real LLM pipeline,
+          so we no longer show the "you're in mock" banner. */}
       {!auth.isLoggedIn() && <DemoBanner />}
-      {user && !user.real_llm && <MockBanner />}
       {usage && usage.cap !== null && <UsageBadge usage={usage} />}
       <div className="mb-6">
         <span className="label-cap">{t("decision.label")}</span>

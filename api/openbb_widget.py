@@ -331,8 +331,9 @@ def widget_decision(
     if cached:
         return _format_decision_markdown(cached.model_dump(mode="json"), locale=locale)
 
-    prev = os.environ.get("TA_MODE")
-    os.environ["TA_MODE"] = "mock"  # force cheap path for public endpoint
+    # OpenBB widget calls run with the same real-LLM pipeline as the
+    # website. IP-rate-limit (~20/hour) + the LLM provider chain itself
+    # are the cost guards — we no longer downgrade to mock here.
     try:
         trace = run_decision(
             ticker=ticker.upper(),
@@ -344,11 +345,6 @@ def widget_decision(
     except Exception as e:
         log.exception("OpenBB decision failed")
         return f"## Error\n\nFailed to run decision for `{ticker}`: {e}"
-    finally:
-        if prev is None:
-            os.environ.pop("TA_MODE", None)
-        else:
-            os.environ["TA_MODE"] = prev
 
     _cache.put(trace, market)
     return _format_decision_markdown(trace.model_dump(mode="json"), locale=locale)

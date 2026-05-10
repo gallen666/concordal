@@ -36,7 +36,7 @@ COPY api/ ./api/
 
 ENV PYTHONPATH=/app/src \
     TA_DATA_DIR=/app/.tradingagents \
-    TA_MODE=mock
+    TA_MODE=live
 
 # NOTE: /app/.tradingagents is on the container's ephemeral filesystem.
 # Decision history (MemoryStore JSONL files) is wiped on every redeploy.

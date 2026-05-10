@@ -351,10 +351,12 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
                 _jobs[job_id]["mode"] = "cached"
                 return
 
-        # Force mock mode for users not on real-LLM allowlist (cost control).
+        # Real-only mode: TA_MODE was previously forced to "mock" for any
+        # user not on the real_llm_user_ids allowlist. We've removed that
+        # gating — every user (including anonymous) gets the real LLM
+        # pipeline. Quota protection comes from `_daily_cap_check` and the
+        # provider-fallback chain, not from mock-tier downgrade.
         prev_mode = os.environ.get("TA_MODE")
-        if not user.real_llm:
-            os.environ["TA_MODE"] = "mock"
         try:
             # Reflection loop (a la TauricResearch v0.2.4 persistent log):
             # pull this user's prior decisions on the same ticker, enrich
@@ -578,7 +580,11 @@ def health() -> dict:
             "qwen": has_qwen,
             "glm": has_glm,
         },
-        "note": "" if has_any_llm else "no LLM key set — all decisions will be mock",
+        "note": (
+            ""
+            if has_any_llm
+            else "no LLM key set — decisions will fall back to mock provider on every call"
+        ),
     }
 
     # Macro analyst
@@ -655,7 +661,7 @@ def health() -> dict:
         "status": "ok" if not warnings else "degraded",
         "version": "0.1.0",
         "env": cfg.env,
-        "mode": os.getenv("TA_MODE", "mock"),
+        "mode": os.getenv("TA_MODE", "live"),
         "emergency_stop": cfg.emergency_stop_decisions,
         "features": features,
         "warnings": warnings,

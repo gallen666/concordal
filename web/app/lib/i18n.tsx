@@ -305,8 +305,8 @@ const dict = {
     zh: "为信号付费，不为门面",
   },
   "pricing.subheading":         {
-    en: "Free tier runs the real 8-source pipeline against mock LLMs so you can see exactly what the system does. Upgrade only when you want real LLM-driven decisions and unlimited runs.",
-    zh: "免费档跑完整 8 源 pipeline + mock LLM——你能完整看到系统做什么。只有当你需要真 LLM 驱动的决策 + 无限调用时再升级。",
+    en: "Free tier runs the same real 8-source + real-LLM pipeline as Pro — capped at 5 decisions/day. Upgrade for higher daily quota, priority queue, and team seats.",
+    zh: "免费档和 Pro 跑的是同一条真 8 源 + 真 LLM pipeline——只是每日限 5 次。升级解锁更高每日额度、优先队列和团队席位。",
   },
   "pricing.tier.free":          { en: "Free",                               zh: "免费" },
   "pricing.tier.pro":           { en: "Pro",                                zh: "Pro" },
@@ -393,8 +393,8 @@ const dict = {
   "paywall.tomorrow":           { en: "Or come back tomorrow",                zh: "或明天再来" },
   "demo.banner.title":          { en: "Try without signing up",               zh: "免登录试一次" },
   "demo.banner.body":           {
-    en: "Run 2 free decisions per day on mock LLM — no email needed. Unlock real LLM + 30/day with a free invite code or Pro.",
-    zh: "每天 2 次免费 mock 决策——无需邮箱。免费邀请码或 Pro 可解锁真 LLM + 30 次/天。",
+    en: "Run 2 free decisions per day on the real LLM pipeline — no email needed. Sign up with an invite code for 5/day, or upgrade to Pro for 30/day.",
+    zh: "每天 2 次免费真 LLM 决策——无需邮箱。邀请码登录后 5 次/天，升级 Pro 后 30 次/天。",
   },
 
   // ---- Legal pages ------------------------------------------------------

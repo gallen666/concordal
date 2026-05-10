@@ -104,12 +104,16 @@ def redeem(req: RedeemRequest) -> TokenResponse:
         log.warning("Bad invite from %s", req.email)
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid invite code")
     tok = _issue_token(req.email)
+    # Real-only mode: every authenticated user gets real LLM + real data.
+    # The previous allowlist (real_llm_user_ids) was a closed-beta
+    # cost-control device; now that daily caps + provider fallback chain
+    # protect us, we let everyone hit the real pipeline.
     return TokenResponse(
         token=tok,
         user_id=req.email,
         expires_at=int(time.time()) + cfg.jwt_ttl_hours * 3600,
-        real_llm=req.email in cfg.real_llm_user_ids,
-        real_data=req.email in cfg.real_data_user_ids,
+        real_llm=True,
+        real_data=True,
     )
 
 
@@ -127,7 +131,9 @@ def get_current_user(
 ) -> CurrentUser:
     if not cfg.require_invite_code:
         # Open mode (e.g. local dev). Identify via X-User-Id header or anon.
-        return CurrentUser(id="anonymous", real_llm=False, real_data=False)
+        # Anonymous still gets real LLM — the daily cap is the protection,
+        # not LLM-tier gating.
+        return CurrentUser(id="anonymous", real_llm=True, real_data=True)
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
@@ -136,34 +142,28 @@ def get_current_user(
     token = authorization.split(" ", 1)[1].strip()
     payload = _decode_token(token)
     uid = payload.get("sub", "")
-    return CurrentUser(
-        id=uid,
-        real_llm=uid in cfg.real_llm_user_ids,
-        real_data=uid in cfg.real_data_user_ids,
-    )
+    # Real-only mode: every authenticated user gets full pipeline.
+    return CurrentUser(id=uid, real_llm=True, real_data=True)
 
 
 def get_optional_user(
     authorization: Annotated[str | None, Header()] = None,
 ) -> CurrentUser:
     """Same as `get_current_user` but tolerates the no-auth case by
-    returning a synthetic 'anonymous' user with mock-only privileges.
+    returning a synthetic 'anonymous' user.
 
-    Used on endpoints we want truly-anonymous visitors to be able to
-    hit, like the demo decision flow on /decision (free-tier cap is
-    enforced separately so we don't get hammered).
+    Even anonymous gets real LLM — the daily cap (2/day for anon) is
+    what protects us from quota drain, not LLM-tier gating. The whole
+    point of removing mock mode is that visitors should see what the
+    product actually does, not a watered-down demo.
     """
     if not authorization or not authorization.lower().startswith("bearer "):
-        return CurrentUser(id="anonymous", real_llm=False, real_data=False)
+        return CurrentUser(id="anonymous", real_llm=True, real_data=True)
     try:
         token = authorization.split(" ", 1)[1].strip()
         payload = _decode_token(token)
         uid = payload.get("sub", "")
-        return CurrentUser(
-            id=uid,
-            real_llm=uid in cfg.real_llm_user_ids,
-            real_data=uid in cfg.real_data_user_ids,
-        )
+        return CurrentUser(id=uid, real_llm=True, real_data=True)
     except HTTPException:
         # Bad / expired token — degrade to anon rather than 401
-        return CurrentUser(id="anonymous", real_llm=False, real_data=False)
+        return CurrentUser(id="anonymous", real_llm=True, real_data=True)
