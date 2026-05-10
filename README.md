@@ -22,6 +22,7 @@ manager — produce a fully traceable buy / overweight / hold / underweight
 ## What ships today
 
 * **Multi-market**: US equities (yfinance), A-share (akshare), **crypto via CCXT**.
+* **Real social signal**: news + sentiment analysts pull from Reddit (wallstreetbets / investing / stocks / CryptoCurrency / Bitcoin) — free, no API key, retail-attention is a real signal especially for short-horizon decisions.
 * **5-analyst pipeline**: fundamentals + sentiment + news + technical + **macro** (FRED/IMF via OpenBB SDK).
 * **Point-in-time fundamentals** for backtests via SEC EDGAR XBRL — no lookahead bias.
 * **Live progress**: every stage reports start/done so the UI shows a live timeline instead of a 90s spinner.

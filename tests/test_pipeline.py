@@ -8,7 +8,7 @@ fast - no API keys needed."""
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -229,6 +229,44 @@ def test_router_picks_deepseek_defaults_when_only_deepseek_key_set(monkeypatch):
     assert r.models[rt.Tier.FAST].startswith("deepseek-")
     assert r.models[rt.Tier.DEEP] == "deepseek-reasoner"
     assert r._deepseek is not None
+
+
+def test_reddit_news_filters_lookahead_correctly(monkeypatch):
+    """Reddit posts created AFTER asof must never end up in the result."""
+    from trading_agents.adapters import social_reddit
+
+    asof = date(2024, 6, 1)
+    after_asof = datetime(2024, 7, 15, tzinfo=timezone.utc).timestamp()
+    before_asof = datetime(2024, 5, 28, tzinfo=timezone.utc).timestamp()
+    way_before = datetime(2023, 1, 1, tzinfo=timezone.utc).timestamp()
+
+    fake_posts = [
+        {"title": "AAPL future post (should be filtered)", "selftext": "",
+         "score": 5000, "ups": 5000, "num_comments": 200,
+         "created_utc": after_asof, "permalink": "/r/wallstreetbets/x", "author": "a", "subreddit": "wallstreetbets"},
+        {"title": "AAPL recent post within lookback", "selftext": "buy buy buy",
+         "score": 200, "ups": 200, "num_comments": 30,
+         "created_utc": before_asof, "permalink": "/r/wallstreetbets/y", "author": "b", "subreddit": "wallstreetbets"},
+        {"title": "AAPL ancient post outside lookback", "selftext": "",
+         "score": 9999, "ups": 9999, "num_comments": 999,
+         "created_utc": way_before, "permalink": "/r/wallstreetbets/z", "author": "c", "subreddit": "wallstreetbets"},
+    ]
+    monkeypatch.setattr(social_reddit, "_search_subreddit", lambda *a, **k: fake_posts)
+
+    items = social_reddit.fetch_news("AAPL", asof, market="us_equity", lookback_days=7)
+    titles = [i.headline for i in items]
+    assert any("recent post" in t for t in titles)
+    assert not any("future post" in t for t in titles), "lookahead leak"
+    assert not any("ancient post" in t for t in titles), "outside lookback leak"
+
+
+def test_reddit_sentiment_returns_none_when_no_posts(monkeypatch):
+    """When Reddit search yields zero posts in the window, fetch_sentiment
+    must return None so caller can fall back rather than emit a fake 50/50."""
+    from trading_agents.adapters import social_reddit
+    monkeypatch.setattr(social_reddit, "_search_subreddit", lambda *a, **k: [])
+    s = social_reddit.fetch_sentiment("AAPL", date(2024, 6, 1))
+    assert s is None
 
 
 def test_router_provider_routing_for_chinese_llms(monkeypatch):

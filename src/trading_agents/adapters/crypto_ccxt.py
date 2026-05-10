@@ -28,6 +28,10 @@ from ..core.types import (
 )
 from .base import AdapterError, MarketAdapter
 from .mock import MockAdapter
+from .social_reddit import (
+    fetch_news as fetch_reddit_news,
+    fetch_sentiment as fetch_reddit_sentiment,
+)
 
 log = logging.getLogger(__name__)
 
@@ -136,15 +140,33 @@ class CcxtCryptoAdapter(MarketAdapter):
     def get_news(
         self, ticker: str, asof: date, lookback_days: int = 7
     ) -> list[NewsItem]:
-        # CCXT itself doesn't ship news. Return the mock adapter's items
-        # so the analyst still has something to chew on; production users
-        # who care should plug in CryptoPanic / NewsAPI here.
+        # Reddit r/CryptoCurrency / r/ethfinance / r/Bitcoin — by far the
+        # best free signal for crypto. CCXT itself ships no news. Falls
+        # back to mock if Reddit returns nothing.
+        try:
+            items = fetch_reddit_news(
+                ticker, asof, market="crypto", lookback_days=lookback_days,
+            )
+            if items:
+                return items
+        except Exception as e:
+            log.debug("Reddit news fetch (crypto) failed for %s: %s", ticker, e)
         return self._fallback.get_news(ticker, asof, lookback_days)
 
     def get_sentiment(
         self, ticker: str, asof: date, lookback_days: int = 7
     ) -> SentimentSummary:
-        # Same situation as news — fallback to mock pending a real source.
+        # Crypto-twitter is the truer signal but rate-limited; Reddit is the
+        # free proxy. Mention count alone is informative for crypto where
+        # retail attention drives short-term flows.
+        try:
+            s = fetch_reddit_sentiment(
+                ticker, asof, market="crypto", lookback_days=lookback_days,
+            )
+            if s is not None:
+                return s
+        except Exception as e:
+            log.debug("Reddit sentiment (crypto) failed for %s: %s", ticker, e)
         return self._fallback.get_sentiment(ticker, asof, lookback_days)
 
     def get_technical(self, ticker: str, asof: date) -> TechnicalSnapshot:

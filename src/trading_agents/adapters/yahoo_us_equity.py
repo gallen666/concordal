@@ -26,6 +26,10 @@ from .base import AdapterError, MarketAdapter
 from .macro_openbb import fetch_macro_snapshot
 from .mock import MockAdapter
 from .sec_edgar import get_pit_fundamentals
+from .social_reddit import (
+    fetch_news as fetch_reddit_news,
+    fetch_sentiment as fetch_reddit_sentiment,
+)
 
 log = logging.getLogger(__name__)
 
@@ -151,6 +155,19 @@ class YahooUSEquityAdapter(MarketAdapter):
     def get_news(
         self, ticker: str, asof: date, lookback_days: int = 7
     ) -> list[NewsItem]:
+        # Reddit is our primary news source: real timestamps, no API key,
+        # better signal than yfinance's "current top stories" (which doesn't
+        # honour asof at all). Yfinance is the secondary fallback for the
+        # rare ticker that Reddit users don't talk about.
+        try:
+            reddit_items = fetch_reddit_news(
+                ticker, asof, market="us_equity", lookback_days=lookback_days,
+            )
+            if reddit_items:
+                return reddit_items
+        except Exception as e:
+            log.debug("Reddit news fetch failed for %s: %s", ticker, e)
+
         if not self._available:
             return self._fallback.get_news(ticker, asof, lookback_days)
         try:
@@ -191,8 +208,18 @@ class YahooUSEquityAdapter(MarketAdapter):
     def get_sentiment(
         self, ticker: str, asof: date, lookback_days: int = 7
     ) -> SentimentSummary:
-        # Yahoo doesn't expose social sentiment directly; punt to mock.
-        # Real impl would call StockTwits / Reddit / X API here.
+        # Reddit is our primary sentiment source — wallstreetbets / investing /
+        # stocks / SecurityAnalysis. Free, no API key, mention count + skew
+        # actually correlate with retail interest. Falls back to mock if
+        # Reddit returns nothing (unknown ticker, network issue, etc.).
+        try:
+            s = fetch_reddit_sentiment(
+                ticker, asof, market="us_equity", lookback_days=lookback_days,
+            )
+            if s is not None:
+                return s
+        except Exception as e:
+            log.debug("Reddit sentiment fetch failed for %s: %s", ticker, e)
         return self._fallback.get_sentiment(ticker, asof, lookback_days)
 
     def get_technical(self, ticker: str, asof: date) -> TechnicalSnapshot:

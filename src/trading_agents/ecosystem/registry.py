@@ -107,6 +107,21 @@ ECOSYSTEM: list[EcosystemProject] = [
         feeds_into=["tradingagents", "finrl"],
         fed_by=[],
     ),
+    EcosystemProject(
+        slug="reddit",
+        name="Reddit (public JSON)",
+        tagline="Free retail-sentiment + headlines from wallstreetbets / investing / CryptoCurrency",
+        role=EcosystemRole.DATA_SOURCE,
+        github="https://www.reddit.com/dev/api/",
+        stars_k=0.0,  # not a github project; here for narrative completeness
+        license="Reddit API Terms",
+        status=IntegrationStatus.LIVE,
+        integrates_via="src/trading_agents/adapters/social_reddit.py",
+        we_consume=["search.json across r/wallstreetbets, r/investing, r/stocks, r/CryptoCurrency, r/Bitcoin"],
+        we_export=["NewsItem feed for news analyst", "SentimentSummary for sentiment analyst"],
+        feeds_into=["tradingagents"],
+        fed_by=[],
+    ),
 
     # ---- 2. feature engine (turns data into ML factors) ---------------
     EcosystemProject(
