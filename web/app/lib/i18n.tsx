@@ -282,6 +282,51 @@ const dict = {
   "hot.fetched":                { en: "Fetched at",                         zh: "拉取时间" },
   "hot.runAnalysis":            { en: "Run analysis",                       zh: "跑决策" },
 
+  // ---- /integrations page (OpenBB Workspace etc.) -----------------------
+  "header.integrations":        { en: "Integrations",                       zh: "集成" },
+  "integrations.label":         { en: "INTEGRATIONS",                       zh: "集成" },
+  "integrations.heading":       {
+    en: "Use TradingAgents inside your favorite tools",
+    zh: "在你常用的工具里直接使用 TradingAgents",
+  },
+  "integrations.subheading":    {
+    en: "Bring the 7-agent decision view into terminals you already love. Currently shipping: OpenBB Workspace.",
+    zh: "把 7-agent 决策视角带进你已经在用的金融终端。目前已支持：OpenBB Workspace。",
+  },
+  "integrations.openbb.title":  { en: "OpenBB Workspace",                   zh: "OpenBB Workspace" },
+  "integrations.openbb.tag":    { en: "Open-source Bloomberg alt · 67k★",   zh: "开源 Bloomberg 替代 · 67k★" },
+  "integrations.openbb.body":   {
+    en: "OpenBB Workspace is the open-source quant terminal. Add our backend as a custom widget source and the 7-Agent Decision, Macro Brief, and Track Record widgets show up in your widget catalog — drag them onto any dashboard.",
+    zh: "OpenBB Workspace 是开源 quant 终端。把我们的后端添加为自定义 widget 源，「7-Agent 决策」「宏观简报」「回测战绩」三个 widget 就会出现在你的 widget 目录里——拖到任意 dashboard 即可使用。",
+  },
+  "integrations.openbb.urlLabel": { en: "Backend URL (paste this in OpenBB)", zh: "后端 URL（粘贴到 OpenBB 设置里）" },
+  "integrations.openbb.copy":   { en: "Copy",                               zh: "复制" },
+  "integrations.openbb.copied": { en: "Copied!",                            zh: "已复制！" },
+  "integrations.openbb.steps":  { en: "Setup (3 steps, ~2 minutes)",        zh: "三步搞定（约 2 分钟）" },
+  "integrations.openbb.step1":  {
+    en: "Open OpenBB Workspace → Settings → Custom Backend.",
+    zh: "打开 OpenBB Workspace → Settings → Custom Backend。",
+  },
+  "integrations.openbb.step2":  {
+    en: "Paste the URL above and give it a name (e.g. \"TradingAgents\").",
+    zh: "把上面的 URL 粘贴进去，起个名字（例如 \"TradingAgents\"）。",
+  },
+  "integrations.openbb.step3":  {
+    en: "Open any dashboard, click + Add widget, and you'll see our 3 widgets under \"AI Analysis\".",
+    zh: "打开任意 dashboard，点 + Add widget，就能在「AI Analysis」分类里看到我们的 3 个 widget。",
+  },
+  "integrations.widgets":       { en: "Widgets exposed",                    zh: "已暴露的 widgets" },
+  "integrations.widget1":       { en: "7-Agent Decision (markdown)",        zh: "7-Agent 决策（markdown）" },
+  "integrations.widget2":       { en: "Macro Brief (markdown)",             zh: "宏观简报（markdown）" },
+  "integrations.widget3":       { en: "Track Record (markdown)",            zh: "回测战绩（markdown）" },
+  "integrations.openbb.cta":    { en: "Open OpenBB Workspace ↗",            zh: "打开 OpenBB Workspace ↗" },
+  "integrations.openbb.docs":   { en: "OpenBB custom backend docs ↗",       zh: "OpenBB 自定义后端文档 ↗" },
+  "integrations.future":        { en: "More coming",                        zh: "后续规划" },
+  "integrations.future.body":   {
+    en: "Excel add-in (via OpenBB SDK), Tauri desktop app, plus direct MCP server for Claude / Cursor agents. Want one of these prioritised? Open an issue.",
+    zh: "Excel 加载项（通过 OpenBB SDK）、Tauri 桌面 app、以及给 Claude / Cursor 的 MCP server。想优先做哪个？开个 issue。",
+  },
+
   // ---- /how-it-works page ------------------------------------------------
   "header.howItWorks":          { en: "How it works",                       zh: "如何工作" },
   "how.label":                  { en: "OUR APPROACH",                       zh: "我们的做法" },

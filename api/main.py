@@ -41,6 +41,7 @@ from trading_agents.memory.store import MemoryStore
 
 from .auth import CurrentUser, RedeemRequest, TokenResponse, get_current_user, redeem
 from .config import cfg
+from .openbb_widget import router as openbb_router
 from .waitlist import router as waitlist_router
 
 
@@ -84,12 +85,17 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cfg.allowed_origins,
+    # Match OpenBB Workspace origins so /openbb/* widgets work cross-domain.
+    # Covers the hosted Workspace (pro.openbb.co, workspace.openbb.co), any
+    # *.openbb.co subdomain, and the local-dev Tauri shell on localhost.
+    allow_origin_regex=r"^https?://(localhost(:\d+)?|127\.0\.0\.1(:\d+)?|([a-z0-9-]+\.)*openbb\.co)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(waitlist_router)
+app.include_router(openbb_router)
 
 cache = TickerCache()
 memory = MemoryStore()
