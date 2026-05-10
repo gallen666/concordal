@@ -158,6 +158,10 @@ class BacktestRequest(BaseModel):
     rebalance_every_days: int = 5
     market: str = "us_equity"
     baselines_only: bool = True   # default: don't burn LLM for backtests in beta
+    # When True, replay each strategy's equity curve through Backtrader
+    # and include a `cross_validation` payload in the response so the UI
+    # can show side-by-side metrics. Free bug detector for our own engine.
+    cross_validate: bool = False
 
 
 # --- background runners --------------------------------------------------
@@ -358,12 +362,40 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
 def _run_backtest_job(job_id: str, req: BacktestRequest, user: CurrentUser) -> None:
     try:
         adapter = get_adapter(req.market)
-        bt = Backtester(adapter=adapter)
+        # Use market-aware cost defaults so A-share stamp tax is modeled etc.
+        bt = Backtester.for_market(adapter)
         end = date.today()
         start = end - timedelta(days=req.days)
+
+        # Pull price history once so cross-validation can re-use it without
+        # re-fetching (especially important for free yfinance / akshare quotas).
+        quotes = adapter.get_price_history(req.ticker, start, end) if req.cross_validate else None
+
         rows = []
-        for r in bt.run_all_baselines(req.ticker, start, end):
-            rows.append({"name": r.name, "metrics": r.metrics.__dict__})
+        for br in bt.run_all_baselines(req.ticker, start, end):
+            row = {"name": br.name, "metrics": br.metrics.__dict__}
+            # Cross-validate every baseline through Backtrader if requested.
+            if req.cross_validate and quotes:
+                try:
+                    from trading_agents.backtest.backtrader_runner import cross_validate
+                    cv = cross_validate(
+                        ours=br, quotes=quotes, weights=br.weights,
+                        commission_bps=bt.commission_bps,
+                        slippage_bps=bt.slippage_bps,
+                        sell_tax_bps=bt.sell_tax_bps,
+                    )
+                    if cv is not None:
+                        row["cross_validation"] = {
+                            "backtrader_metrics": cv.backtrader_metrics.__dict__,
+                            "ann_return_diff_pct": cv.ann_return_diff_pct,
+                            "sharpe_diff": cv.sharpe_diff,
+                            "max_dd_diff_pct": cv.max_dd_diff_pct,
+                            "flagged_disagreement": cv.flagged_disagreement,
+                            "notes": cv.notes,
+                        }
+                except Exception as e:
+                    log.warning("cross_validate failed for %s: %s", br.name, e)
+            rows.append(row)
 
         # Agent-strategy backtest is expensive. Allow only for real_llm users.
         if not req.baselines_only and user.real_llm:
@@ -371,11 +403,32 @@ def _run_backtest_job(job_id: str, req: BacktestRequest, user: CurrentUser) -> N
                 return run_decision(
                     ticker=t, asof=asof, market=req.market, debate_rounds=1
                 ).decision
-            r = bt.run_agent(
+            ag = bt.run_agent(
                 req.ticker, start, end, decide_fn,
                 rebalance_every_days=req.rebalance_every_days,
             )
-            rows.append({"name": r.name, "metrics": r.metrics.__dict__})
+            agent_row = {"name": ag.name, "metrics": ag.metrics.__dict__}
+            if req.cross_validate and quotes:
+                try:
+                    from trading_agents.backtest.backtrader_runner import cross_validate
+                    cv = cross_validate(
+                        ours=ag, quotes=quotes, weights=ag.weights,
+                        commission_bps=bt.commission_bps,
+                        slippage_bps=bt.slippage_bps,
+                        sell_tax_bps=bt.sell_tax_bps,
+                    )
+                    if cv is not None:
+                        agent_row["cross_validation"] = {
+                            "backtrader_metrics": cv.backtrader_metrics.__dict__,
+                            "ann_return_diff_pct": cv.ann_return_diff_pct,
+                            "sharpe_diff": cv.sharpe_diff,
+                            "max_dd_diff_pct": cv.max_dd_diff_pct,
+                            "flagged_disagreement": cv.flagged_disagreement,
+                            "notes": cv.notes,
+                        }
+                except Exception as e:
+                    log.warning("cross_validate (agent) failed: %s", e)
+            rows.append(agent_row)
 
         _jobs[job_id]["status"] = "done"
         _jobs[job_id]["result"] = {"rows": rows, "start": str(start), "end": str(end)}

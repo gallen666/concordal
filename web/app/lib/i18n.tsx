@@ -225,6 +225,11 @@ const dict = {
   "backtest.daily":              { en: "Daily",                             zh: "每日" },
   "backtest.run":                { en: "Run backtest",                      zh: "开始回测" },
   "backtest.running":            { en: "running…",                          zh: "运行中…" },
+  "backtest.crossValidate":      { en: "Cross-validate with Backtrader",    zh: "用 Backtrader 交叉验证" },
+  "backtest.crossValidateBody":  {
+    en: "Replay each strategy through the battle-tested Backtrader broker simulator. Differences >0.5pp annualised return are flagged — a free bug detector.",
+    zh: "把每个策略再用 Backtrader 那个久经验证的撮合器跑一遍。年化收益偏差 >0.5pp 会标黄——免费 bug 探测器。",
+  },
   "backtest.metricsHeading":     { en: "Summary",                           zh: "汇总指标" },
   "backtest.cumReturn":          { en: "CUM RETURN",                        zh: "累计收益" },
   "backtest.sharpe":             { en: "SHARPE",                            zh: "夏普比率" },
@@ -290,6 +295,29 @@ const dict = {
   "hot.refresh":                { en: "Refresh",                            zh: "刷新" },
   "hot.fetched":                { en: "Fetched at",                         zh: "拉取时间" },
   "hot.runAnalysis":            { en: "Run analysis",                       zh: "跑决策" },
+
+  // ---- /decisions/[ticker] timeline comparison page ---------------------
+  "tl.label":                   { en: "DECISION TIMELINE",                  zh: "决策时间线" },
+  "tl.heading":                 {
+    en: "Your decisions on {ticker} over time",
+    zh: "你在 {ticker} 上的历次决策",
+  },
+  "tl.subheading":              {
+    en: "Each card is one decision the system made for you, with the realised forward return when available. The shape across cards shows how the system's view evolved.",
+    zh: "每张卡片是系统给你的一次决策，已实现回报会标在右下角。卡片连起来就能看到系统对这只票的判断怎么演化。",
+  },
+  "tl.empty":                   { en: "No decisions on this ticker yet.",   zh: "你还没在这只票上做过决策。" },
+  "tl.runFirst":                { en: "Make a decision now",                zh: "现在做一次决策" },
+  "tl.totalCalls":              { en: "Total calls",                        zh: "总决策次数" },
+  "tl.hitRate":                 { en: "Direction hit rate",                 zh: "方向命中率" },
+  "tl.avgReturn":               { en: "Avg signed return",                  zh: "平均带向收益" },
+  "tl.avgConfidence":           { en: "Avg confidence",                     zh: "平均置信度" },
+  "tl.colDate":                 { en: "Date",                               zh: "日期" },
+  "tl.daysAgo":                 { en: "{n} days ago",                       zh: "{n} 天前" },
+  "tl.daysHeld":                { en: "{n}d held",                          zh: "持仓 {n}天" },
+  "tl.notRealisedYet":          { en: "Not realised yet",                   zh: "尚未实现" },
+  "tl.deltaWeight":             { en: "Δ weight vs last",                   zh: "仓位变化" },
+  "tl.deltaSide":               { en: "Side flipped",                       zh: "方向反转" },
 
   // ---- /ecosystem page (10-project meta-platform) -----------------------
   "header.ecosystem":           { en: "Ecosystem",                          zh: "生态" },

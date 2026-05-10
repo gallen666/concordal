@@ -122,6 +122,24 @@ ECOSYSTEM: list[EcosystemProject] = [
         feeds_into=["tradingagents"],
         fed_by=[],
     ),
+    EcosystemProject(
+        slug="eastmoney_guba",
+        name="东方财富股吧",
+        tagline="A-share 真社交信号 — Reddit 替代品，覆盖每只 A 股的股民讨论",
+        role=EcosystemRole.DATA_SOURCE,
+        github="https://github.com/akfamily/akshare",  # exposed via akshare
+        stars_k=0.0,
+        license="Public web data",
+        status=IntegrationStatus.LIVE,
+        integrates_via="src/trading_agents/adapters/social_guba.py (via akshare.stock_guba_em)",
+        we_consume=["帖子标题 / 阅读量 / 评论数 / 发帖时间 per A-share code"],
+        we_export=[
+            "NewsItem feed (top-read posts in lookback window)",
+            "SentimentSummary with 中文 keyword bull/bear scoring (看多/抄底 vs 割肉/被套)",
+        ],
+        feeds_into=["tradingagents"],
+        fed_by=["akshare"],
+    ),
 
     # ---- 2. feature engine (turns data into ML factors) ---------------
     EcosystemProject(

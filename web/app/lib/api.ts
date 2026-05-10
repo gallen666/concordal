@@ -162,6 +162,7 @@ export const api = {
     market?: string;
     rebalance_every_days?: number;
     baselines_only?: boolean;
+    cross_validate?: boolean;
   }) =>
     _fetch<{ job_id: string; status: string }>("/v1/backtests", {
       method: "POST",
@@ -171,7 +172,20 @@ export const api = {
   getBacktest: (id: string) =>
     _fetch<{
       status: string;
-      result: { rows: Array<{ name: string; metrics: Record<string, number> }> } | null;
+      result: {
+        rows: Array<{
+          name: string;
+          metrics: Record<string, number>;
+          cross_validation?: {
+            backtrader_metrics: Record<string, number>;
+            ann_return_diff_pct: number;
+            sharpe_diff: number;
+            max_dd_diff_pct: number;
+            flagged_disagreement: boolean;
+            notes: string[];
+          };
+        }>;
+      } | null;
       error: string | null;
     }>(`/v1/backtests/${id}`),
 

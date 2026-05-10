@@ -214,7 +214,13 @@ function DecisionRow({ row, locale }: { row: MyDecision; locale: string }) {
         {row.decision_date}
       </div>
       <div className="px-3 py-3 font-mono font-semibold tracking-wider">
-        {row.ticker}
+        <Link
+          href={`/decisions/${encodeURIComponent(row.ticker)}`}
+          className="hover:text-accent transition-colors"
+          title="View decision timeline for this ticker"
+        >
+          {row.ticker}
+        </Link>
       </div>
       <div className="px-3 py-3">
         <SideBadge side={row.decision.side} />

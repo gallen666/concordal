@@ -28,6 +28,10 @@ from ..core.types import (
 from .base import AdapterError, MarketAdapter
 from .macro_openbb import fetch_macro_snapshot
 from .mock import MockAdapter
+from .social_guba import (
+    fetch_news as fetch_guba_news,
+    fetch_sentiment as fetch_guba_sentiment,
+)
 
 log = logging.getLogger(__name__)
 
@@ -243,6 +247,16 @@ class CnEquityAdapter(MarketAdapter):
     def get_news(
         self, ticker: str, asof: date, lookback_days: int = 7
     ) -> list[NewsItem]:
+        # 东方财富股吧 is the truer A-share retail signal — try it first
+        # (works without akshare installed too via separate path). Falls
+        # through to formal news only if Guba returns empty.
+        try:
+            guba_items = fetch_guba_news(ticker, asof, lookback_days=lookback_days)
+            if guba_items:
+                return guba_items
+        except Exception as e:
+            log.debug("Guba news fetch failed for %s: %s", ticker, e)
+
         if not self._available:
             return self._fallback.get_news(ticker, asof, lookback_days)
         try:
@@ -329,6 +343,16 @@ class CnEquityAdapter(MarketAdapter):
                     "回测模式：东方财富/百度热度榜不提供历史数据，本期保留为空。"
                 ],
             )
+        # Live path: 东方财富股吧 is the primary retail-attention signal.
+        # If Guba returns 0 mentions (rare for any tradable code), fall
+        # through to the legacy hot-rank pipeline below.
+        try:
+            guba_summary = fetch_guba_sentiment(ticker, asof, lookback_days=lookback_days)
+            if guba_summary is not None and guba_summary.mention_count > 0:
+                return guba_summary
+        except Exception as e:
+            log.debug("Guba sentiment failed for %s: %s", ticker, e)
+
         if not self._available:
             return self._fallback.get_sentiment(ticker, asof, lookback_days)
         try:

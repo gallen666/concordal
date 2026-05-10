@@ -10,17 +10,29 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { BarChart3, Loader2, Play, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertTriangle, BarChart3, CheckCircle2, Loader2, Network, Play, TrendingDown, TrendingUp } from "lucide-react";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { useT } from "../lib/i18n";
 
-type Row = { name: string; metrics: Record<string, number> };
+type Row = {
+  name: string;
+  metrics: Record<string, number>;
+  cross_validation?: {
+    backtrader_metrics: Record<string, number>;
+    ann_return_diff_pct: number;
+    sharpe_diff: number;
+    max_dd_diff_pct: number;
+    flagged_disagreement: boolean;
+    notes: string[];
+  };
+};
 
 export default function BacktestPage() {
   const { t } = useT();
   const [ticker, setTicker] = useState("AAPL");
   const [days, setDays] = useState(120);
+  const [crossValidate, setCrossValidate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +46,7 @@ export default function BacktestPage() {
         ticker,
         days,
         baselines_only: true,
+        cross_validate: crossValidate,
       });
       for (let i = 0; i < 240; i++) {
         await new Promise((r) => setTimeout(r, 1000));
@@ -66,7 +79,7 @@ export default function BacktestPage() {
         </p>
       </div>
 
-      <div className="surface-elev p-3 flex flex-col sm:flex-row gap-2 mb-6">
+      <div className="surface-elev p-3 flex flex-col sm:flex-row sm:items-center gap-2 mb-3">
         <input
           value={ticker}
           onChange={(e) => setTicker(e.target.value.toUpperCase())}
@@ -93,6 +106,26 @@ export default function BacktestPage() {
           )}
         </button>
       </div>
+
+      {/* Cross-validation toggle — separate row so the explainer can fit */}
+      <label className="flex items-start gap-2.5 mb-6 cursor-pointer text-sm group">
+        <input
+          type="checkbox"
+          checked={crossValidate}
+          onChange={(e) => setCrossValidate(e.target.checked)}
+          disabled={loading}
+          className="mt-0.5 accent-accent"
+        />
+        <div className="flex-1">
+          <div className="flex items-center gap-1.5 text-ink-primary group-hover:text-accent transition-colors">
+            <Network className="w-3.5 h-3.5" />
+            {t("backtest.crossValidate")}
+          </div>
+          <div className="text-xs text-ink-tertiary mt-0.5">
+            {t("backtest.crossValidateBody")}
+          </div>
+        </div>
+      </label>
 
       {error && (
         <div className="surface p-4 border-signal-sell/30 text-signal-sell text-sm">
@@ -123,6 +156,8 @@ function Results({ rows }: { rows: Row[] }) {
       (a.metrics?.cumulative_return ?? 0)
   );
   const winner = sorted[0];
+  const hasCv = rows.some((r) => r.cross_validation);
+  const flaggedRows = rows.filter((r) => r.cross_validation?.flagged_disagreement);
 
   // Bar chart data: cumulative return per strategy
   const chartData = rows.map((r) => ({
@@ -213,6 +248,7 @@ function Results({ rows }: { rows: Row[] }) {
               <Th align="right">Max DD</Th>
               <Th align="right">Win rate</Th>
               <Th align="right">#Trades</Th>
+              {hasCv && <Th align="right">vs Backtrader</Th>}
             </tr>
           </thead>
           <tbody>
@@ -235,12 +271,69 @@ function Results({ rows }: { rows: Row[] }) {
                 <Td v={r.metrics.max_drawdown} pct signed />
                 <Td v={r.metrics.win_rate} pct />
                 <Td v={r.metrics.n_trades} int />
+                {hasCv && <CvCell cv={r.cross_validation} />}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {/* Cross-validation summary banner */}
+      {hasCv && (
+        <div className={cn(
+          "surface p-4 flex gap-3 items-start",
+          flaggedRows.length > 0
+            ? "border-signal-warn/30 bg-signal-warn_soft/40"
+            : "border-signal-buy/30 bg-signal-buy_soft/40",
+        )}>
+          {flaggedRows.length > 0 ? (
+            <AlertTriangle className="w-5 h-5 text-signal-warn shrink-0 mt-0.5" />
+          ) : (
+            <CheckCircle2 className="w-5 h-5 text-signal-buy shrink-0 mt-0.5" />
+          )}
+          <div className="flex-1 text-sm">
+            <div className="font-semibold text-ink-primary">
+              {flaggedRows.length > 0
+                ? `Cross-validation flagged ${flaggedRows.length} disagreement(s)`
+                : "All strategies cross-validated within tolerance"}
+            </div>
+            <p className="text-ink-secondary mt-1 leading-relaxed">
+              Each strategy was independently replayed through the Backtrader
+              broker simulator. Differences {">"} 0.5pp annualised return,
+              0.3 Sharpe, or 0.5pp max-drawdown are flagged. Small diffs
+              (rounding, intra-day timestamping) are normal; large diffs
+              indicate a bug in either engine.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function CvCell({ cv }: { cv: Row["cross_validation"] }) {
+  if (!cv) {
+    return <td className="px-4 py-3 text-right text-ink-tertiary">—</td>;
+  }
+  return (
+    <td
+      className={cn(
+        "px-4 py-3 text-right tabular-nums font-mono text-xs",
+        cv.flagged_disagreement
+          ? "text-signal-warn"
+          : "text-signal-buy",
+      )}
+      title={cv.notes.join("\n")}
+    >
+      <div className="flex items-center justify-end gap-1">
+        {cv.flagged_disagreement ? (
+          <AlertTriangle className="w-3 h-3" />
+        ) : (
+          <CheckCircle2 className="w-3 h-3" />
+        )}
+        Δ {cv.ann_return_diff_pct.toFixed(2)}pp
+      </div>
+    </td>
   );
 }
 
