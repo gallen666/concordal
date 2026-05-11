@@ -152,27 +152,94 @@ export default function TrackRecordPage() {
 // ---------------------------------------------------------------------------
 
 function EmptyState({ error }: { error: string | null }) {
-  const { t } = useT();
+  const { t, locale } = useT();
+  // 404 / no file yet → friendly "not run yet" view with concrete steps.
+  // Anything else → show the raw error too so the user can debug.
+  const looksLikeNotFound = !error || error.includes("404") || error.toLowerCase().includes("not found");
+
   return (
-    <div className="surface p-10 text-center space-y-4">
-      <div className="inline-flex w-12 h-12 rounded-xl bg-bg-hover text-ink-secondary items-center justify-center">
-        <Activity className="w-5 h-5" />
+    <div className="space-y-4">
+      <div className="surface-elev p-8 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-signal-warn_soft text-signal-warn flex items-center justify-center">
+            <Activity className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold">
+              {locale === "zh" ? "回测还没跑过" : "Backtest not run yet"}
+            </h2>
+            <p className="text-sm text-ink-tertiary mt-0.5">
+              {locale === "zh"
+                ? "reports/latest.json 不存在。下面三步生成它。"
+                : "reports/latest.json doesn't exist yet. Three steps to generate it:"}
+            </p>
+          </div>
+        </div>
+
+        <ol className="space-y-3 mt-2 text-sm">
+          <li className="flex gap-3">
+            <span className="shrink-0 w-6 h-6 rounded-full bg-accent-muted text-accent border border-accent/30 flex items-center justify-center text-xs font-semibold font-mono">1</span>
+            <div>
+              <div className="font-medium">
+                {locale === "zh" ? "确保至少一个 LLM key 设了" : "Make sure at least one LLM key is configured"}
+              </div>
+              <p className="text-xs text-ink-tertiary mt-0.5">
+                {locale === "zh"
+                  ? "Render env 加 DEEPSEEK_API_KEY (或 GEMINI_API_KEY / ANTHROPIC_API_KEY)。免费档够用。"
+                  : "Render env: DEEPSEEK_API_KEY (or GEMINI_API_KEY / ANTHROPIC_API_KEY). Free tiers are sufficient."}
+              </p>
+            </div>
+          </li>
+          <li className="flex gap-3">
+            <span className="shrink-0 w-6 h-6 rounded-full bg-accent-muted text-accent border border-accent/30 flex items-center justify-center text-xs font-semibold font-mono">2</span>
+            <div>
+              <div className="font-medium">
+                {locale === "zh" ? "双击 outputs/run_agent_backtest.command" : "Double-click outputs/run_agent_backtest.command"}
+              </div>
+              <p className="text-xs text-ink-tertiary mt-0.5">
+                {locale === "zh"
+                  ? "脚本 git pull + 跑 20 票 × 12 周回测，1-2 小时完成。"
+                  : "Script git pulls + runs 20 tickers × 12 weeks of backtests. 1-2 hours."}
+              </p>
+            </div>
+          </li>
+          <li className="flex gap-3">
+            <span className="shrink-0 w-6 h-6 rounded-full bg-accent-muted text-accent border border-accent/30 flex items-center justify-center text-xs font-semibold font-mono">3</span>
+            <div>
+              <div className="font-medium">
+                {locale === "zh" ? "完成后自动 git push" : "Auto git push when done"}
+              </div>
+              <p className="text-xs text-ink-tertiary mt-0.5">
+                {locale === "zh"
+                  ? "reports/latest.json 推到 GitHub，本页 5 分钟内显示真实曲线。"
+                  : "reports/latest.json gets pushed to GitHub; this page shows the real curves within 5 minutes."}
+              </p>
+            </div>
+          </li>
+        </ol>
+
+        <div className="flex gap-3 flex-wrap pt-3">
+          <a
+            href="https://github.com/gallen666/trading-agents-platform/blob/main/src/trading_agents/backtest/agent_backtest.py"
+            target="_blank" rel="noopener noreferrer"
+            className="btn-secondary text-sm"
+          >
+            <GitBranch className="w-3.5 h-3.5" />
+            {locale === "zh" ? "看回测引擎源码" : "See backtest engine source"}
+            <ExternalLink className="w-3 h-3" />
+          </a>
+          <Link href="/proof" className="btn-ghost text-sm">
+            {locale === "zh" ? "其他证据 →" : "Other proof →"}
+          </Link>
+        </div>
       </div>
-      <p className="text-ink-secondary">{t("track.empty")}</p>
-      {error && (
-        <p className="text-xs text-ink-tertiary font-mono">
+
+      {/* Show raw error only if it's not the expected 404 */}
+      {error && !looksLikeNotFound && (
+        <div className="surface p-3 text-xs text-ink-tertiary font-mono">
           {error}
-        </p>
+        </div>
       )}
-      <div className="flex gap-3 justify-center text-sm">
-        <a
-          href="https://github.com/gallen666/trading-agents-platform/tree/main/src/trading_agents/backtest"
-          className="btn-secondary"
-        >
-          <GitBranch className="w-4 h-4" />
-          {t("track.runYourself")}
-        </a>
-      </div>
     </div>
   );
 }

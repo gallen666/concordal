@@ -286,12 +286,17 @@ def test_alpha158_factors_produce_all_keys_with_enough_history():
     assert f["MA_DIFF"] > 0
 
 
-def test_share_endpoint_round_trip(monkeypatch):
+def test_share_endpoint_round_trip(monkeypatch, tmp_path):
     """Share a finished job, then read it back unauth'd at /v1/decisions/share/{id}."""
     import sys, os
     sys.path.insert(0, ".")
     monkeypatch.setenv("TA_MODE", "mock")
     monkeypatch.setenv("TA_REQUIRE_INVITE", "false")
+    monkeypatch.setenv("TA_DATA_DIR", str(tmp_path))
+    # Reset the persistence singleton so it picks up the new TA_DATA_DIR
+    import importlib
+    from api import persistence
+    persistence._conn = None  # type: ignore
     from fastapi.testclient import TestClient
     from api.main import app, _jobs
 

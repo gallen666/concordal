@@ -31,11 +31,11 @@ log = logging.getLogger(__name__)
 
 
 # --- magic-link tokens ----------------------------------------------------
-# In-memory store: token -> (email, expires_at). Single-use; consumed on verify.
-# For multi-replica deployments switch to Redis — the token volume is tiny
-# but cross-replica visibility matters once we scale past one Render dyno.
+# Persisted to SQLite at TA_DATA_DIR/platform.db so tokens survive a
+# Render redeploy (otherwise every code push would invalidate every
+# in-flight sign-in link). For multi-replica scale, swap SQLite for
+# Redis — the schema migrates trivially.
 _MAGIC_TTL_SEC = 15 * 60
-_magic_tokens: dict[str, tuple[str, float]] = {}
 
 
 def _mint_magic_token(email: str) -> str:
@@ -45,13 +45,9 @@ def _mint_magic_token(email: str) -> str:
     or after TTL. Email is bound to the token so we can issue a JWT to
     the right user when the link is clicked.
     """
+    from . import persistence
     tok = secrets.token_urlsafe(16)
-    _magic_tokens[tok] = (email, time.time() + _MAGIC_TTL_SEC)
-    # Opportunistic GC — drop expired entries every time we add one,
-    # keeps the dict small without a background sweeper.
-    now = time.time()
-    for k in [k for k, (_, exp) in _magic_tokens.items() if exp < now]:
-        _magic_tokens.pop(k, None)
+    persistence.put_magic_token(tok, email, _MAGIC_TTL_SEC)
     return tok
 
 
@@ -59,13 +55,8 @@ def _consume_magic_token(tok: str) -> str | None:
     """Validate a magic-link token. Returns the email it was issued to,
     or None if the token is unknown / expired. Token is consumed on success
     so each link is single-use."""
-    rec = _magic_tokens.pop(tok, None)
-    if not rec:
-        return None
-    email, exp = rec
-    if exp < time.time():
-        return None
-    return email
+    from . import persistence
+    return persistence.consume_magic_token(tok)
 
 
 # --- invite codes ---------------------------------------------------------

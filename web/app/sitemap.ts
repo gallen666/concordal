@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { BLOG_SLUGS } from "./blog/posts";
 
 /**
  * Dynamic sitemap.xml for Google + Baidu indexing.
@@ -39,6 +40,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE}/track-record`, lastModified: now, changeFrequency: "weekly",  priority: 0.6 },
     { url: `${SITE}/hot`,          lastModified: now, changeFrequency: "daily",   priority: 0.6 },
     { url: `${SITE}/backtest`,     lastModified: now, changeFrequency: "monthly", priority: 0.6 },
+    { url: `${SITE}/blog`,         lastModified: now, changeFrequency: "weekly",  priority: 0.8 },
     // /redeem is disallowed in robots.txt — keep it out of the sitemap
     // to avoid a "disallowed URL in sitemap" warning in Search Console.
     { url: `${SITE}/terms`,        lastModified: now, changeFrequency: "yearly",  priority: 0.3 },
@@ -55,5 +57,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.7,
   }));
 
-  return [...staticPages, ...tickerPages];
+  // One entry per long-form blog post — these articles target Google
+  // long-tail keywords (e.g. "lookahead bias backtest", "东方财富 量化")
+  // and feed pagerank back into /decision via inline CTAs.
+  const blogPages: MetadataRoute.Sitemap = BLOG_SLUGS.map((slug) => ({
+    url: `${SITE}/blog/${slug}`,
+    lastModified: now,
+    changeFrequency: "monthly",
+    priority: 0.7,
+  }));
+
+  return [...staticPages, ...tickerPages, ...blogPages];
 }

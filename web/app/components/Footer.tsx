@@ -28,6 +28,9 @@ export default function Footer() {
           <a href="/disclaimer" className="hover:text-ink-secondary">
             {t("footer.disclaimer")}
           </a>
+          <a href="/blog" className="hover:text-ink-secondary">
+            Blog
+          </a>
           <a
             href="https://github.com/gallen666/trading-agents-platform"
             className="hover:text-ink-secondary"

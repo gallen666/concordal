@@ -147,12 +147,9 @@ memory = MemoryStore()
 
 _jobs: dict[str, dict[str, Any]] = {}
 
-# Public, read-only registry of shared decisions. Created when a user
-# explicitly clicks Share on their decision result. Values are the raw
-# DecisionTrace JSON (anonymous — we don't store who created the share),
-# and we cap the dict to 5_000 entries with simple LRU eviction so it
-# fits in Render-free-tier memory and resets cleanly on redeploy.
-_shared_decisions: dict[str, dict[str, Any]] = {}
+# Shared decisions are now persisted to SQLite — see api/persistence.py.
+# The `_SHARE_LIMIT` is no longer enforced at write-time (DB handles
+# storage), but kept as a soft target for future cleanup jobs.
 _SHARE_LIMIT = 5_000
 _watchlists: dict[str, list[dict]] = {}
 
@@ -196,14 +193,7 @@ _PRO_DAILY_CAP = int(os.environ.get("TA_PRO_DAILY_DECISIONS", "30"))
 #   _referrals[referee_email] = referrer_email
 #   _referral_bonus[email] = expires_at_epoch_seconds
 import hashlib
-_referrals: dict[str, str] = {}
-_referral_bonus: dict[str, float] = {}
-# Seen-users registry — populated lazily whenever an authenticated request
-# arrives, so the referral reverse-lookup knows about emails that haven't
-# yet claimed or been claimed. Bounded set so a brute-force attacker can't
-# fill memory with junk emails.
-_known_users: set[str] = set()
-_KNOWN_USERS_CAP = 100_000
+from . import persistence  # SQLite-backed user state — survives redeploys
 _REFERRAL_BONUS_DAYS = int(os.environ.get("TA_REFERRAL_BONUS_DAYS", "7"))
 _REFERRAL_BONUS_DECISIONS = int(os.environ.get("TA_REFERRAL_BONUS_DECISIONS", "5"))
 
@@ -215,11 +205,11 @@ def _referral_code(email: str) -> str:
     return h[:8]
 
 
-def _email_for_code(code: str, all_known_emails: list[str]) -> str | None:
+def _email_for_code(code: str) -> str | None:
     """Reverse lookup: which email's referral_code is this? Brute force
-    over the known-emails list (cheap for <10k users; swap to a
+    over the SQLite known_users table (cheap for <10k users; swap to a
     materialised reverse index when that becomes a hot path)."""
-    for e in all_known_emails:
+    for e in persistence.all_known_emails():
         if _referral_code(e) == code:
             return e
     return None
@@ -227,17 +217,15 @@ def _email_for_code(code: str, all_known_emails: list[str]) -> str | None:
 
 def _grant_referral_bonus(email: str) -> None:
     """Stack the 7-day bonus onto a user. Idempotent: multiple wins
-    just extend the expiry, they don't compound the per-day quota."""
-    now = time.time()
-    new_exp = now + _REFERRAL_BONUS_DAYS * 86400
-    current = _referral_bonus.get(email, 0.0)
-    _referral_bonus[email] = max(current, new_exp)
+    just extend the expiry (SQLite takes MAX), they don't compound
+    the per-day quota."""
+    persistence.grant_bonus(email, _REFERRAL_BONUS_DAYS * 86400)
 
 
 def _bonus_cap_for(email: str) -> int:
     """How many extra decisions/day the bonus contributes for `email`
     right now. 0 once the bonus has expired."""
-    exp = _referral_bonus.get(email, 0.0)
+    exp = persistence.bonus_expires_at(email)
     if exp > time.time():
         return _REFERRAL_BONUS_DECISIONS
     return 0
@@ -266,12 +254,21 @@ def _bucket_key(user: CurrentUser, request: Request | None) -> tuple[str, str]:
     return (user.id, today)
 
 
+_TEAM_DAILY_CAP = int(os.environ.get("TA_TEAM_DAILY_DECISIONS", "100"))
+
+
 def _base_cap_and_tier(user: CurrentUser) -> tuple[int, str]:
     if user.id == "anonymous":
         return _ANON_DAILY_CAP, "anon"
-    if not user.real_llm:
-        return _FREE_DAILY_CAP, "free"
-    return _PRO_DAILY_CAP, "pro"
+    # Look up persisted paid tier. Stripe webhook writes here on successful
+    # checkout; the email then unlocks the matching cap. Free users (no
+    # row in user_tiers) default to free's cap.
+    persisted_tier = persistence.get_user_tier(user.id)
+    if persisted_tier == "team":
+        return _TEAM_DAILY_CAP, "team"
+    if persisted_tier == "pro":
+        return _PRO_DAILY_CAP, "pro"
+    return _FREE_DAILY_CAP, "free"
 
 
 def _daily_cap_check(user: CurrentUser, request: Request | None = None) -> None:
@@ -761,6 +758,25 @@ def health() -> dict:
         ),
     }
 
+    # Stripe — webhook can't be processed without the signing secret.
+    features["stripe"] = {
+        "webhook_configured": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
+        "upgrade_url_pro_configured": bool(os.getenv("TA_UPGRADE_URL_PRO")),
+        "upgrade_url_team_configured": bool(os.getenv("TA_UPGRADE_URL_TEAM")),
+        "note": (
+            ""
+            if os.getenv("STRIPE_WEBHOOK_SECRET")
+            else "STRIPE_WEBHOOK_SECRET not set — paid-tier upgrades can't auto-activate"
+        ),
+    }
+
+    # SQLite persistence — surface row counts so the operator can confirm
+    # state survives redeploys.
+    try:
+        features["persistence_db"] = persistence.stats()
+    except Exception as e:
+        features["persistence_db"] = {"error": str(e)}
+
     # OpenBB widget
     features["openbb_widget"] = {"manifest": "/openbb/widgets.json"}
 
@@ -789,6 +805,83 @@ def _has_pkg(name: str) -> bool:
         return True
     except ImportError:
         return False
+
+
+@app.post("/v1/stripe/webhook", tags=["auth"])
+async def stripe_webhook(request: Request) -> dict:
+    """Receive Stripe webhook → flip the buyer's tier in SQLite.
+
+    Setup (Stripe dashboard → Developers → Webhooks):
+      1. Add endpoint `<your-render-url>/v1/stripe/webhook`
+      2. Subscribe to `checkout.session.completed`,
+         `customer.subscription.deleted`, and `customer.subscription.updated`
+      3. Copy the Signing secret → set `STRIPE_WEBHOOK_SECRET` in Render env
+
+    Without `STRIPE_WEBHOOK_SECRET` we reject every request — webhooks are
+    untrusted by design and signature verification is non-negotiable.
+
+    What we map:
+      `metadata.tier` on the checkout session → `pro` | `team`
+      The buyer's email (from `customer_details.email`) becomes the
+      key in our `user_tiers` table. The NEXT time they `auth/me` we
+      return real_llm=True (already do — gated by daily-cap tier).
+    """
+    secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
+    if not secret:
+        # Hard fail — webhook can't be safely processed without
+        # signature verification. Operator must wire this up.
+        raise HTTPException(503, "STRIPE_WEBHOOK_SECRET not configured")
+
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+
+    try:
+        import stripe
+        event = stripe.Webhook.construct_event(payload, sig, secret)
+    except ImportError:
+        # Stripe SDK not installed — verify manually with HMAC SHA-256
+        # so the webhook works even without the package.
+        import hmac, hashlib as _hl, json as _json
+        try:
+            ts_part, sig_part = [x.split("=", 1) for x in sig.split(",")]
+            ts, expected = ts_part[1], sig_part[1]
+            signed = f"{ts}.{payload.decode()}".encode()
+            computed = hmac.new(secret.encode(), signed, _hl.sha256).hexdigest()
+            if not hmac.compare_digest(computed, expected):
+                raise HTTPException(400, "Bad signature")
+            event = _json.loads(payload)
+        except Exception as e:
+            raise HTTPException(400, f"Webhook signature verification failed: {e}")
+    except Exception as e:
+        raise HTTPException(400, f"Webhook signature verification failed: {e}")
+
+    event_type = event.get("type") if isinstance(event, dict) else event.type
+    obj = (event.get("data") or {}).get("object", {}) if isinstance(event, dict) else event.data.object
+
+    if event_type == "checkout.session.completed":
+        email = (obj.get("customer_details") or {}).get("email") or obj.get("customer_email")
+        tier = (obj.get("metadata") or {}).get("tier", "pro")
+        sub_id = obj.get("subscription")
+        cust_id = obj.get("customer")
+        if email:
+            persistence.set_user_tier(
+                email=email.lower(),
+                tier=tier,
+                stripe_customer_id=cust_id,
+                stripe_subscription_id=sub_id,
+            )
+            persistence.remember_user(email.lower())
+            log.info("Stripe: %s upgraded to %s", email, tier)
+            return {"received": True, "action": "upgraded", "email": email, "tier": tier}
+    elif event_type == "customer.subscription.deleted":
+        # Subscription cancelled — downgrade back to free.
+        email = (obj.get("customer_email") or "").lower()
+        if email:
+            persistence.set_user_tier(email=email, tier="free")
+            log.info("Stripe: %s downgraded to free (subscription deleted)", email)
+            return {"received": True, "action": "downgraded", "email": email}
+
+    return {"received": True, "action": "ignored", "type": event_type}
 
 
 class UpgradeCheckoutRequest(BaseModel):
@@ -973,12 +1066,8 @@ class ReferralClaimRequest(BaseModel):
 
 def _remember_user(email: str) -> None:
     """Track authenticated users so the referral reverse-lookup can find
-    them. Bounded set — old entries silently drop when the cap is hit."""
-    if not email or "@" not in email:
-        return
-    if len(_known_users) >= _KNOWN_USERS_CAP:
-        return  # silent backpressure
-    _known_users.add(email)
+    them. Backed by SQLite — survives Render redeploys."""
+    persistence.remember_user(email)
 
 
 @app.post("/v1/me/referral/claim", tags=["auth"])
@@ -997,14 +1086,16 @@ def referral_claim(
     code = req.code.strip().lower()
     if not code or code == _referral_code(user.id):
         return {"ok": False, "reason": "invalid_or_self"}
-    if user.id in _referrals:
+    if persistence.has_been_referred(user.id):
         return {"ok": False, "reason": "already_claimed"}
 
-    inviter = _email_for_code(code, list(_known_users))
+    inviter = _email_for_code(code)
     if not inviter:
         return {"ok": False, "reason": "unknown_code"}
 
-    _referrals[user.id] = inviter
+    if not persistence.record_referral(user.id, inviter):
+        # Race — another concurrent claim won; report as already_claimed.
+        return {"ok": False, "reason": "already_claimed"}
     _grant_referral_bonus(user.id)
     _grant_referral_bonus(inviter)
     return {
@@ -1023,8 +1114,8 @@ def referral_status(user: CurrentUser = Depends(get_current_user)) -> dict:
         raise HTTPException(401, "Sign in first")
     _remember_user(user.id)
     code = _referral_code(user.id)
-    invitees = [u for u, inv in _referrals.items() if inv == user.id]
-    bonus_expiry = _referral_bonus.get(user.id, 0.0)
+    invitees = persistence.invitees_of(user.id)
+    bonus_expiry = persistence.bonus_expires_at(user.id)
     return {
         "code": code,
         "share_url_suffix": f"?ref={code}",
@@ -1086,9 +1177,8 @@ def share_decision(
     if j.get("status") != "done" or not j.get("result"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Decision not finished yet")
 
+    import json as _json
     share_id = uuid.uuid4().hex[:12]
-    # Strip user-facing fields that are job-internal: we want the public
-    # view to be just the decision artifact, not the job metadata.
     payload = {
         "share_id": share_id,
         "result": j["result"],            # the DecisionTrace dict
@@ -1096,24 +1186,18 @@ def share_decision(
         "lessons_injected": j.get("lessons_injected", False),
         "shared_at": time.time(),
     }
-    # LRU eviction: if we hit the cap, drop the oldest 100 entries by
-    # `shared_at`. Cheap and simple — share storage is best-effort.
-    if len(_shared_decisions) >= _SHARE_LIMIT:
-        oldest = sorted(_shared_decisions.items(), key=lambda kv: kv[1].get("shared_at", 0))[:100]
-        for k, _ in oldest:
-            _shared_decisions.pop(k, None)
-    _shared_decisions[share_id] = payload
+    persistence.put_shared_decision(share_id, _json.dumps(payload))
     return {"share_id": share_id}
 
 
 @app.get("/v1/decisions/share/{share_id}")
 def get_shared_decision(share_id: str) -> dict:
-    """Public, no-auth read of a shared decision. Returns 404 if the
-    share id is unknown or has been evicted."""
-    rec = _shared_decisions.get(share_id)
-    if not rec:
+    """Public, no-auth read of a shared decision. 404 if unknown."""
+    import json as _json
+    raw = persistence.get_shared_decision(share_id)
+    if not raw:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Share not found or expired")
-    return rec
+    return _json.loads(raw)
 
 
 @app.post("/v1/backtests", response_model=JobResponse)
