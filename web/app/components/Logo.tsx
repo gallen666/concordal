@@ -1,53 +1,38 @@
 import { cn } from "../lib/cn";
 
 /**
- * Bloomberg-grade logo mark.
+ * Editorial Dialectic logo.
  *
- * Square gradient tile (amber → cyan) with a monogram "TA" inside,
- * paired with the full word-mark in a tight tracking-tighter weight.
- * The square shape is intentional — it echoes a Bloomberg/terminal
- * tile motif rather than the friendly pill UI of consumer apps.
+ * Two opposed semicircles (bull jade left, bear brick right) with a gold
+ * vertical bar running through them — the bar is the manager who
+ * synthesises both sides into one trade. Squared-off shape feels like
+ * a publisher's colophon, not a tech-bro mark.
  */
 export function Logo({ className }: { className?: string }) {
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div className={cn("flex items-center gap-2.5", className)}>
       <svg
-        width="26"
-        height="26"
-        viewBox="0 0 26 26"
+        width="28"
+        height="28"
+        viewBox="0 0 28 28"
         fill="none"
         aria-hidden="true"
       >
-        <defs>
-          <linearGradient id="logo-tile" x1="0" y1="0" x2="26" y2="26" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#FF7A00" />
-            <stop offset="0.7" stopColor="#FFB000" />
-            <stop offset="1" stopColor="#5BC0EB" />
-          </linearGradient>
-        </defs>
-        {/* Square tile w/ subtle inner inset */}
-        <rect x="1" y="1" width="24" height="24" rx="3" fill="url(#logo-tile)" />
-        <rect x="2" y="2" width="22" height="22" rx="2.5" fill="none" stroke="rgba(0,0,0,0.20)" strokeWidth="0.5" />
-        {/* Monogram "TA" — small caps, tight */}
-        <text
-          x="13"
-          y="17.5"
-          textAnchor="middle"
-          fontFamily="'JetBrains Mono', monospace"
-          fontSize="11"
-          fontWeight="700"
-          fill="#0A0E13"
-          letterSpacing="-0.5"
-        >
-          TA
-        </text>
+        {/* Left half — bull (muted jade) */}
+        <path d="M14 4 A10 10 0 0 0 14 24 Z" fill="#5A8A6F" />
+        {/* Right half — bear (muted brick) */}
+        <path d="M14 4 A10 10 0 0 1 14 24 Z" fill="#A0524A" />
+        {/* Gold vertical bar — the manager */}
+        <rect x="13" y="3" width="2" height="22" fill="#C9A961" />
+        {/* outer ring to give it polish */}
+        <circle cx="14" cy="14" r="10" fill="none" stroke="rgba(237,230,216,0.15)" strokeWidth="0.5" />
       </svg>
       <div className="flex flex-col leading-none">
-        <span className="font-semibold tracking-tighter text-ink-primary text-[15px]">
+        <span className="font-display font-medium tracking-tight text-ink-primary text-[17px]">
           TradingAgents
         </span>
-        <span className="text-[9px] tracking-kicker uppercase text-ink-tertiary mt-0.5 font-mono">
-          Decision Terminal
+        <span className="text-[9px] tracking-kicker uppercase text-ink-tertiary mt-1 font-mono">
+          The Decision Dialectic
         </span>
       </div>
     </div>

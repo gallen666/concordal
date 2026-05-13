@@ -1,119 +1,138 @@
 import type { Config } from "tailwindcss";
 
 /**
- * Bloomberg-grade design tokens.
+ * "Editorial Dialectic" design tokens.
  *
- * Color philosophy: deep terminal black, Bloomberg cream for body text,
- * amber/orange as primary accent (replacing the prior green), terminal
- * cyan for inline links and metadata. Buy/sell stay universal green/red.
+ * Rationale: TradingAgents' unique mechanism is the bull/bear debate. The
+ * visual identity should foreground OPPOSITION — two muted but distinct
+ * colours that live alongside each other, rather than a single accent.
  *
- * Surface ramp uses 5 stops so cards over cards feel layered without
- * relying on shadow. Borders are quieter so the eye lands on data, not
- * chrome. Radius is reduced from 12px to 4px throughout — Bloomberg's
- * signature feel is tight rectangles, not pill UI.
+ * Palette:
+ *  - Bg: warm near-black, like the reverse of an old newspaper page.
+ *  - Ink: warm cream, slightly softer than Bloomberg's.
+ *  - Bull / Bear: muted jade green + muted brick red — NOT the bright
+ *    signal-green/red used for actual P&L numbers. These represent the
+ *    *argument*, not the call.
+ *  - Gold: a single warm gold for editorial highlights and the live
+ *    "manager call" badge. Used sparingly.
+ *
+ * Typography: Crimson Pro for display headlines (op-ed gravitas), Inter
+ * for body, JetBrains Mono for data. Tight tracking on display.
+ *
+ * Spacing: generous — the page should feel paced like a long-read essay,
+ * not a dashboard.
  */
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        // Surfaces — 5-stop ramp from pure terminal black up to elevated
+        // Surfaces — warm near-black, paper-back-feel
         bg: {
-          base:     "#0A0E13",  // page background
-          subtle:   "#0E1318",  // inset rows, table stripes
-          elevated: "#131A22",  // cards
-          raised:   "#1A2330",  // popovers, hover states on cards
-          hover:    "#1F2937",  // row hover
+          base:     "#0E0C0A",
+          subtle:   "#15110D",
+          elevated: "#1B1611",
+          raised:   "#231C16",
+          hover:    "#2B2218",
         },
-        // Borders — almost invisible by default, scaled up for emphasis
         border: {
-          subtle:  "#1C232E",
-          DEFAULT: "#283040",
-          strong:  "#3D4A5C",
+          subtle:  "#221C16",
+          DEFAULT: "#2F2620",
+          strong:  "#4A3C32",
         },
-        // Ink — Bloomberg cream as the primary text colour. The cream
-        // is what makes a terminal look "expensive" rather than "OS dark mode".
         ink: {
-          primary:   "#E8DCC4",  // Bloomberg cream
-          secondary: "#A8A089",
-          tertiary:  "#6B6855",
-          muted:     "#3D3A2E",
+          primary:   "#EDE6D8",  // warm cream
+          secondary: "#B5AC9C",
+          tertiary:  "#7A7163",
+          muted:     "#4A4339",
         },
-        // Signal colours — universal up/down semantics, used for buy/sell
-        // chips, P&L numbers, status indicators.
+        // The dialectic — used for the bull/bear debate columns,
+        // pill chips, dividers. Muted, like a magazine print palette.
+        bull: {
+          DEFAULT: "#5A8A6F",  // muted jade
+          soft:    "#1A2E22",
+          ink:     "#9CC5A8",
+        },
+        bear: {
+          DEFAULT: "#A0524A",  // muted brick
+          soft:    "#2E1A17",
+          ink:     "#D08A82",
+        },
+        // The neutral "manager" / editorial highlight
+        gold: {
+          DEFAULT: "#C9A961",
+          soft:    "#2E2510",
+          deep:    "#7C6230",
+        },
+        // Universal P&L semantics — kept separate from bull/bear so a
+        // BUY recommendation can be jade-tinted while its 5% gain still
+        // glows the standard money-green.
         signal: {
           buy:       "#3FB950",
           buy_soft:  "#16291C",
           hold:      "#A8A089",
           sell:      "#F85149",
           sell_soft: "#2D0F12",
-          warn:      "#FFB020",
-          warn_soft: "#2E1F0A",
-          info:      "#5BC0EB",  // terminal cyan — used for links/info
-          info_soft: "#0C2230",
+          warn:      "#C9A961",
+          warn_soft: "#2E2510",
+          info:      "#7DB3D8",
+          info_soft: "#152330",
         },
-        // Accent — Bloomberg amber. Used for primary CTAs, pill borders,
-        // chart highlights. Replaces the prior green.
+        // Accent token kept as an alias of gold so existing pages that
+        // reference `bg-accent` keep working without rewrite.
         accent: {
-          DEFAULT: "#FF7A00",  // Bloomberg amber
-          hover:   "#FF9933",
-          muted:   "#3D2810",
-          glow:    "#FFB000",
+          DEFAULT: "#C9A961",
+          hover:   "#D9BB78",
+          muted:   "#2E2510",
+          glow:    "#E0C480",
         },
       },
       fontFamily: {
-        // Inter is kept — it's the cleanest sans for finance data.
-        // IBM Plex Serif handles editorial moments (display headlines).
-        // JetBrains Mono for all numbers/tickers/code.
         sans:    ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
-        display: ["IBM Plex Serif", "Georgia", "ui-serif", "serif"],
+        display: ["Crimson Pro", "Crimson Text", "Georgia", "ui-serif", "serif"],
         mono:    ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       fontSize: {
         "2xs": ["0.6875rem", { lineHeight: "1rem" }],
+        // Editorial display sizes — wider than utility scale
+        "display-sm": ["3rem",   { lineHeight: "1.05", letterSpacing: "-0.03em" }],
+        "display-md": ["4.5rem", { lineHeight: "1.0",  letterSpacing: "-0.035em" }],
+        "display-lg": ["6rem",   { lineHeight: "0.95", letterSpacing: "-0.04em" }],
       },
       letterSpacing: {
         tighter: "-0.04em",
-        kicker:  "0.18em",  // section ALL-CAPS labels
+        kicker:  "0.18em",
       },
       borderRadius: {
-        // Reduce overall radius — Bloomberg is squared, not pill.
         DEFAULT: "3px",
         md:      "4px",
         lg:      "6px",
         xl:      "8px",
       },
       boxShadow: {
-        // Glow uses amber instead of green
-        glow: "0 0 0 1px rgba(255,122,0,0.25), 0 0 24px -4px rgba(255,122,0,0.30)",
-        // Card shadow: 1px inset hairline + soft drop for layering
-        card: "0 1px 0 rgba(255,255,255,0.04) inset, 0 1px 2px rgba(0,0,0,0.5)",
-        elev: "0 8px 24px -8px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.04) inset",
-        // Terminal-style focus ring
-        focus: "0 0 0 2px rgba(255,122,0,0.40)",
+        glow:  "0 0 0 1px rgba(201,169,97,0.25), 0 0 24px -4px rgba(201,169,97,0.20)",
+        card:  "0 1px 0 rgba(255,255,255,0.04) inset, 0 1px 2px rgba(0,0,0,0.5)",
+        elev:  "0 8px 24px -8px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.04) inset",
+        focus: "0 0 0 2px rgba(201,169,97,0.40)",
       },
       backgroundImage: {
-        "grid":        "linear-gradient(rgba(232,220,196,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(232,220,196,0.025) 1px, transparent 1px)",
-        "radial-fade": "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(255,122,0,0.10), transparent 70%)",
-        "ticker-fade": "linear-gradient(90deg, transparent 0%, #0A0E13 5%, #0A0E13 95%, transparent 100%)",
+        "paper-noise":    "radial-gradient(rgba(237,230,216,0.018) 1px, transparent 1px)",
+        "radial-fade":    "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(201,169,97,0.08), transparent 70%)",
+        "bull-bear-fade": "linear-gradient(90deg, rgba(90,138,111,0.06) 0%, transparent 30%, transparent 70%, rgba(160,82,74,0.06) 100%)",
       },
       backgroundSize: {
-        "grid-sm": "24px 24px",
+        "noise-sm": "3px 3px",
       },
       animation: {
-        "fade-in":    "fadeIn 0.4s ease-out",
-        "slide-up":   "slideUp 0.5s ease-out",
+        "fade-in":  "fadeIn 0.6s ease-out",
+        "slide-up": "slideUp 0.7s ease-out",
         "pulse-slow": "pulse 3s cubic-bezier(0.4,0,0.6,1) infinite",
-        "agent-orbit":"orbit 16s linear infinite",
-        "blink":      "blink 1.2s steps(2) infinite",
-        "ticker":     "ticker 40s linear infinite",
+        "ticker":   "ticker 50s linear infinite",
       },
       keyframes: {
-        fadeIn:   { "0%": { opacity: "0" }, "100%": { opacity: "1" } },
-        slideUp:  { "0%": { opacity: "0", transform: "translateY(8px)" }, "100%": { opacity: "1", transform: "translateY(0)" } },
-        orbit:    { "0%": { transform: "rotate(0deg)" }, "100%": { transform: "rotate(360deg)" } },
-        blink:    { "0%, 49%": { opacity: "1" }, "50%, 100%": { opacity: "0" } },
-        ticker:   { "0%": { transform: "translateX(0)" }, "100%": { transform: "translateX(-50%)" } },
+        fadeIn:  { "0%": { opacity: "0" }, "100%": { opacity: "1" } },
+        slideUp: { "0%": { opacity: "0", transform: "translateY(12px)" }, "100%": { opacity: "1", transform: "translateY(0)" } },
+        ticker:  { "0%": { transform: "translateX(0)" }, "100%": { transform: "translateX(-50%)" } },
       },
     },
   },

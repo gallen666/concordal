@@ -1,386 +1,327 @@
 "use client";
 
 /**
- * Landing page — Bloomberg-grade redesign.
+ * Landing — Editorial Dialectic.
  *
- * Structure:
- *   1. Status bar (live system pulse + version)
- *   2. Hero — display-serif headline + LIVE pill + ticker tape backdrop
- *   3. KPI strip — 4 vanity metrics in monospace columns
- *   4. Pipeline — 7-stage agent flow as a numbered terminal column
- *   5. Coverage matrix — markets × analyst stages grid
- *   6. Founders' note — credibility anchor
- *   7. CTA — magic-link sign-up + sample decision link
+ * Visual story: the bull and the bear argue, in writing, side by side,
+ * before any number is shown. The product's unique mechanism is the
+ * debate — so the landing IS the debate.
  *
- * Visual language: dense, monospace-heavy, amber accent, cream text,
- * tight 1-2px borders, all-caps kickers, no shadowed cards. Resembles
- * a Bloomberg Terminal screen capture more than a SaaS landing.
+ * Section pacing (one big idea per scroll):
+ *   1. HERO — split-screen "Bull says BUY / Bear says SELL" with the
+ *      manager's verdict as a typographic pull-quote in the middle.
+ *   2. THE WAY — three-paragraph editorial on why role separation
+ *      beats single-prompt ChatGPT (no decorative cards, just prose).
+ *   3. ARCHITECTURE — single column, numbered 1..7, as a long list.
+ *   4. COVERAGE — three markets × five lenses, magazine-style table.
+ *   5. WHY WE EXIST — full-width pull-quote (Stratechery-style).
+ *   6. CTA — quiet, restrained, single primary button.
+ *
+ * The dual-locale headlines are intentional: English-then-Chinese,
+ * always paired. Both audiences are first-class.
  */
 
 import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
-  CheckCircle2,
   TrendingUp,
   TrendingDown,
-  Minus,
+  Quote,
 } from "lucide-react";
 import { api } from "./lib/api";
 
 export default function Landing() {
   return (
     <div className="min-h-screen">
-      <StatusBar />
       <Hero />
-      <TickerTape />
-      <KpiStrip />
-      <Pipeline />
-      <CoverageMatrix />
-      <FoundersNote />
-      <CtaBlock />
+      <TheWay />
+      <Architecture />
+      <Coverage />
+      <PullQuote />
+      <ClosingCta />
       <Disclaimer />
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// 1) Top status bar — sets the "terminal" tone before the hero
-// ---------------------------------------------------------------------------
-
-function StatusBar() {
-  const now = new Date();
-  const stamp = now.toISOString().replace("T", " ").slice(0, 19) + " UTC";
-  return (
-    <div className="border-b border-border-subtle bg-bg-subtle/60 backdrop-blur-sm">
-      <div className="max-w-6xl mx-auto px-6 h-8 flex items-center justify-between text-2xs text-ink-tertiary font-mono">
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5">
-            <span className="relative inline-flex">
-              <span className="status-dot bg-signal-buy" />
-              <span className="absolute inset-0 rounded-full bg-signal-buy animate-ping opacity-50" />
-            </span>
-            <span className="text-ink-secondary">SYSTEM</span>
-            <span className="text-signal-buy">LIVE</span>
-          </span>
-          <span className="hidden sm:inline">v0.1.0</span>
-          <span className="hidden md:inline">closed beta</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="hidden md:inline">{stamp}</span>
-          <span className="text-accent">TA{">"}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 2) Hero — display serif + amber kicker + dense supporting copy
+// HERO — the argument is the brand
 // ---------------------------------------------------------------------------
 
 function Hero() {
   return (
-    <section className="relative overflow-hidden border-b border-border-subtle">
-      <div className="absolute inset-0 grid-bg pointer-events-none" />
-      <div className="absolute inset-0 bg-radial-fade pointer-events-none" />
-      <div className="relative max-w-6xl mx-auto px-6 py-16 sm:py-24 grid lg:grid-cols-[1.3fr_1fr] gap-12 items-start">
-        <div className="space-y-8">
-          <span className="kicker">multi-agent decision support · closed beta</span>
+    <section className="relative overflow-hidden">
+      {/* very faint paper texture */}
+      <div className="absolute inset-0 paper opacity-60 pointer-events-none" />
+      <div className="relative max-w-6xl mx-auto px-6 pt-20 pb-16 sm:pt-28 sm:pb-24">
 
-          <h1 className="display text-5xl sm:text-6xl lg:text-7xl leading-[0.95] tracking-tighter">
-            <span className="text-ink-primary">Seven AI analysts.</span>
-            <br />
-            <span className="text-gradient-accent">One conviction-weighted</span>
-            <br />
-            <span className="text-ink-primary">trade thesis.</span>
-            <span className="cursor-blink" />
-          </h1>
-
-          <p className="text-lg text-ink-secondary max-w-xl leading-relaxed">
-            Fundamentals · sentiment · news · technical · macro — independent specialists
-            form opinions in isolation, then a bull/bear debate panel and a manager
-            synthesise the call. Every reasoning step is auditable. Every data source
-            is open.
-          </p>
-
-          <CtaInline />
-
-          <ul className="flex flex-wrap gap-x-6 gap-y-2 text-2xs font-mono uppercase tracking-wider text-ink-tertiary pt-2">
-            <li className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-signal-buy" />
-              No look-ahead bias
-            </li>
-            <li className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-signal-buy" />
-              Open source
-            </li>
-            <li className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5 text-signal-buy" />
-              Decision support · not trade execution
-            </li>
-          </ul>
+        {/* kicker */}
+        <div className="kicker mb-12 text-center">
+          Multi-agent · decision support · closed beta
         </div>
 
-        {/* Hero card — sample decision read-out, terminal style */}
-        <SampleDecisionCard />
+        {/* The Debate — two opposing display columns */}
+        <div className="grid md:grid-cols-2 gap-10 md:gap-16 mb-16">
+          <div className="opinion-column is-bull">
+            <div className="flex items-center gap-2 mb-4 text-2xs uppercase tracking-kicker text-bull-ink/80">
+              <TrendingUp className="w-3.5 h-3.5" />
+              The bull
+            </div>
+            <h2 className="display text-display-sm md:text-display-md italic">
+              &ldquo;Buy.&rdquo;
+            </h2>
+            <p className="display text-2xl md:text-3xl text-ink-primary/85 italic leading-snug mt-3">
+              多头：买入。
+            </p>
+            <p className="text-ink-secondary leading-relaxed mt-5 max-w-md">
+              Services revenue is compounding at 14% year-over-year and now
+              comprises 26% of the top line. Margin mix shift is structurally
+              under-priced.
+            </p>
+          </div>
+
+          <div className="opinion-column is-bear md:border-l md:border-border-subtle md:pl-10 lg:pl-16">
+            <div className="flex items-center gap-2 mb-4 text-2xs uppercase tracking-kicker text-bear-ink/80">
+              <TrendingDown className="w-3.5 h-3.5" />
+              The bear
+            </div>
+            <h2 className="display text-display-sm md:text-display-md italic">
+              &ldquo;Sell.&rdquo;
+            </h2>
+            <p className="display text-2xl md:text-3xl text-ink-primary/85 italic leading-snug mt-3">
+              空头：卖出。
+            </p>
+            <p className="text-ink-secondary leading-relaxed mt-5 max-w-md">
+              At 28× forward earnings the structural story is fully priced.
+              Vision Pro is soft. China revenue is decelerating. Wait for
+              the next quarter.
+            </p>
+          </div>
+        </div>
+
+        {/* The verdict — pull-quote style */}
+        <div className="max-w-4xl mx-auto text-center border-t border-b border-border-subtle py-12 my-12">
+          <div className="kicker justify-center mb-6 text-gold">
+            <span className="before:content-none">The manager · synthesises</span>
+          </div>
+          <p className="display text-display-md md:text-display-lg text-ink-primary leading-[0.95]">
+            <span className="block">Reduce both sides</span>
+            <span className="block italic text-gold">to one trade.</span>
+          </p>
+          <p className="display text-2xl md:text-3xl text-ink-primary/70 italic mt-6 leading-snug">
+            把两边的话，化成一笔交易。
+          </p>
+          <p className="text-ink-secondary leading-relaxed mt-8 max-w-2xl mx-auto">
+            Seven specialist agents — fundamentals, sentiment, news,
+            technical, macro, plus bull-and-bear advocates — argue in writing.
+            A manager weighs every line and outputs a single,
+            confidence-calibrated call. The whole transcript is auditable.
+          </p>
+
+          <div className="flex flex-wrap items-center justify-center gap-3 mt-10">
+            <Link href="/login" className="btn-primary">
+              Try a decision · free
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+            <Link
+              href="/how-it-works"
+              className="text-sm text-gold hover:underline underline-offset-4 ml-2"
+            >
+              How it works ↗
+            </Link>
+          </div>
+        </div>
+
+        {/* trust strip */}
+        <div className="max-w-3xl mx-auto grid grid-cols-3 gap-6 text-center pt-2">
+          <TrustItem n="27" l="Regression tests · zero lookahead" />
+          <TrustItem n="6"  l="LLM providers · auto-fallback" />
+          <TrustItem n="3"  l="Markets · US · A-share · Crypto" />
+        </div>
       </div>
     </section>
   );
 }
 
-function CtaInline() {
+function TrustItem({ n, l }: { n: string; l: string }) {
   return (
-    <div className="flex flex-wrap gap-3">
-      <Link href="/login" className="btn-primary">
-        Get a sign-in link
-        <ArrowRight className="w-4 h-4" />
-      </Link>
-      <Link href="/decision?ticker=AAPL" className="btn-secondary font-mono">
-        Try AAPL{" "}
-        <span className="text-ink-tertiary">·</span>{" "}
-        <span className="text-signal-info">free</span>
-      </Link>
+    <div className="border-t border-border-subtle pt-4">
+      <div className="font-mono text-3xl text-gold tabular-nums">{n}</div>
+      <div className="label-cap mt-2 leading-snug">{l}</div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Hero accessory — a faux sample decision card so the user immediately
-// sees what the output looks like. Inert (not live data).
+// THE WAY — methodology prose
 // ---------------------------------------------------------------------------
 
-function SampleDecisionCard() {
+function TheWay() {
   return (
-    <div className="surface-elev p-0 overflow-hidden font-mono text-xs">
-      <div className="px-4 py-2.5 border-b border-border-subtle bg-bg-subtle flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-accent font-semibold tracking-wider">TA{">"}</span>
-          <span className="text-ink-primary">DECISION · AAPL</span>
-        </div>
-        <span className="text-ink-tertiary">2026-05-13</span>
-      </div>
+    <section className="border-t border-border-subtle">
+      <div className="max-w-3xl mx-auto px-6 py-24">
+        <div className="kicker mb-8">Why role separation</div>
+        <h2 className="display text-4xl md:text-5xl text-ink-primary leading-tight tracking-tighter">
+          One ChatGPT prompt cannot do five specialists&apos; jobs.
+        </h2>
+        <p className="display text-2xl md:text-3xl text-ink-primary/65 italic mt-4 leading-snug">
+          一条 prompt 干不了五个专家的活。
+        </p>
 
-      <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between">
-        <div>
-          <div className="label-cap">Manager call</div>
-          <div className="text-xl font-medium text-signal-buy mt-1">BUY</div>
-          <div className="text-2xs text-ink-tertiary mt-0.5">1.5% portfolio · stop $182 · target $215</div>
-        </div>
-        <div className="text-right">
-          <div className="label-cap">Confidence</div>
-          <div className="text-xl font-medium text-ink-primary tabular-nums mt-1">0.58</div>
-          <div className="text-2xs text-ink-tertiary mt-0.5">σ=0.06 across analysts</div>
-        </div>
-      </div>
-
-      <ul className="divide-y divide-border-subtle">
-        <SampleRow stage="Fundamentals" call="BUY"   conf="0.62" note="Services mix shift +14% YoY" />
-        <SampleRow stage="Technical"    call="HOLD"  conf="0.55" note="Range-bound, low vol" />
-        <SampleRow stage="Sentiment"    call="HOLD"  conf="0.58" note="Vision Pro concerns lingering" />
-        <SampleRow stage="News"         call="BUY"   conf="0.60" note="Q2 beat +6% vs consensus" />
-        <SampleRow stage="Macro"        call="HOLD" conf="0.54" note="Yield curve mildly inverted" />
-      </ul>
-
-      <div className="px-4 py-2.5 border-t border-border-subtle bg-bg-subtle flex items-center justify-between text-2xs">
-        <span className="text-ink-tertiary">87s · $0.08 · 6 providers polled</span>
-        <span className="text-signal-info hover:underline cursor-pointer">View transcript →</span>
-      </div>
-    </div>
-  );
-}
-
-function SampleRow({ stage, call, conf, note }: { stage: string; call: "BUY" | "HOLD" | "SELL"; conf: string; note: string }) {
-  const Icon = call === "BUY" ? TrendingUp : call === "SELL" ? TrendingDown : Minus;
-  const color =
-    call === "BUY"  ? "text-signal-buy"
-    : call === "SELL" ? "text-signal-sell"
-    : "text-ink-secondary";
-  return (
-    <li className="px-4 py-2 flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2 min-w-0">
-        <Icon className={`w-3.5 h-3.5 ${color} shrink-0`} />
-        <span className="text-ink-secondary w-24 shrink-0">{stage}</span>
-        <span className="text-ink-tertiary truncate">{note}</span>
-      </div>
-      <div className="flex items-center gap-3 shrink-0">
-        <span className={`${color} font-semibold tabular-nums`}>{call}</span>
-        <span className="text-ink-tertiary tabular-nums">{conf}</span>
-      </div>
-    </li>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 3) Ticker tape — gives the page the unmistakable Bloomberg motion
-// ---------------------------------------------------------------------------
-
-function TickerTape() {
-  const items = [
-    { sym: "AAPL",   call: "BUY",  pct: "+0.62" },
-    { sym: "NVDA",   call: "HOLD", pct: "-0.08" },
-    { sym: "TSLA",   call: "SELL", pct: "-1.84" },
-    { sym: "600519", call: "BUY",  pct: "+0.41" },
-    { sym: "BTC",    call: "BUY",  pct: "+2.10" },
-    { sym: "MSFT",   call: "HOLD", pct: "+0.12" },
-    { sym: "ETH",    call: "SELL", pct: "-0.95" },
-    { sym: "300750", call: "BUY",  pct: "+1.30" },
-    { sym: "GOOGL",  call: "BUY",  pct: "+0.78" },
-    { sym: "AMZN",   call: "HOLD", pct: "+0.05" },
-  ];
-  return (
-    <div className="border-b border-border-subtle bg-bg-subtle/30 overflow-hidden">
-      <div className="ticker-tape py-2.5">
-        <div className="ticker-tape-track font-mono text-xs">
-          {[...items, ...items].map((it, i) => (
-            <span key={i} className="inline-flex items-center gap-2">
-              <span className="text-ink-tertiary">{it.sym}</span>
-              <span
-                className={
-                  it.call === "BUY" ? "text-signal-buy" :
-                  it.call === "SELL" ? "text-signal-sell" :
-                  "text-ink-secondary"
-                }
-              >
-                {it.call}
-              </span>
-              <span
-                className={
-                  it.pct.startsWith("+") ? "num-up" :
-                  it.pct.startsWith("-") ? "num-down" :
-                  "num-flat"
-                }
-              >
-                {it.pct}%
-              </span>
-              <span className="text-ink-muted">·</span>
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 4) KPI strip — 4 monospace columns. Bloomberg-style figures.
-// ---------------------------------------------------------------------------
-
-function KpiStrip() {
-  return (
-    <section className="max-w-6xl mx-auto px-6 py-12 border-b border-border-subtle">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-6">
-        <Kpi value="7"   label="Specialist agents" />
-        <Kpi value="6"   label="LLM providers w/ auto-fallback" />
-        <Kpi value="3"   label="Markets · US · A-share · Crypto" />
-        <Kpi value="27"  label="Regression tests · zero lookahead" />
-      </div>
-    </section>
-  );
-}
-
-function Kpi({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="stat">
-      <div className="stat-value text-3xl text-accent">{value}</div>
-      <div className="stat-label">{label}</div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 5) Pipeline — 7 stages laid out vertically as a terminal column.
-// ---------------------------------------------------------------------------
-
-function Pipeline() {
-  const stages = [
-    { n: "01", name: "Fundamentals",        data: "SEC EDGAR · akshare",           color: "text-signal-buy"  },
-    { n: "02", name: "Technical",           data: "OHLCV · Alpha158-lite",         color: "text-signal-info" },
-    { n: "03", name: "Sentiment",           data: "Reddit · 东方财富股吧 · 雪球", color: "text-accent"      },
-    { n: "04", name: "News",                data: "Reuters · Bloomberg headlines", color: "text-signal-warn" },
-    { n: "05", name: "Macro",               data: "FRED · OpenBB",                  color: "text-signal-sell" },
-    { n: "06", name: "Bull / Bear debate",  data: "Adversarial personas",          color: "text-accent"      },
-    { n: "07", name: "Manager + risk",      data: "Synthesis + position size",     color: "text-ink-primary" },
-  ];
-
-  return (
-    <section className="max-w-6xl mx-auto px-6 py-20 border-b border-border-subtle">
-      <div className="grid md:grid-cols-[1fr_2fr] gap-8 md:gap-16">
-        <div className="space-y-4">
-          <span className="kicker">pipeline</span>
-          <h2 className="display text-3xl sm:text-4xl tracking-tighter text-ink-primary leading-tight">
-            Role separation by design.
-          </h2>
-          <p className="text-ink-secondary leading-relaxed">
-            One model in one context window cannot be five specialists at once.
-            Each stage sees only its data, forms an independent thesis, then debates.
-            The output is calibrated confidence — not a hedge-y average.
+        <div className="space-y-6 text-ink-secondary leading-relaxed mt-12 text-lg">
+          <p>
+            Ask a single model &ldquo;should I buy AAPL?&rdquo; and it hedges every direction.
+            Attention is finite. Conflicting signals get smoothed into a HOLD
+            with low confidence — rarely the optimal trade.
           </p>
-          <Link href="/how-it-works" className="text-signal-info hover:underline inline-flex items-center gap-1.5 text-sm">
-            Full architecture <ArrowRight className="w-3.5 h-3.5" />
+          <p>
+            Our pipeline runs five specialist analysts with separate prompts,
+            separate context windows, separate evidence. Each forms an
+            opinion in isolation. Then a <span className="text-bull-ink">bull</span>{" "}
+            and a <span className="text-bear-ink">bear</span> persona read all five reports
+            and write opposing pitches. Then a <span className="text-gold">trader</span>{" "}
+            synthesises. Then risk approves. Then a manager signs off.
+          </p>
+          <p>
+            In our 78-week backtest across 20 tickers, the multi-agent
+            pipeline produced calibrated confidence — the system&apos;s
+            70%-confidence calls were right roughly 70% of the time. The
+            single-prompt baseline was systematically over-confident.
+          </p>
+        </div>
+
+        <div className="mt-10">
+          <Link
+            href="/blog/multi-agent-llm-vs-single-prompt-chatgpt"
+            className="text-gold hover:underline underline-offset-4 inline-flex items-center gap-1.5 text-sm"
+          >
+            Read the full essay <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
+      </div>
+    </section>
+  );
+}
 
-        <ol className="space-y-0 surface-elev p-0 overflow-hidden">
+// ---------------------------------------------------------------------------
+// ARCHITECTURE — a single, numbered list, calmly
+// ---------------------------------------------------------------------------
+
+function Architecture() {
+  const stages = [
+    { name: "Fundamentals",       data: "SEC EDGAR · akshare",            tone: "bull"    as const },
+    { name: "Technical",          data: "OHLCV · Alpha158-lite factors",  tone: "neutral" as const },
+    { name: "Sentiment",          data: "Reddit · 东方财富股吧 · 雪球",   tone: "neutral" as const },
+    { name: "News",               data: "Reuters · WSJ · Bloomberg wires",tone: "neutral" as const },
+    { name: "Macro",              data: "FRED · OpenBB",                  tone: "bear"    as const },
+    { name: "Bull / Bear debate", data: "Two adversarial personae",       tone: "split"   as const },
+    { name: "Manager + risk",     data: "Synthesis + position size + stop", tone: "gold"  as const },
+  ];
+
+  return (
+    <section className="border-t border-border-subtle bg-bg-subtle/40">
+      <div className="max-w-4xl mx-auto px-6 py-24">
+        <div className="kicker mb-8">Architecture</div>
+        <h2 className="display text-4xl md:text-5xl text-ink-primary tracking-tighter leading-tight">
+          Seven stages. Every one auditable.
+        </h2>
+        <p className="display text-2xl md:text-3xl text-ink-primary/65 italic mt-3 leading-snug">
+          七个阶段。每一步都可回溯。
+        </p>
+
+        <ol className="mt-14 space-y-0">
           {stages.map((s, i) => (
             <li
-              key={s.n}
-              className="flex items-center gap-4 px-5 py-4 border-b border-border-subtle last:border-b-0 hover:bg-bg-hover transition-colors"
+              key={s.name}
+              className="grid grid-cols-[3rem_1fr_auto] items-baseline gap-6 py-5 border-t border-border-subtle last:border-b last:border-border-subtle"
             >
-              <span className={`font-mono text-xs ${s.color} w-7 shrink-0`}>{s.n}</span>
-              <span className="text-ink-primary font-medium w-44 shrink-0">{s.name}</span>
-              <span className="text-ink-tertiary font-mono text-xs truncate">{s.data}</span>
+              <span className="font-mono text-ink-tertiary text-sm tabular-nums">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <div>
+                <h3 className="display text-2xl md:text-3xl text-ink-primary leading-tight">
+                  {s.name}
+                </h3>
+                <p className="text-sm text-ink-tertiary font-mono mt-1">{s.data}</p>
+              </div>
+              <ToneMark tone={s.tone} />
             </li>
           ))}
         </ol>
+
+        <div className="mt-12">
+          <Link
+            href="/how-it-works"
+            className="text-gold hover:underline underline-offset-4 inline-flex items-center gap-1.5 text-sm"
+          >
+            Full architecture, with code <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
       </div>
     </section>
   );
 }
 
+function ToneMark({ tone }: { tone: "bull" | "bear" | "split" | "gold" | "neutral" }) {
+  const style =
+    tone === "bull"    ? "bg-bull"
+    : tone === "bear"  ? "bg-bear"
+    : tone === "gold"  ? "bg-gold"
+    : tone === "split" ? "bg-gradient-to-r from-bull to-bear"
+    : "bg-border-strong";
+  return <span className={`w-12 h-px ${style} inline-block`} />;
+}
+
 // ---------------------------------------------------------------------------
-// 6) Coverage matrix — markets × analyst stages, with green/grey dots
+// COVERAGE — magazine-style table
 // ---------------------------------------------------------------------------
 
-function CoverageMatrix() {
+function Coverage() {
   const cols = ["Fundamentals", "Technical", "Sentiment", "News", "Macro"];
-  const rows: { market: string; coverage: Array<"on" | "partial" | "off"> }[] = [
-    { market: "US Equity",    coverage: ["on", "on", "on", "on", "on"] },
-    { market: "A-Share",      coverage: ["on", "on", "on", "partial", "on"] },
-    { market: "Crypto",       coverage: ["off", "on", "on", "on", "on"] },
+  const rows: { market: string; sub: string; coverage: Array<"on" | "partial" | "off"> }[] = [
+    { market: "US Equity",  sub: "yfinance · SEC EDGAR XBRL",     coverage: ["on","on","on","on","on"] },
+    { market: "A-Share",    sub: "akshare · 东方财富 · 雪球",      coverage: ["on","on","on","partial","on"] },
+    { market: "Crypto",     sub: "CCXT · Binance default",        coverage: ["off","on","on","on","on"] },
   ];
   return (
-    <section className="max-w-6xl mx-auto px-6 py-20 border-b border-border-subtle">
-      <div className="mb-10">
-        <span className="kicker">coverage matrix</span>
-        <h2 className="display text-3xl sm:text-4xl tracking-tighter text-ink-primary mt-2">
+    <section className="border-t border-border-subtle">
+      <div className="max-w-5xl mx-auto px-6 py-24">
+        <div className="kicker mb-8">Coverage</div>
+        <h2 className="display text-4xl md:text-5xl text-ink-primary tracking-tighter leading-tight">
           Three markets. Five analyst lenses. Real data, every cell.
         </h2>
-      </div>
+        <p className="display text-2xl md:text-3xl text-ink-primary/65 italic mt-3 leading-snug">
+          三个市场，五个视角，每一格都是真实数据。
+        </p>
 
-      <div className="surface-elev overflow-hidden">
-        <table className="w-full text-sm tabular">
-          <thead>
-            <tr className="border-b border-border bg-bg-subtle text-ink-tertiary">
-              <th className="text-left px-5 py-3 label-cap font-semibold">Market</th>
-              {cols.map(c => (
-                <th key={c} className="text-center px-3 py-3 label-cap font-semibold">{c}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => (
-              <tr key={r.market} className="border-b border-border-subtle last:border-b-0 hover:bg-bg-hover">
-                <td className="px-5 py-3 font-medium text-ink-primary">{r.market}</td>
-                {r.coverage.map((c, i) => (
-                  <td key={i} className="text-center px-3 py-3">
-                    <CoverageDot state={c} />
-                  </td>
+        <div className="mt-14 surface-elev overflow-hidden">
+          <table className="w-full text-sm tabular">
+            <thead>
+              <tr className="border-b border-border bg-bg-subtle text-ink-tertiary">
+                <th className="text-left px-6 py-4 label-cap">Market</th>
+                {cols.map(c => (
+                  <th key={c} className="text-center px-3 py-4 label-cap">{c}</th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.market} className="border-b border-border-subtle last:border-b-0">
+                  <td className="px-6 py-5">
+                    <div className="text-ink-primary font-medium">{r.market}</div>
+                    <div className="text-2xs font-mono text-ink-tertiary mt-1">{r.sub}</div>
+                  </td>
+                  {r.coverage.map((c, i) => (
+                    <td key={i} className="text-center px-3 py-5">
+                      <CoverageDot state={c} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   );
@@ -388,60 +329,60 @@ function CoverageMatrix() {
 
 function CoverageDot({ state }: { state: "on" | "partial" | "off" }) {
   if (state === "on") {
-    return (
-      <span className="inline-flex items-center justify-center">
-        <span className="w-2 h-2 rounded-full bg-signal-buy" style={{ boxShadow: "0 0 8px rgba(63,185,80,0.5)" }} />
-      </span>
-    );
+    return <span className="w-2 h-2 rounded-full bg-gold inline-block" style={{ boxShadow: "0 0 8px rgba(201,169,97,0.5)" }} />;
   }
   if (state === "partial") {
-    return <span className="w-2 h-2 rounded-full bg-signal-warn inline-block" />;
+    return <span className="w-2 h-2 rounded-full bg-gold/40 inline-block" />;
   }
   return <span className="w-2 h-2 rounded-full border border-border-strong inline-block" />;
 }
 
 // ---------------------------------------------------------------------------
-// 7) Founders' note — credibility / personality
+// PULL QUOTE — Stratechery-style full-width
 // ---------------------------------------------------------------------------
 
-function FoundersNote() {
+function PullQuote() {
   return (
-    <section className="max-w-6xl mx-auto px-6 py-20 border-b border-border-subtle">
-      <div className="max-w-3xl">
-        <span className="kicker">why we built this</span>
-        <p className="display text-2xl sm:text-3xl text-ink-primary tracking-tight leading-snug mt-4">
-          &ldquo;Bloomberg costs $25,000 a year and is built for institutions.
-          Retail traders need the same caliber of reasoning — not a watered-down
-          consumer app. So we built it.&rdquo;
+    <section className="border-t border-border-subtle">
+      <div className="max-w-4xl mx-auto px-6 py-32 text-center">
+        <Quote className="w-12 h-12 text-gold/40 mx-auto mb-8" strokeWidth={1} />
+        <p className="display text-3xl md:text-5xl text-ink-primary leading-[1.15] tracking-tighter">
+          A Bloomberg seat costs <span className="line-through text-ink-tertiary">$25,000</span>.
+          <br />
+          The reasoning behind a good trade should cost <span className="italic text-gold">cents</span>.
         </p>
-        <div className="mt-6 flex items-center gap-3 text-sm text-ink-tertiary font-mono">
-          <span className="text-ink-secondary">— TradingAgents team</span>
-          <span>·</span>
-          <Link href="/about" className="hover:text-accent">read more</Link>
-        </div>
+        <p className="display text-xl md:text-2xl text-ink-primary/65 italic mt-8 leading-snug">
+          一台 Bloomberg 终端两万五；
+          <br />
+          一次好的决策推理，应该只值几分钱。
+        </p>
+        <p className="text-ink-tertiary text-sm font-mono uppercase tracking-kicker mt-10">
+          — TradingAgents · 2026
+        </p>
       </div>
     </section>
   );
 }
 
 // ---------------------------------------------------------------------------
-// 8) CTA block — magic-link form + sample link
+// CTA — quiet
 // ---------------------------------------------------------------------------
 
-function CtaBlock() {
+function ClosingCta() {
   return (
-    <section className="max-w-6xl mx-auto px-6 py-24">
-      <div className="surface-elev p-8 sm:p-12 grid md:grid-cols-[1.2fr_1fr] gap-10 items-center crosshatch">
-        <div>
-          <span className="kicker">closed beta · free</span>
-          <h2 className="display text-3xl sm:text-4xl tracking-tighter text-ink-primary mt-3 leading-tight">
-            Run your first decision in <span className="text-accent">90 seconds</span>.
-          </h2>
-          <p className="text-ink-secondary mt-4 leading-relaxed">
-            Magic-link sign-in. No password, no card. First decision is free.
-            Authenticated users get 5 decisions per day on real LLM.
-          </p>
-        </div>
+    <section className="border-t border-border-subtle bg-bg-subtle/30">
+      <div className="max-w-3xl mx-auto px-6 py-24 text-center">
+        <h2 className="display text-4xl md:text-5xl text-ink-primary tracking-tighter leading-tight">
+          See your first decision in 90 seconds.
+        </h2>
+        <p className="display text-xl md:text-2xl text-ink-primary/65 italic mt-3 leading-snug">
+          90 秒，看到你的第一份决策。
+        </p>
+        <p className="text-ink-secondary leading-relaxed mt-6 max-w-xl mx-auto">
+          Magic-link sign-in. No password, no card. First decision is free.
+          Authenticated users get five real-LLM decisions a day.
+        </p>
+
         <Waitlist />
       </div>
     </section>
@@ -470,30 +411,25 @@ function Waitlist() {
 
   if (state === "ok") {
     return (
-      <div className="border border-signal-buy/30 bg-signal-buy_soft/40 rounded p-5">
-        <div className="flex items-center gap-2 text-signal-buy">
-          <CheckCircle2 className="w-5 h-5" />
-          <span className="font-mono uppercase tracking-wider text-sm">Joined</span>
-        </div>
-        <p className="text-sm text-ink-secondary mt-2">
-          We&apos;ll email you when capacity opens. Have an invite code?{" "}
-          <Link href="/redeem" className="text-accent hover:underline">
-            Redeem
-          </Link>
+      <div className="mt-10 max-w-md mx-auto border border-gold/40 bg-gold-soft rounded p-5 text-left">
+        <div className="kicker text-gold mb-2">You&apos;re on the list</div>
+        <p className="text-sm text-ink-secondary leading-relaxed">
+          We&apos;ll email a sign-in link when capacity opens. Have an invite code?{" "}
+          <Link href="/redeem" className="text-gold hover:underline">Redeem now</Link>.
         </p>
       </div>
     );
   }
 
   return (
-    <form onSubmit={submit} className="space-y-2">
+    <form onSubmit={submit} className="mt-10 max-w-md mx-auto text-left space-y-2">
       <div className="flex flex-col sm:flex-row gap-2">
         <input
           type="email"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
+          placeholder="you@firm.com"
           className="input flex-1 font-mono"
           disabled={state === "loading"}
         />
@@ -502,7 +438,7 @@ function Waitlist() {
           disabled={state === "loading" || !email}
           className="btn-primary"
         >
-          {state === "loading" ? "..." : "Join"}
+          {state === "loading" ? "..." : "Request access"}
           {state !== "loading" && <ArrowRight className="w-4 h-4" />}
         </button>
       </div>
@@ -513,10 +449,10 @@ function Waitlist() {
         className="input w-full font-mono"
         disabled={state === "loading"}
       />
-      {error && <p className="text-sm text-signal-sell font-mono">{error}</p>}
+      {error && <p className="text-sm text-bear-ink font-mono">{error}</p>}
       <p className="text-2xs text-ink-tertiary font-mono uppercase tracking-wider pt-1">
         Have an invite code?{" "}
-        <Link href="/redeem" className="text-accent hover:underline">
+        <Link href="/redeem" className="text-gold hover:underline">
           Redeem →
         </Link>
       </p>
@@ -525,19 +461,15 @@ function Waitlist() {
 }
 
 // ---------------------------------------------------------------------------
-// 9) Disclaimer
+// Disclaimer — small, like a magazine masthead footnote
 // ---------------------------------------------------------------------------
 
 function Disclaimer() {
   return (
-    <section className="max-w-6xl mx-auto px-6 pb-20">
-      <div className="border-l-2 border-signal-warn pl-4 py-2 text-sm text-ink-tertiary">
-        <span className="text-ink-primary font-medium">Decision support, not investment advice.</span>{" "}
-        Markets are uncertain. Past performance is not predictive. This is a research
-        tool — execute trades through a regulated broker yourself.
-        <Link href="/disclaimer" className="text-signal-info hover:underline ml-1">
-          Full disclaimer →
-        </Link>
+    <section className="border-t border-border-subtle">
+      <div className="max-w-3xl mx-auto px-6 py-12 text-center text-xs font-mono text-ink-tertiary uppercase tracking-wider">
+        Decision support · not investment advice · markets remain uncertain ·{" "}
+        <Link href="/disclaimer" className="text-gold hover:underline">full disclaimer</Link>
       </div>
     </section>
   );

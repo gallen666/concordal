@@ -1,6 +1,6 @@
-/* @import MUST come before @tailwind per CSS spec — Next.js's CSS
-   parser refuses to compile otherwise. */
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;500;600&display=swap");
+/* CRITICAL: @import MUST be the very first thing — CSS spec, Next.js enforces it. */
+@import url("https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -12,8 +12,6 @@
   }
 
   html {
-    /* Inter feature flags: cv11 = single-storey a, ss01 = stylistic
-       alternates, tnum = tabular numerals (critical for terminal columns) */
     font-feature-settings: "cv11", "ss01", "tnum", "zero";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -21,26 +19,32 @@
 
   body {
     @apply bg-bg-base text-ink-primary antialiased font-sans;
-    /* Two-point glow: amber from top-centre, cyan from upper right.
-       Mimics the Bloomberg Terminal startup gradient without being a copy. */
+    /* Two-point glow: gold from top, bull/bear lateral wash */
     background-image:
-      radial-gradient(ellipse 90% 50% at 50% -10%, rgba(255, 122, 0, 0.06), transparent 60%),
-      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(91, 192, 235, 0.03), transparent 60%);
+      radial-gradient(ellipse 90% 50% at 50% -10%, rgba(201, 169, 97, 0.07), transparent 60%),
+      linear-gradient(90deg, rgba(90, 138, 111, 0.03) 0%, transparent 30%, transparent 70%, rgba(160, 82, 74, 0.03) 100%);
+    /* Subtle paper noise — feels like newsprint */
+    background-attachment: fixed;
+  }
+
+  /* Chinese characters should use Noto Serif SC by default in display contexts.
+     Sans body keeps Inter (which falls back to system Chinese fonts). */
+  :lang(zh) .display,
+  .display:lang(zh) {
+    font-family: "Noto Serif SC", "Crimson Pro", Georgia, ui-serif, serif;
   }
 
   ::selection {
-    background: rgba(255, 122, 0, 0.30);
+    background: rgba(201, 169, 97, 0.35);
     color: #fff;
   }
 
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #283040; border-radius: 2px; }
-  ::-webkit-scrollbar-thumb:hover { background: #3D4A5C; }
+  ::-webkit-scrollbar-thumb { background: #2F2620; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: #4A3C32; }
 
-  /* All numbers and tickers should use tabular figures by default so
-     they align in columns. This is the single most important rule for
-     making finance UI feel "right". */
+  /* All numbers tabular by default */
   .tabular, table, .num, code, pre {
     font-variant-numeric: tabular-nums;
   }
@@ -49,36 +53,29 @@
 @layer components {
 
   /* --- Surfaces ------------------------------------------------- */
-  .surface {
-    @apply bg-bg-elevated border border-border-subtle rounded-md;
-  }
-  .surface-elev {
-    @apply bg-bg-elevated border border-border rounded-md shadow-card;
-  }
-  .surface-raised {
-    @apply bg-bg-raised border border-border rounded-md shadow-elev;
-  }
+  .surface       { @apply bg-bg-elevated border border-border-subtle rounded-md; }
+  .surface-elev  { @apply bg-bg-elevated border border-border rounded-md shadow-card; }
+  .surface-raised{ @apply bg-bg-raised border border-border rounded-md shadow-elev; }
 
-  /* --- Pills / chips ------------------------------------------- */
+  /* --- Pills / chips ------------------------------------------ */
   .pill {
-    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-2xs font-medium uppercase tracking-wider;
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-2xs font-medium uppercase tracking-wider;
   }
-  .pill-amber { @apply pill bg-accent-muted text-accent border border-accent/30; }
-  .pill-cyan  { @apply pill bg-signal-info_soft text-signal-info border border-signal-info/30; }
-  .pill-green { @apply pill bg-signal-buy_soft text-signal-buy border border-signal-buy/30; }
-  .pill-red   { @apply pill bg-signal-sell_soft text-signal-sell border border-signal-sell/30; }
+  .pill-bull { @apply pill bg-bull-soft text-bull-ink border border-bull/30; }
+  .pill-bear { @apply pill bg-bear-soft text-bear-ink border border-bear/30; }
+  .pill-gold { @apply pill bg-gold-soft text-gold border border-gold/30; }
+  .pill-cyan { @apply pill bg-signal-info_soft text-signal-info border border-signal-info/30; }
 
   /* --- Buttons -------------------------------------------------- */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded font-medium text-sm
-           transition-all duration-150
-           focus:outline-none focus:ring-2 focus:ring-accent/40 focus:ring-offset-2 focus:ring-offset-bg-base
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded font-medium text-sm
+           transition-all duration-200
+           focus:outline-none focus:ring-2 focus:ring-gold/40 focus:ring-offset-2 focus:ring-offset-bg-base
            disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none;
   }
   .btn-primary {
-    @apply btn bg-accent text-bg-base hover:bg-accent-hover hover:-translate-y-px;
-    /* Strong glow under primary CTAs draws the eye unambiguously */
-    box-shadow: 0 0 0 1px rgba(255,122,0,0.25), 0 1px 0 rgba(255,255,255,0.10) inset;
+    @apply btn bg-gold text-bg-base hover:bg-gold-deep hover:text-ink-primary;
+    box-shadow: 0 0 0 1px rgba(201,169,97,0.25), 0 1px 0 rgba(255,255,255,0.10) inset;
   }
   .btn-secondary {
     @apply btn border border-border text-ink-primary hover:bg-bg-hover hover:border-border-strong;
@@ -86,124 +83,104 @@
   .btn-ghost {
     @apply btn text-ink-secondary hover:text-ink-primary hover:bg-bg-hover;
   }
+  .btn-bull {
+    @apply btn bg-bull-soft text-bull-ink border border-bull/40 hover:bg-bull/30;
+  }
+  .btn-bear {
+    @apply btn bg-bear-soft text-bear-ink border border-bear/40 hover:bg-bear/30;
+  }
 
   /* --- Inputs --------------------------------------------------- */
   .input {
     @apply bg-bg-subtle border border-border-subtle text-ink-primary placeholder:text-ink-tertiary
            rounded px-3 py-2 text-sm
-           focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-border-strong
+           focus:outline-none focus:ring-2 focus:ring-gold/40 focus:border-border-strong
            transition-colors;
   }
 
   /* --- Section kickers (uppercase tracking labels) ------------- */
-  .label-cap {
-    @apply uppercase tracking-kicker text-2xs font-semibold text-ink-tertiary;
-  }
-  .kicker {
-    @apply inline-flex items-center gap-2 uppercase tracking-kicker text-2xs font-semibold text-accent;
-  }
+  .label-cap { @apply uppercase tracking-kicker text-2xs font-semibold text-ink-tertiary; }
+  .kicker    { @apply inline-flex items-center gap-3 uppercase tracking-kicker text-2xs font-semibold text-gold; }
   .kicker::before {
     content: "";
-    @apply inline-block w-6 h-px bg-accent;
+    @apply inline-block w-8 h-px bg-gold;
   }
 
-  /* --- Display heading (IBM Plex Serif) ------------------------ */
+  /* --- Editorial display heading ------------------------------- */
   .display {
-    @apply font-display tracking-tighter font-medium;
+    @apply font-display tracking-tighter;
+    font-weight: 500;
+    font-feature-settings: "lnum", "kern", "liga";
+  }
+
+  /* --- Op-ed style 2-column "the bull says / the bear says" --- */
+  .opinion-column {
+    @apply relative;
+  }
+  .opinion-column.is-bull {
+    @apply text-bull-ink;
+  }
+  .opinion-column.is-bear {
+    @apply text-bear-ink;
   }
 
   /* --- Stats / KPI block --------------------------------------- */
-  .stat {
-    @apply flex flex-col;
-  }
+  .stat { @apply flex flex-col gap-1; }
   .stat-value {
     @apply font-mono text-2xl font-medium text-ink-primary tabular-nums;
   }
-  .stat-label {
-    @apply label-cap mt-1;
-  }
-
-  /* --- Data row (used in tables / lists) ----------------------- */
-  .data-row {
-    @apply flex items-center justify-between py-2 px-3 border-b border-border-subtle text-sm;
-  }
-  .data-row:hover { @apply bg-bg-hover; }
-  .data-row:last-child { @apply border-b-0; }
+  .stat-label { @apply label-cap; }
 
   /* --- Status dot ---------------------------------------------- */
-  .status-dot {
-    @apply inline-block w-1.5 h-1.5 rounded-full;
-  }
-  .status-dot-live::before {
-    content: "";
-    position: absolute;
-    inset: -3px;
-    border-radius: 9999px;
-    background: currentColor;
-    opacity: 0.30;
-    animation: pulse 2s cubic-bezier(0.4,0,0.6,1) infinite;
-  }
+  .status-dot { @apply inline-block w-1.5 h-1.5 rounded-full; }
 
-  /* --- Hairline divider (terminal feel) ------------------------ */
-  .hairline {
-    @apply border-t border-border-subtle;
-  }
+  /* --- Hairline divider ---------------------------------------- */
+  .hairline { @apply border-t border-border-subtle; }
 
-  /* --- Grid background w/ radial mask -------------------------- */
-  .grid-bg {
-    background-image:
-      linear-gradient(rgba(232,220,196,0.030) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(232,220,196,0.030) 1px, transparent 1px);
-    background-size: 24px 24px;
-    mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black 30%, transparent 80%);
-  }
-
-  /* --- Ticker tape (horizontal scroll, infinite) -------------- */
-  .ticker-tape {
-    @apply overflow-hidden whitespace-nowrap;
-    mask-image: linear-gradient(90deg, transparent 0%, black 5%, black 95%, transparent 100%);
-  }
-  .ticker-tape-track {
-    @apply inline-flex items-center gap-8 animate-ticker;
-  }
-
-  /* --- Number colouring helpers (used inline) ------------------ */
+  /* --- Number colouring helpers -------------------------------- */
   .num-up    { @apply text-signal-buy tabular-nums; }
   .num-down  { @apply text-signal-sell tabular-nums; }
   .num-flat  { @apply text-ink-secondary tabular-nums; }
+
+  /* --- Pull-quote (editorial) ---------------------------------- */
+  .pull-quote {
+    @apply font-display italic text-ink-primary leading-snug;
+    quotes: "\201C" "\201D";
+  }
+  .pull-quote::before { content: open-quote; }
+  .pull-quote::after  { content: close-quote; }
 }
 
 @layer utilities {
-  .text-gradient {
-    background: linear-gradient(135deg, #E8DCC4 0%, #A8A089 100%);
+  .text-bull   { @apply text-bull-ink; }
+  .text-bear   { @apply text-bear-ink; }
+  .text-gold   { @apply text-gold-DEFAULT; }
+
+  .text-gradient-warm {
+    background: linear-gradient(135deg, #EDE6D8 0%, #C9A961 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text-gradient-bear-bull {
+    background: linear-gradient(90deg, #5A8A6F 0%, #C9A961 50%, #A0524A 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
-  .text-gradient-accent {
-    background: linear-gradient(135deg, #FF7A00 0%, #FFB000 60%, #5BC0EB 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+  /* Paper noise on a section */
+  .paper {
+    background-image: radial-gradient(rgba(237,230,216,0.020) 1px, transparent 1px);
+    background-size: 3px 3px;
   }
 
-  /* Cursor blink for terminal-style "_" after prompts */
-  .cursor-blink::after {
-    content: "_";
-    @apply text-accent;
-    animation: blink 1.2s steps(2) infinite;
-    margin-left: 1px;
+  /* Thin vertical rule for editorial column dividers */
+  .rule-v {
+    @apply relative;
   }
-
-  /* Crosshatch (used as faint background for hero block) */
-  .crosshatch {
-    background-image: repeating-linear-gradient(
-      45deg,
-      rgba(232,220,196,0.02) 0,
-      rgba(232,220,196,0.02) 1px,
-      transparent 1px,
-      transparent 6px
-    );
+  .rule-v::after {
+    content: "";
+    @apply absolute right-0 top-0 bottom-0 w-px bg-border-subtle;
   }
 }
