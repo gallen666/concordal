@@ -80,7 +80,7 @@ export default function ProofPage() {
       icon: <Layers className="w-5 h-5 text-accent" />,
       title: t("proof.section.costModel"),
       body: locale === "zh"
-        ? "回测 cost model 默认值故意悲观——5bp commission + 5bp slippage = 单边 10bp，A 股卖出再加 5bp 印花税。比 industry「标准」3bp 高得多——因为 underchaging 让回测看起来好的策略真上活会失望。"
+        ? "回测 cost model 默认值故意悲观——5bp commission + 5bp slippage = 单边 10bp，A 股卖出再加 5bp 印花税。比 industry "标准" 3bp 高得多——因为 underchaging 让回测看起来好的策略真上活会失望。"
         : "Backtest cost defaults are intentionally pessimistic — 5bp commission + 5bp slippage = 10bp per side, A-share sells add 5bp stamp tax. Higher than the industry-typical 3bp because under-charging gives misleading 'good' backtest results that disappoint live.",
       bullets: [
         { text: "Backtester.for_market() — market-aware defaults", href: `${REPO}/blob/main/src/trading_agents/backtest/engine.py` },
