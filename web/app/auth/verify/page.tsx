@@ -12,7 +12,7 @@
  * attacks on the token store).
  */
 
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
@@ -22,25 +22,6 @@ import { useT } from "../../lib/i18n";
 type State = "verifying" | "ok" | "fail";
 
 export default function VerifyPage() {
-  return (
-    <Suspense fallback={<VerifyFallback />}>
-      <VerifyContent />
-    </Suspense>
-  );
-}
-
-function VerifyFallback() {
-  const { t } = useT();
-
-  return (
-    <div className="max-w-md mx-auto px-6 py-20 text-center space-y-5">
-      <Loader2 className="w-10 h-10 animate-spin text-ink-tertiary mx-auto" />
-      <h1 className="text-lg font-semibold">{t("verify.verifying")}</h1>
-    </div>
-  );
-}
-
-function VerifyContent() {
   const { t } = useT();
   const params = useSearchParams();
   const token = params.get("token");
