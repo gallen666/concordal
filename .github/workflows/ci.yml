@@ -20,7 +20,7 @@ jobs:
       - name: Install backend deps
         run: |
           python -m pip install --upgrade pip
-          pip install pydantic pandas numpy fastapi uvicorn httpx pytest PyJWT \
+          pip install "pydantic[email]" pandas numpy fastapi uvicorn httpx pytest PyJWT \
                       langgraph langchain-core tenacity rich typer
 
       - name: Run tests

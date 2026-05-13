@@ -57,7 +57,7 @@ export default function ProofPage() {
       icon: <Shield className="w-5 h-5 text-accent" />,
       title: t("proof.section.lookahead"),
       body: locale === "zh"
-        ? "回测时所有 adapter 都强制按 asof 过滤。yfinance.info（current snapshot）和 akshare 实时数据在 asof > 7 天前会返回空 stub，分析师 prompt 明确要求"不准编造数字"。SEC EDGAR 按 filing date 过滤——零前瞻。Reddit / Guba 帖子按 created_utc 过滤。"
+        ? "回测时所有 adapter 都强制按 asof 过滤。yfinance.info（current snapshot）和 akshare 实时数据在 asof > 7 天前会返回空 stub，分析师 prompt 明确要求「不准编造数字」。SEC EDGAR 按 filing date 过滤——零前瞻。Reddit / Guba 帖子按 created_utc 过滤。"
         : "Every adapter enforces strict no-lookahead at the boundary. yfinance.info (current snapshot only) and akshare realtime endpoints return empty stubs for asof > 7 days; analyst prompt explicitly tells the LLM not to fabricate numbers. SEC EDGAR is filtered by filing date — zero leak. Reddit + Guba posts filtered by created_utc.",
       bullets: [
         { text: "Adapter assertion: assert_no_future() + asof guards", href: `${REPO}/blob/main/src/trading_agents/adapters/base.py` },
@@ -80,7 +80,7 @@ export default function ProofPage() {
       icon: <Layers className="w-5 h-5 text-accent" />,
       title: t("proof.section.costModel"),
       body: locale === "zh"
-        ? "回测 cost model 默认值故意悲观——5bp commission + 5bp slippage = 单边 10bp，A 股卖出再加 5bp 印花税。比 industry "标准" 3bp 高得多——因为 underchaging 让回测看起来好的策略真上活会失望。"
+        ? "回测 cost model 默认值故意悲观——5bp commission + 5bp slippage = 单边 10bp，A 股卖出再加 5bp 印花税。比 industry「标准」3bp 高得多——因为 underchaging 让回测看起来好的策略真上活会失望。"
         : "Backtest cost defaults are intentionally pessimistic — 5bp commission + 5bp slippage = 10bp per side, A-share sells add 5bp stamp tax. Higher than the industry-typical 3bp because under-charging gives misleading 'good' backtest results that disappoint live.",
       bullets: [
         { text: "Backtester.for_market() — market-aware defaults", href: `${REPO}/blob/main/src/trading_agents/backtest/engine.py` },
