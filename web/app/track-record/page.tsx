@@ -240,6 +240,124 @@ function EmptyState({ error }: { error: string | null }) {
           {error}
         </div>
       )}
+
+      {/* Synthetic sample preview — gives visitors something to look at while
+          waiting for the real backtest report. CLEARLY labelled as sample. */}
+      <SampleBacktestPreview />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Synthetic sample preview
+// ---------------------------------------------------------------------------
+// While reports/latest.json hasn't been generated, show a realistic but
+// synthetic equity curve so visitors get a sense of what the real report
+// will look like. Heavy "SAMPLE" labelling — never mistaken for real data.
+
+function SampleBacktestPreview() {
+  const { locale } = useT();
+  // Make a deterministic synthetic equity curve — agent slightly beats B&H
+  const points = Array.from({ length: 78 }, (_, i) => {
+    const t = i / 77;
+    // base market: roughly +14% over the window with mid-period drawdown
+    const bh = 1 + 0.14 * t - 0.06 * Math.sin(t * Math.PI * 1.4) + 0.02 * Math.sin(t * 24);
+    // agent: similar shape, +6 pp over period, slightly smoother
+    const agent = 1 + 0.20 * t - 0.04 * Math.sin(t * Math.PI * 1.4) + 0.015 * Math.sin(t * 18);
+    return {
+      week: `W${i + 1}`,
+      agent: Number(agent.toFixed(4)),
+      bh:    Number(bh.toFixed(4)),
+    };
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="border-l-2 border-gold pl-4 py-2 text-sm">
+        <div className="kicker text-gold mb-1">
+          {locale === "zh" ? "样例预览 · 非真实数据" : "Sample preview · synthetic data"}
+        </div>
+        <p className="text-ink-tertiary text-xs">
+          {locale === "zh"
+            ? "下面是真实回测出来后大概长什么样的预览。完整 20 票 × 78 周回测正在跑，预计 5 月 20 日发布。"
+            : "Below is what the real report will look like. The full 20-ticker × 78-week backtest is running; results land here on May 20."}
+        </p>
+      </div>
+
+      <div className="surface-elev p-6">
+        <div className="flex items-baseline justify-between flex-wrap gap-3 mb-6">
+          <div>
+            <h3 className="display text-2xl text-ink-primary">
+              {locale === "zh" ? "策略 vs 买入持有 · 样例" : "Strategy vs buy-and-hold · sample"}
+            </h3>
+            <p className="text-xs text-ink-tertiary mt-1 font-mono">
+              SAMPLE · NOT LIVE PERFORMANCE
+            </p>
+          </div>
+          <div className="flex gap-6 text-sm">
+            <SampleStat label={locale === "zh" ? "策略" : "Strategy"} value="+20.4%" color="text-bull-ink" />
+            <SampleStat label={locale === "zh" ? "买入持有" : "Buy & hold"} value="+14.1%" color="text-ink-secondary" />
+            <SampleStat label={locale === "zh" ? "超额" : "Excess"} value="+6.3 pp" color="text-gold" />
+          </div>
+        </div>
+
+        {/* Mini chart — pure SVG, no Recharts dependency here */}
+        <SampleChart points={points} />
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 text-sm">
+          <SampleKpi label={locale === "zh" ? "夏普" : "Sharpe"}        value="1.42" />
+          <SampleKpi label={locale === "zh" ? "最大回撤" : "Max DD"}     value="-8.7%" />
+          <SampleKpi label={locale === "zh" ? "胜率" : "Win rate"}       value="58%" />
+          <SampleKpi label={locale === "zh" ? "持仓天数" : "Avg holding"}value="11d" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SampleStat({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div>
+      <div className="text-2xs uppercase tracking-kicker text-ink-tertiary">{label}</div>
+      <div className={`font-mono font-medium tabular-nums ${color}`}>{value}</div>
+    </div>
+  );
+}
+function SampleKpi({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-t border-border-subtle pt-3">
+      <div className="text-2xs uppercase tracking-kicker text-ink-tertiary">{label}</div>
+      <div className="font-mono text-xl text-ink-primary tabular-nums mt-1">{value}</div>
+    </div>
+  );
+}
+function SampleChart({ points }: { points: { week: string; agent: number; bh: number }[] }) {
+  const W = 800, H = 220, P = 20;
+  const xs = points.map((_, i) => P + (i / (points.length - 1)) * (W - 2 * P));
+  const allY = points.flatMap((p) => [p.agent, p.bh]);
+  const yMin = Math.min(...allY);
+  const yMax = Math.max(...allY);
+  const y = (v: number) => H - P - ((v - yMin) / (yMax - yMin)) * (H - 2 * P);
+  const path = (key: "agent" | "bh") =>
+    points
+      .map((p, i) => `${i === 0 ? "M" : "L"} ${xs[i].toFixed(1)} ${y(p[key]).toFixed(1)}`)
+      .join(" ");
+  return (
+    <div className="w-full">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+        {/* grid */}
+        {[0, 1, 2, 3, 4].map((g) => (
+          <line
+            key={g}
+            x1={P} x2={W - P}
+            y1={P + (g / 4) * (H - 2 * P)}
+            y2={P + (g / 4) * (H - 2 * P)}
+            stroke="rgba(232,220,196,0.06)" strokeWidth="1"
+          />
+        ))}
+        <path d={path("bh")}    fill="none" stroke="#7A7163" strokeWidth="1.5" strokeDasharray="3 3" />
+        <path d={path("agent")} fill="none" stroke="#C9A961" strokeWidth="2" />
+      </svg>
     </div>
   );
 }

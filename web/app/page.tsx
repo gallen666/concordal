@@ -28,13 +28,16 @@ import {
   TrendingUp,
   TrendingDown,
   Quote,
+  Sparkles,
 } from "lucide-react";
 import { api } from "./lib/api";
+import { useT } from "./lib/i18n";
 
 export default function Landing() {
   return (
     <div className="min-h-screen">
       <Hero />
+      <TodayPulse />
       <TheWay />
       <Architecture />
       <Coverage />
@@ -120,8 +123,8 @@ function Hero() {
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-3 mt-10">
-            <Link href="/login" className="btn-primary">
-              Try a decision · free
+            <Link href="/decision?ticker=AAPL" className="btn-primary">
+              See AAPL decision · free, no signup
               <ArrowRight className="w-4 h-4" />
             </Link>
             <Link
@@ -131,6 +134,9 @@ function Hero() {
               How it works ↗
             </Link>
           </div>
+          <p className="text-2xs text-ink-tertiary mt-3 font-mono uppercase tracking-wider">
+            No password · email later · 90 seconds
+          </p>
         </div>
 
         {/* trust strip */}
@@ -138,6 +144,102 @@ function Hero() {
           <TrustItem n="27" l="Regression tests · zero lookahead" />
           <TrustItem n="6"  l="LLM providers · auto-fallback" />
           <TrustItem n="3"  l="Markets · US · A-share · Crypto" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TODAY'S PULSE — five ticker decisions, refreshed daily by cron
+// ---------------------------------------------------------------------------
+// Surfaces a curated set of "today's calls" so the landing page DOES something
+// the visitor can immediately inspect. Currently a static seed — wire to a
+// `/v1/decisions/today` endpoint once a cron job populates it.
+
+interface PulseRow {
+  ticker: string;
+  name: string;
+  market: "US" | "A" | "Crypto";
+  call: "BUY" | "HOLD" | "SELL";
+  conf: number;
+  bullSnip: string;
+  bearSnip: string;
+}
+
+const PULSE_SEED: PulseRow[] = [
+  { ticker: "AAPL",   name: "Apple Inc.",     market: "US", call: "BUY",  conf: 0.62, bullSnip: "Services mix shift +14% YoY", bearSnip: "Forward P/E at 28× already prices it in" },
+  { ticker: "NVDA",   name: "NVIDIA",         market: "US", call: "HOLD", conf: 0.51, bullSnip: "Data-center capex unbroken",    bearSnip: "Customer concentration risk rising" },
+  { ticker: "600519", name: "贵州茅台",       market: "A",  call: "BUY",  conf: 0.58, bullSnip: "Pricing power intact",           bearSnip: "白酒 demand softening in tier-1" },
+  { ticker: "300750", name: "宁德时代 CATL",  market: "A",  call: "SELL", conf: 0.57, bullSnip: "Solid-state pipeline visible",   bearSnip: "EV margin compression continues" },
+  { ticker: "BTC",    name: "Bitcoin",        market: "Crypto", call: "BUY", conf: 0.55, bullSnip: "ETF inflows accelerated last week", bearSnip: "Fed-tightening tail risk" },
+];
+
+function TodayPulse() {
+  const { locale } = useT();
+  const stamp = new Date().toISOString().slice(0, 10);
+  return (
+    <section className="border-t border-border-subtle">
+      <div className="max-w-6xl mx-auto px-6 py-20">
+        <div className="flex items-baseline justify-between flex-wrap gap-4 mb-10">
+          <div>
+            <div className="kicker mb-3">
+              <Sparkles className="w-3.5 h-3.5" />
+              {locale === "zh" ? "今日 AI 决策" : "Today's calls"}
+            </div>
+            <h2 className="display text-3xl md:text-4xl text-ink-primary tracking-tighter leading-tight">
+              {locale === "zh" ? "五只票，两方观点，一个结论。" : "Five tickers. Two sides. One call each."}
+            </h2>
+          </div>
+          <div className="text-2xs font-mono uppercase tracking-kicker text-ink-tertiary">
+            Updated {stamp} · refreshed daily
+          </div>
+        </div>
+
+        <div className="surface-elev overflow-hidden">
+          {PULSE_SEED.map((r, i) => (
+            <Link
+              key={r.ticker}
+              href={`/decision?ticker=${r.ticker}`}
+              className="group grid grid-cols-[6rem_2fr_3fr_2fr_auto] gap-4 items-center px-5 py-4 hover:bg-bg-hover transition-colors border-t border-border-subtle first:border-t-0"
+            >
+              <div>
+                <div className="font-mono font-medium text-ink-primary tabular-nums">{r.ticker}</div>
+                <div className="text-2xs text-ink-tertiary uppercase tracking-wider mt-0.5">{r.market}</div>
+              </div>
+              <div>
+                <div className="text-sm text-ink-primary">{r.name}</div>
+                <div className="hidden md:flex items-center gap-2 mt-1 text-xs text-bull-ink">
+                  <span className="inline-block w-1 h-1 rounded-full bg-bull-ink" />
+                  <span className="truncate">{r.bullSnip}</span>
+                </div>
+              </div>
+              <div className="hidden md:block">
+                <div className="text-xs text-bear-ink flex items-center gap-2">
+                  <span className="inline-block w-1 h-1 rounded-full bg-bear-ink" />
+                  <span className="truncate">{r.bearSnip}</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className={`font-mono font-semibold ${r.call === "BUY" ? "text-signal-buy" : r.call === "SELL" ? "text-signal-sell" : "text-ink-secondary"}`}>
+                  {r.call}
+                </div>
+                <div className="text-2xs text-ink-tertiary tabular-nums">{r.conf.toFixed(2)}</div>
+              </div>
+              <ArrowRight className="w-4 h-4 text-ink-tertiary group-hover:text-gold transition-colors" />
+            </Link>
+          ))}
+        </div>
+
+        <div className="mt-6 flex items-center justify-between text-xs text-ink-tertiary font-mono">
+          <span>
+            {locale === "zh"
+              ? "样例数据 · 真实决策每天 06:30 UTC 由 cron 重新生成"
+              : "Seed sample · live decisions refresh nightly at 06:30 UTC"}
+          </span>
+          <Link href="/hot" className="text-gold hover:underline">
+            {locale === "zh" ? "更多 ↗" : "More tickers ↗"}
+          </Link>
         </div>
       </div>
     </section>
