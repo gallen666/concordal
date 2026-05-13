@@ -1377,6 +1377,225 @@ def _normalize_hot_rows(df, limit: int) -> list[dict]:
     return rows
 
 
+# ---------------------------------------------------------------------------
+# Daily AI brief — auto-generated market commentary
+# ---------------------------------------------------------------------------
+
+@app.post("/v1/cron/daily-brief", tags=["auth"])
+def cron_daily_brief(
+    request: Request,
+    locale: str = "zh",
+    force: bool = False,
+) -> dict:
+    """Generate today's AI market brief and persist it.
+
+    Designed to be hit daily by a Render cron / cron-job.org schedule.
+    Protected by `TA_CRON_SECRET` in the X-Cron-Secret header. Idempotent:
+    if today's brief is already saved, returns it unchanged unless `force=true`.
+
+    The body is an LLM-generated commentary (≈ 800-1200 zh-CN chars), with:
+      - one-line market headline
+      - 3-bullet "what moved"
+      - 3-bullet "what to watch"
+      - a closing risk-disclaimer
+
+    Locale defaults to zh-CN since the primary audience is Chinese retail.
+    Pass `?locale=en` to generate the English variant (stored separately
+    by date_str + locale composite — overwrites either independently).
+    """
+    secret = os.environ.get("TA_CRON_SECRET")
+    if secret:
+        provided = request.headers.get("X-Cron-Secret", "")
+        if provided != secret:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Bad cron secret")
+
+    today = date.today().isoformat()
+    existing = persistence.get_daily_brief(f"{today}:{locale}")
+    if existing and not force:
+        return {"ok": True, "cached": True, "brief": existing}
+
+    # Compose a tight prompt that gives the LLM enough context to generate
+    # something useful even without scraping real-time news. We let the
+    # model speak from its training prior plus the date stamp; the cron
+    # operator can later wire in a news-feed scrape for fresher content.
+    prompt_zh = (
+        f"今天是 {today}。\n\n"
+        "请生成一份简短的 A 股 + 美股 + 加密货币每日早评，800-1200 字，"
+        "中文，markdown 格式。包含：\n\n"
+        "1. **市场一句话** — 一句话概括今天的市场基调\n"
+        "2. **昨日复盘** — 三个 bullet，每个 60-100 字\n"
+        "3. **今日看点** — 三个 bullet，每个 60-100 字\n"
+        "4. **风险提示** — 一段，强调投资风险\n\n"
+        "语气专业克制，避免推荐具体股票。结尾加一句"
+        "「— TradingAgents AI · {} 自动生成」。".format(today)
+    )
+    prompt_en = (
+        f"Today is {today}.\n\n"
+        "Write a concise daily brief covering A-share, US equity, and crypto "
+        "markets, 600-900 words, markdown format. Include:\n\n"
+        "1. **Tape headline** — one-sentence summary of today's mood\n"
+        "2. **Yesterday's recap** — three bullets, 30-60 words each\n"
+        "3. **Today's watch list** — three bullets, 30-60 words each\n"
+        "4. **Risk note** — one paragraph emphasising market risk\n\n"
+        "Professional, restrained tone. Do not recommend specific tickers. "
+        f"End with: '— TradingAgents AI · {today} auto-generated'."
+    )
+    prompt = prompt_zh if locale == "zh" else prompt_en
+
+    try:
+        from trading_agents.llm.router import get_router
+        router = get_router()
+        result = router.complete(prompt=prompt, system="You are a professional market commentator.")
+        body_md = result.text if hasattr(result, "text") else str(result)
+        model_used = getattr(result, "model", None) or "unknown"
+    except Exception as e:
+        log.warning("daily-brief LLM failed: %s", e)
+        # Persist a clearly-labelled fallback so the page always has SOMETHING
+        body_md = (
+            f"# {today} · Daily Brief Unavailable\n\n"
+            f"The LLM router could not generate today's brief ({e}).\n\n"
+            "This page will be regenerated automatically on the next cron run."
+        )
+        model_used = "fallback"
+
+    # Extract title from first markdown H1, or fall back to date.
+    title = f"市场早评 · {today}" if locale == "zh" else f"Daily Brief · {today}"
+    for line in body_md.splitlines():
+        if line.startswith("# "):
+            title = line[2:].strip()
+            break
+
+    persistence.save_daily_brief(
+        date_str=f"{today}:{locale}",
+        title=title,
+        body_md=body_md,
+        locale=locale,
+        model=model_used,
+    )
+    return {
+        "ok": True,
+        "cached": False,
+        "brief": persistence.get_daily_brief(f"{today}:{locale}"),
+    }
+
+
+@app.get("/v1/daily-brief/{date_str}")
+def get_daily_brief_route(date_str: str, locale: str = "zh") -> dict:
+    """Fetch a stored brief by date (YYYY-MM-DD). Used by /blog/daily/[date]
+    on the frontend. 404s if not generated yet."""
+    brief = persistence.get_daily_brief(f"{date_str}:{locale}")
+    if not brief:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Brief not yet generated for that date")
+    return brief
+
+
+@app.get("/v1/daily-brief")
+def list_daily_briefs_route(limit: int = 30) -> dict:
+    """List recent briefs for the blog index."""
+    return {"items": persistence.list_daily_briefs(limit=limit)}
+
+
+@app.get("/v1/quote")
+def get_quote(ticker: str, days: int = 30) -> dict:
+    """Tiny quote endpoint for the /decision page's MarketHeader strip.
+
+    Routes the ticker to the right adapter (US / A-share / Crypto) using the
+    same _auto_route_market logic as the decision pipeline, then asks the
+    adapter for the last N days of OHLCV via `get_price_history()`. Returns
+    a compact JSON shape the frontend can render into a sparkline + price
+    delta without further normalisation:
+
+        {
+          ticker, market, currency,
+          ohlcv: [{date, open, high, low, close, volume}, ...],
+          current: float,     // most recent close
+          prev:    float,     // previous close (for change calc)
+          change:  float,     // current - prev
+          changePct: float,   // (change / prev) * 100
+          asof: ISO timestamp,
+          source_status: "ok" | "unavailable",
+        }
+
+    Designed to graceful-degrade: if the adapter can't reach the upstream
+    (yfinance rate-limited, akshare network error), returns 200 with
+    `source_status="unavailable"` and an empty `ohlcv` so the frontend can
+    show a "no data" placeholder rather than a red error.
+    """
+    days = max(7, min(days, 365))  # clamp to sensible window
+    effective_market = _auto_route_market(ticker, "us_equity")
+    end = date.today()
+    start = end - timedelta(days=int(days * 1.6) + 7)  # buffer for weekends
+
+    try:
+        from trading_agents.adapters import get_adapter
+        adapter = get_adapter(effective_market)
+        quotes = adapter.get_price_history(ticker, start, end)
+    except Exception as e:
+        log.warning("quote endpoint failed for %s: %s", ticker, e)
+        return {
+            "ticker": ticker,
+            "market": effective_market,
+            "currency": _currency_for(effective_market),
+            "ohlcv": [],
+            "current": None,
+            "prev": None,
+            "change": None,
+            "changePct": None,
+            "asof": datetime.now(tz=timezone.utc).isoformat(),
+            "source_status": "unavailable",
+            "message": str(e),
+        }
+
+    if not quotes:
+        return {
+            "ticker": ticker,
+            "market": effective_market,
+            "currency": _currency_for(effective_market),
+            "ohlcv": [],
+            "current": None, "prev": None, "change": None, "changePct": None,
+            "asof": datetime.now(tz=timezone.utc).isoformat(),
+            "source_status": "unavailable",
+        }
+
+    # Trim to last `days` rows (adapter may return more)
+    rows = quotes[-days:]
+    current = rows[-1].close
+    prev = rows[-2].close if len(rows) >= 2 else current
+    change = current - prev
+    change_pct = (change / prev * 100.0) if prev else 0.0
+
+    return {
+        "ticker": ticker,
+        "market": effective_market,
+        "currency": _currency_for(effective_market),
+        "ohlcv": [
+            {
+                "date": q.asof.date().isoformat() if hasattr(q.asof, "date") else str(q.asof)[:10],
+                "open":  q.open,
+                "high":  q.high,
+                "low":   q.low,
+                "close": q.close,
+                "volume": q.volume,
+            }
+            for q in rows
+        ],
+        "current": current,
+        "prev": prev,
+        "change": change,
+        "changePct": change_pct,
+        "asof": datetime.now(tz=timezone.utc).isoformat(),
+        "source_status": "ok",
+    }
+
+
+def _currency_for(market: str) -> str:
+    return {
+        "us_equity": "USD",
+        "a_share":   "CNY",
+        "crypto":    "USD",
+    }.get(market, "USD")
+
+
 @app.get("/v1/markets/hot-rankings/cn")
 def cn_hot_rankings(limit: int = 20) -> dict:
     """A-share retail attention ranking, with multi-source fallback.

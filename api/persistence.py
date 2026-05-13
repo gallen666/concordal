@@ -103,6 +103,15 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             stripe_subscription_id TEXT,
             updated_at REAL NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS daily_briefs (
+            date_str TEXT PRIMARY KEY,    -- YYYY-MM-DD
+            title TEXT NOT NULL,
+            body_md TEXT NOT NULL,
+            locale TEXT NOT NULL,         -- "en" | "zh"
+            generated_at REAL NOT NULL,
+            model TEXT
+        );
     """)
 
 
@@ -268,6 +277,68 @@ def get_user_tier(email: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Daily AI briefs (LLM-generated morning commentary)
+# ---------------------------------------------------------------------------
+
+
+def save_daily_brief(
+    date_str: str,
+    title: str,
+    body_md: str,
+    locale: str = "en",
+    model: str | None = None,
+) -> None:
+    """Upsert today's brief. `date_str` is YYYY-MM-DD; primary key.
+    Re-running the cron for the same day overwrites — useful for fixing typos."""
+    c = _get_conn()
+    c.execute(
+        """INSERT OR REPLACE INTO daily_briefs
+           (date_str, title, body_md, locale, generated_at, model)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (date_str, title, body_md, locale, time.time(), model),
+    )
+
+
+def get_daily_brief(date_str: str) -> dict | None:
+    """Return the brief for a given YYYY-MM-DD, or None."""
+    c = _get_conn()
+    cur = c.execute(
+        "SELECT date_str, title, body_md, locale, generated_at, model "
+        "FROM daily_briefs WHERE date_str = ?",
+        (date_str,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "date":        row[0],
+        "title":       row[1],
+        "body_md":     row[2],
+        "locale":      row[3],
+        "generated_at": float(row[4]),
+        "model":       row[5],
+    }
+
+
+def list_daily_briefs(limit: int = 30) -> list[dict]:
+    """Most-recent-first list of briefs for blog indexing.
+
+    Body is omitted to keep responses light — the index only needs
+    title + date + locale. Fetch individual bodies via get_daily_brief().
+    """
+    c = _get_conn()
+    cur = c.execute(
+        "SELECT date_str, title, locale, generated_at "
+        "FROM daily_briefs ORDER BY date_str DESC LIMIT ?",
+        (limit,),
+    )
+    return [
+        {"date": r[0], "title": r[1], "locale": r[2], "generated_at": float(r[3])}
+        for r in cur
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
 
@@ -287,5 +358,6 @@ def stats() -> dict[str, Any]:
         "paid_users":       c.execute(
             "SELECT COUNT(*) FROM user_tiers WHERE tier IN ('pro', 'team')",
         ).fetchone()[0],
+        "daily_briefs":     c.execute("SELECT COUNT(*) FROM daily_briefs").fetchone()[0],
         "db_path":          str(_db_path()),
     }

@@ -38,6 +38,7 @@ import {
 } from "../lib/api";
 import { cn } from "../lib/cn";
 import { useT } from "../lib/i18n";
+import { MarketHeader } from "../components/MarketHeader";
 
 const SIDE_STYLES: Record<
   string,
@@ -227,6 +228,14 @@ export default function DecisionPage() {
           {t("decision.subheading")}
         </p>
       </div>
+
+      {/* Live quote strip — shows current price + 60-day sparkline for the
+          ticker currently in the input. Defaults to AAPL on first load. */}
+      {ticker && (
+        <div className="mb-6">
+          <MarketHeader ticker={ticker.toUpperCase()} />
+        </div>
+      )}
 
       <div className="surface-elev p-3 flex flex-col sm:flex-row gap-3">
         <div className="flex-1 sm:max-w-xs flex flex-col gap-2">
