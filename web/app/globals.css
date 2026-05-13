@@ -1,10 +1,10 @@
+/* @import MUST come before @tailwind per CSS spec — Next.js's CSS
+   parser refuses to compile otherwise. */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;500;600&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* IBM Plex Serif for editorial display moments. JetBrains Mono comes
-   from the Next/font import in layout.tsx so we don't double-load. */
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;500;600&display=swap");
 
 @layer base {
   :root {
