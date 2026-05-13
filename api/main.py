@@ -1495,6 +1495,152 @@ def list_daily_briefs_route(limit: int = 30) -> dict:
     return {"items": persistence.list_daily_briefs(limit=limit)}
 
 
+# ---------------------------------------------------------------------------
+# Alpaca paper trading — never real money, sandbox only.
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/alpaca/paper/account", tags=["execution"])
+def alpaca_paper_account() -> dict:
+    """Paper-account snapshot: cash, equity, buying power. 503 if env not set."""
+    try:
+        from trading_agents.execution import alpaca_get_paper_account, alpaca_paper_configured
+    except ImportError:
+        raise HTTPException(503, "alpaca module not available")
+    if not alpaca_paper_configured():
+        raise HTTPException(503, "ALPACA_API_KEY / ALPACA_API_SECRET not configured")
+    try:
+        return alpaca_get_paper_account()
+    except Exception as e:
+        raise HTTPException(502, f"Alpaca upstream error: {e}")
+
+
+@app.get("/v1/alpaca/paper/orders", tags=["execution"])
+def alpaca_paper_orders(status: str = "all", limit: int = 50) -> list[dict]:
+    try:
+        from trading_agents.execution import alpaca_list_paper_orders, alpaca_paper_configured
+    except ImportError:
+        raise HTTPException(503, "alpaca module not available")
+    if not alpaca_paper_configured():
+        raise HTTPException(503, "ALPACA_API_KEY / ALPACA_API_SECRET not configured")
+    try:
+        rows = alpaca_list_paper_orders(status=status, limit=limit)
+        return [r.__dict__ for r in rows]
+    except Exception as e:
+        raise HTTPException(502, f"Alpaca upstream error: {e}")
+
+
+@app.get("/v1/alpaca/paper/positions", tags=["execution"])
+def alpaca_paper_positions() -> list[dict]:
+    try:
+        from trading_agents.execution import alpaca_list_paper_positions, alpaca_paper_configured
+    except ImportError:
+        raise HTTPException(503, "alpaca module not available")
+    if not alpaca_paper_configured():
+        raise HTTPException(503, "ALPACA_API_KEY / ALPACA_API_SECRET not configured")
+    try:
+        rows = alpaca_list_paper_positions()
+        return [r.__dict__ for r in rows]
+    except Exception as e:
+        raise HTTPException(502, f"Alpaca upstream error: {e}")
+
+
+class AlpacaPaperOrderRequest(BaseModel):
+    symbol: str
+    qty: float
+    side: str = "buy"  # buy | sell
+
+
+@app.post("/v1/alpaca/paper/orders", tags=["execution"])
+def alpaca_submit_paper_order(req: AlpacaPaperOrderRequest, user: CurrentUser = Depends(get_current_user)) -> dict:
+    """Submit a paper market order. Auth-gated — anonymous can't submit."""
+    if user.id == "anonymous":
+        raise HTTPException(401, "Sign in to submit paper orders")
+    try:
+        from trading_agents.execution import alpaca_submit_paper_order, alpaca_paper_configured
+    except ImportError:
+        raise HTTPException(503, "alpaca module not available")
+    if not alpaca_paper_configured():
+        raise HTTPException(503, "Alpaca paper not configured server-side")
+    if req.side not in ("buy", "sell"):
+        raise HTTPException(400, "side must be 'buy' or 'sell'")
+    try:
+        order = alpaca_submit_paper_order(
+            symbol=req.symbol.upper(),
+            qty=req.qty,
+            side=req.side,  # type: ignore
+        )
+        return order.__dict__
+    except Exception as e:
+        raise HTTPException(502, f"Alpaca order error: {e}")
+
+
+# ---------------------------------------------------------------------------
+# 北向资金 (Mainland-HK Stock Connect flows) — Eastmoney parity.
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/cn/north-flow", tags=["markets"])
+def cn_north_flow(days: int = 30) -> dict:
+    """Northbound (mainland-via-HK) net buys for the last N days.
+
+    Free, no API key, via akshare's `stock_hsgt_north_net_flow_in_em`. The
+    north-flow series is one of the most-watched leading indicators in
+    China retail; embedding it makes us look like a serious A-share tool.
+    """
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    try:
+        df = ak.stock_hsgt_north_net_flow_in_em(symbol="北上")
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "akshare returned empty", "rows": []}
+        # Coerce to JSON-friendly: keep last `days` rows
+        df = df.tail(max(7, min(days, 365)))
+        # akshare returns columns "date" and "value" (in 万元)
+        cols = list(df.columns)
+        date_col = cols[0]
+        val_col = cols[1] if len(cols) > 1 else cols[0]
+        rows = [
+            {"date": str(r[date_col])[:10], "net_inflow_wy": float(r[val_col])}
+            for _, r in df.iterrows()
+        ]
+        return {"status": "ok", "rows": rows, "source": "akshare/eastmoney"}
+    except Exception as e:
+        log.warning("north-flow fetch failed: %s", e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
+@app.get("/v1/cn/lhb", tags=["markets"])
+def cn_lhb(date_str: str | None = None) -> dict:
+    """龙虎榜 — daily top-50 block-trade leaderboard.
+
+    `date_str` defaults to the latest available trading day. Eastmoney's
+    flagship retail-attention dataset. Free via akshare.
+    """
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    try:
+        d = date_str or date.today().strftime("%Y%m%d")
+        df = ak.stock_lhb_detail_em(start_date=d, end_date=d)
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "no lhb data for that date", "rows": []}
+        df = df.head(50)
+        rows = df.to_dict(orient="records")
+        # Strip pd-specific types
+        for r in rows:
+            for k, v in list(r.items()):
+                try:
+                    r[k] = float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else str(v)
+                except Exception:
+                    r[k] = str(v)
+        return {"status": "ok", "date": d, "rows": rows, "source": "akshare/eastmoney"}
+    except Exception as e:
+        log.warning("lhb fetch failed: %s", e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
 @app.get("/v1/quote")
 def get_quote(ticker: str, days: int = 30) -> dict:
     """Tiny quote endpoint for the /decision page's MarketHeader strip.

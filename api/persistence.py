@@ -112,6 +112,31 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             generated_at REAL NOT NULL,
             model TEXT
         );
+
+        -- Ticker-level shared cache. The roadmap's "10× cost reduction"
+        -- bet: same ticker, same date, same agent role → same LLM output;
+        -- so every user can read from the same row. cache_key is a
+        -- compact composite — `${ticker}|${market}|${date}|${role}|${locale}`.
+        CREATE TABLE IF NOT EXISTS analyst_cache (
+            cache_key TEXT PRIMARY KEY,
+            output_json TEXT NOT NULL,
+            model TEXT,
+            cost_usd REAL,
+            cached_at REAL NOT NULL,
+            ttl_seconds INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cache_cached_at ON analyst_cache(cached_at);
+
+        -- Multi-seed evaluation results — one row per (ticker, date, seed).
+        CREATE TABLE IF NOT EXISTS seed_runs (
+            ticker TEXT NOT NULL,
+            decision_date TEXT NOT NULL,
+            seed INTEGER NOT NULL,
+            action TEXT NOT NULL,         -- "BUY" | "HOLD" | "SELL"
+            confidence REAL NOT NULL,
+            generated_at REAL NOT NULL,
+            PRIMARY KEY (ticker, decision_date, seed)
+        );
     """)
 
 
@@ -339,6 +364,125 @@ def list_daily_briefs(limit: int = 30) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Analyst cache (ticker × date shared across users)
+# ---------------------------------------------------------------------------
+# Roadmap Phase 3: "ticker 级共享缓存能直接把成本压一个数量级".
+# Same ticker on the same date should produce the same analyst report no
+# matter which user asked, so we share. User-specific stuff (position size,
+# risk preference) is NOT cached here — caller is responsible for personalising
+# the cached output before showing it.
+
+
+def cache_get(cache_key: str) -> dict | None:
+    """Return cached output_json (parsed) if still fresh, else None."""
+    c = _get_conn()
+    cur = c.execute(
+        "SELECT output_json, cached_at, ttl_seconds, model, cost_usd "
+        "FROM analyst_cache WHERE cache_key = ?",
+        (cache_key,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    output_json, cached_at, ttl_seconds, model, cost_usd = row
+    if time.time() - float(cached_at) > int(ttl_seconds):
+        # Expired — opportunistically delete
+        c.execute("DELETE FROM analyst_cache WHERE cache_key = ?", (cache_key,))
+        return None
+    import json
+    try:
+        out = json.loads(output_json)
+    except Exception:
+        return None
+    return {
+        "output": out,
+        "model": model,
+        "cost_usd": cost_usd,
+        "cached_at": float(cached_at),
+    }
+
+
+def cache_put(
+    cache_key: str,
+    output: Any,
+    ttl_seconds: int,
+    model: str | None = None,
+    cost_usd: float | None = None,
+) -> None:
+    import json
+    c = _get_conn()
+    c.execute(
+        "INSERT OR REPLACE INTO analyst_cache "
+        "(cache_key, output_json, model, cost_usd, cached_at, ttl_seconds) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (cache_key, json.dumps(output, default=str), model, cost_usd, time.time(), int(ttl_seconds)),
+    )
+
+
+def cache_stats() -> dict:
+    c = _get_conn()
+    total = c.execute("SELECT COUNT(*) FROM analyst_cache").fetchone()[0]
+    fresh = c.execute(
+        "SELECT COUNT(*) FROM analyst_cache WHERE cached_at + ttl_seconds > ?",
+        (time.time(),),
+    ).fetchone()[0]
+    return {"total_rows": total, "fresh_rows": fresh}
+
+
+def cache_purge_expired() -> int:
+    c = _get_conn()
+    cur = c.execute(
+        "DELETE FROM analyst_cache WHERE cached_at + ttl_seconds < ?",
+        (time.time(),),
+    )
+    return cur.rowcount or 0
+
+
+# ---------------------------------------------------------------------------
+# Multi-seed evaluation
+# ---------------------------------------------------------------------------
+
+
+def save_seed_run(
+    ticker: str,
+    decision_date: str,
+    seed: int,
+    action: str,
+    confidence: float,
+) -> None:
+    c = _get_conn()
+    c.execute(
+        "INSERT OR REPLACE INTO seed_runs "
+        "(ticker, decision_date, seed, action, confidence, generated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (ticker, decision_date, int(seed), action, float(confidence), time.time()),
+    )
+
+
+def get_seed_distribution(ticker: str, decision_date: str) -> dict:
+    """Aggregate N seeds → {p_buy, p_hold, p_sell, mean_conf, n}."""
+    c = _get_conn()
+    cur = c.execute(
+        "SELECT action, confidence FROM seed_runs "
+        "WHERE ticker = ? AND decision_date = ?",
+        (ticker, decision_date),
+    )
+    rows = list(cur)
+    if not rows:
+        return {"n": 0, "p_buy": 0.0, "p_hold": 0.0, "p_sell": 0.0, "mean_conf": 0.0}
+    n = len(rows)
+    actions = [r[0] for r in rows]
+    confs = [float(r[1]) for r in rows]
+    return {
+        "n": n,
+        "p_buy":  actions.count("BUY") / n,
+        "p_hold": actions.count("HOLD") / n,
+        "p_sell": actions.count("SELL") / n,
+        "mean_conf": sum(confs) / n,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
 
@@ -359,5 +503,7 @@ def stats() -> dict[str, Any]:
             "SELECT COUNT(*) FROM user_tiers WHERE tier IN ('pro', 'team')",
         ).fetchone()[0],
         "daily_briefs":     c.execute("SELECT COUNT(*) FROM daily_briefs").fetchone()[0],
+        "analyst_cache":    c.execute("SELECT COUNT(*) FROM analyst_cache").fetchone()[0],
+        "seed_runs":        c.execute("SELECT COUNT(*) FROM seed_runs").fetchone()[0],
         "db_path":          str(_db_path()),
     }
