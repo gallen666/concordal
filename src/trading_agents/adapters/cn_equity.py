@@ -322,13 +322,13 @@ class CnEquityAdapter(MarketAdapter):
             log.debug("Guba news fetch failed for %s: %s", ticker, e)
 
         if not self._available:
-            return self._fallback.get_news(ticker, asof, lookback_days)
+            return []  # NEVER mock — empty list better than fake headlines
         try:
             ak = self._ak()
             t = self._normalize_ticker(ticker)
             df = ak.stock_news_em(symbol=t)
             if df is None or df.empty:
-                return self._fallback.get_news(ticker, asof, lookback_days)
+                return []  # NEVER mock — empty list better than fake headlines
 
             # akshare's stock_news_em returns columns: 关键词, 新闻标题, 新闻内容,
             # 发布时间, 文章来源, 新闻链接
@@ -366,10 +366,10 @@ class CnEquityAdapter(MarketAdapter):
                 )
                 if len(items) >= 12:
                     break
-            return items or self._fallback.get_news(ticker, asof, lookback_days)
+            return items  # may be empty — better than fabricated news
         except Exception as e:
             log.warning("akshare news failed (%s); falling back to mock", e)
-            return self._fallback.get_news(ticker, asof, lookback_days)
+            return []  # NEVER mock — empty list better than fake headlines
 
     def get_sentiment(
         self, ticker: str, asof: date, lookback_days: int = 7
@@ -418,7 +418,15 @@ class CnEquityAdapter(MarketAdapter):
             log.debug("Guba sentiment failed for %s: %s", ticker, e)
 
         if not self._available:
-            return self._fallback.get_sentiment(ticker, asof, lookback_days)
+            return SentimentSummary(
+                ticker=ticker, asof=asof, lookback_days=lookback_days,
+                mention_count=0, bullish_share=0.5, bearish_share=0.5,
+                top_themes=["DATA_UNAVAILABLE"],
+                notable_posts=[
+                    "情绪数据不可用 (akshare unreachable). "
+                    "UNAVAILABLE — DO NOT FABRICATE 情绪 / mention counts.",
+                ],
+            )
         try:
             ak = self._ak()
             t = self._normalize_ticker(ticker)
@@ -497,7 +505,15 @@ class CnEquityAdapter(MarketAdapter):
 
             if not notable and not top_themes:
                 # No useful signal — fall back to mock instead of empty data
-                return self._fallback.get_sentiment(ticker, asof, lookback_days)
+                return SentimentSummary(
+                ticker=ticker, asof=asof, lookback_days=lookback_days,
+                mention_count=0, bullish_share=0.5, bearish_share=0.5,
+                top_themes=["DATA_UNAVAILABLE"],
+                notable_posts=[
+                    "情绪数据不可用 (akshare unreachable). "
+                    "UNAVAILABLE — DO NOT FABRICATE 情绪 / mention counts.",
+                ],
+            )
 
             return SentimentSummary(
                 ticker=ticker,
@@ -511,17 +527,57 @@ class CnEquityAdapter(MarketAdapter):
             )
         except Exception as e:
             log.warning("akshare sentiment failed (%s); falling back to mock", e)
-            return self._fallback.get_sentiment(ticker, asof, lookback_days)
+            return SentimentSummary(
+                ticker=ticker, asof=asof, lookback_days=lookback_days,
+                mention_count=0, bullish_share=0.5, bearish_share=0.5,
+                top_themes=["DATA_UNAVAILABLE"],
+                notable_posts=[
+                    "情绪数据不可用 (akshare unreachable). "
+                    "UNAVAILABLE — DO NOT FABRICATE 情绪 / mention counts.",
+                ],
+            )
 
     def get_technical(self, ticker: str, asof: date) -> TechnicalSnapshot:
         if not self._available:
-            return self._fallback.get_technical(ticker, asof)
+            # last_close is REQUIRED on TechnicalSnapshot. Try multi-source
+            # for a real price; if even that fails use 0.0 + a loud note.
+            try:
+                from .cn_stock_multi_source import fetch_a_share_quote_multi
+                _q = fetch_a_share_quote_multi(ticker)
+                _last = (_q or {}).get("current") or 0.0
+            except Exception:
+                _last = 0.0
+            return TechnicalSnapshot(
+                ticker=ticker, asof=asof, last_close=float(_last),
+                rsi_14=None, macd=None, macd_signal=None,
+                sma_20=None, sma_50=None, sma_200=None, atr_14=None,
+                notes=(
+                    "技术指标不可用 (akshare unreachable). "
+                    "UNAVAILABLE — DO NOT FABRICATE technical numbers. "
+                    f"last_close={_last} 仅来自多源回退快照。"
+                ),
+            )
         try:
             import pandas as pd
 
             df = self._hist_df(ticker, asof - timedelta(days=400), asof)
             if df is None or df.empty:
-                return self._fallback.get_technical(ticker, asof)
+                try:
+                    from .cn_stock_multi_source import fetch_a_share_quote_multi
+                    _q = fetch_a_share_quote_multi(ticker)
+                    _last = (_q or {}).get("current") or 0.0
+                except Exception:
+                    _last = 0.0
+                return TechnicalSnapshot(
+                    ticker=ticker, asof=asof, last_close=float(_last),
+                    rsi_14=None, macd=None, macd_signal=None,
+                    sma_20=None, sma_50=None, sma_200=None, atr_14=None,
+                    notes=(
+                        "技术指标不可用 — akshare 返回空。 "
+                        "UNAVAILABLE — DO NOT FABRICATE technical numbers. "
+                        f"last_close={_last} 来自多源回退快照。"
+                    ),
+                )
             close = df["收盘"].astype(float)
             last = float(close.iloc[-1])
             sma20 = float(close.rolling(20).mean().iloc[-1])
@@ -558,7 +614,24 @@ class CnEquityAdapter(MarketAdapter):
             )
         except Exception as e:
             log.warning("akshare technical failed (%s); falling back to mock", e)
-            return self._fallback.get_technical(ticker, asof)
+            # last_close is REQUIRED on TechnicalSnapshot. Try multi-source
+            # for a real price; if even that fails use 0.0 + a loud note.
+            try:
+                from .cn_stock_multi_source import fetch_a_share_quote_multi
+                _q = fetch_a_share_quote_multi(ticker)
+                _last = (_q or {}).get("current") or 0.0
+            except Exception:
+                _last = 0.0
+            return TechnicalSnapshot(
+                ticker=ticker, asof=asof, last_close=float(_last),
+                rsi_14=None, macd=None, macd_signal=None,
+                sma_20=None, sma_50=None, sma_200=None, atr_14=None,
+                notes=(
+                    "技术指标不可用 (akshare unreachable). "
+                    "UNAVAILABLE — DO NOT FABRICATE technical numbers. "
+                    f"last_close={_last} 仅来自多源回退快照。"
+                ),
+            )
 
     def get_price_history(
         self, ticker: str, start: date, end: date
