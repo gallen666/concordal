@@ -112,6 +112,12 @@ export default function SharedDecisionPage() {
             real LLM
           </span>
         )}
+        {/* Report links — pushed to the right */}
+        <div className="ml-auto flex gap-2">
+          <Link href={`/d/${shareId}/report`} className="btn-secondary text-xs">
+            完整报告 / Full report
+          </Link>
+        </div>
       </div>
 
       {/* Headline decision card (compact version of /decision's DecisionView) */}

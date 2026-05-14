@@ -1200,6 +1200,209 @@ def get_shared_decision(share_id: str) -> dict:
     return _json.loads(raw)
 
 
+from fastapi.responses import PlainTextResponse  # noqa: E402
+
+
+@app.get("/v1/decisions/share/{share_id}/report.md", response_class=PlainTextResponse,
+         tags=["decisions"])
+def get_shared_decision_report_md(share_id: str) -> str:
+    """Render a shared decision as a self-contained Markdown report.
+
+    Designed for archival / sharing — pastes cleanly into Notion, Obsidian,
+    or anywhere markdown renders. The HTML cousin lives at /d/[shareId]/report
+    and is print-friendly so users can also "save as PDF" from the browser.
+    """
+    import json as _json
+    raw = persistence.get_shared_decision(share_id)
+    if not raw:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Share not found or expired")
+    payload = _json.loads(raw)
+    return _decision_to_markdown(payload, share_id)
+
+
+def _decision_to_markdown(payload: dict, share_id: str | None = None) -> str:
+    """Format the shared-decision JSON as a structured Markdown report.
+
+    Pure formatting — no LLM, no upstream calls, no chance of new
+    hallucinations. Just turns the stored trace into a human-readable doc.
+    """
+    result = payload.get("result") or {}
+    decision = result.get("decision") or {}
+    ticker = decision.get("ticker") or result.get("ticker") or "?"
+    asof = decision.get("asof") or result.get("asof") or ""
+    side = (decision.get("side") or "HOLD").upper()
+    weight = decision.get("target_weight")
+    conf = decision.get("confidence")
+    rationale = decision.get("rationale") or ""
+    risk_notes = decision.get("risk_notes") or ""
+    flags = decision.get("flags") or []
+    mode = payload.get("mode") or "unknown"
+    shared_at = payload.get("shared_at")
+
+    lines: list[str] = []
+    lines.append(f"# {ticker} — {side}  ·  {asof}")
+    lines.append("")
+    lines.append(f"> AI 多 agent 决策报告 · TradingAgents.platform")
+    lines.append("")
+
+    # Headline block
+    lines.append("## 结论 · Verdict")
+    lines.append("")
+    lines.append("| 字段 | 值 |")
+    lines.append("|------|----|")
+    lines.append(f"| 行动 / Side | **{side}** |")
+    if weight is not None:
+        lines.append(f"| 目标仓位 / Target weight | {float(weight)*100:+.2f}% |")
+    if conf is not None:
+        lines.append(f"| 置信度 / Confidence | {float(conf)*100:.0f}% |")
+    lines.append(f"| 分析时间 / As-of | {asof} |")
+    lines.append(f"| 运行模式 / Mode | `{mode}` |")
+    if shared_at:
+        from datetime import datetime as _dt
+        lines.append(f"| 生成时间 / Generated | {_dt.utcfromtimestamp(shared_at).isoformat()}Z |")
+    if share_id:
+        lines.append(f"| 永久链接 / Share | `/d/{share_id}` |")
+    lines.append("")
+
+    if flags:
+        lines.append("**Flags:** " + ", ".join(f"`{f}`" for f in flags))
+        lines.append("")
+
+    # Rationale + risk
+    if rationale:
+        lines.append("### 经理终审 · Manager rationale")
+        lines.append("")
+        lines.append(rationale.strip())
+        lines.append("")
+    if risk_notes:
+        lines.append("### 风险提示 · Risk notes")
+        lines.append("")
+        lines.append("> " + risk_notes.strip().replace("\n", "\n> "))
+        lines.append("")
+
+    # Analyst reports — one section per stage
+    reports = result.get("analyst_reports") or []
+    if reports:
+        lines.append("---")
+        lines.append("")
+        lines.append("## 分析师报告 · Analyst reports")
+        lines.append("")
+        labels = {
+            "fundamentals": "基本面 · Fundamentals",
+            "sentiment":    "情绪 · Sentiment",
+            "news":         "新闻 · News",
+            "technical":    "技术面 · Technical",
+            "macro":        "宏观 · Macro",
+        }
+        for r in reports:
+            analyst = r.get("analyst") or "?"
+            label = labels.get(analyst, analyst.title())
+            body = (r.get("body") or "").strip()
+            signals = r.get("signals") or {}
+            sources = r.get("sources") or []
+            lines.append(f"### {label}")
+            lines.append("")
+            if body:
+                lines.append(body)
+                lines.append("")
+            if signals:
+                lines.append("**Machine-readable signals:**")
+                lines.append("")
+                lines.append("```json")
+                import json as _j
+                lines.append(_j.dumps(signals, ensure_ascii=False, indent=2))
+                lines.append("```")
+                lines.append("")
+            if sources:
+                lines.append("Sources: " + ", ".join(f"`{s}`" for s in sources))
+                lines.append("")
+
+    # Researcher debate (bull / bear)
+    rdebate = result.get("researcher_debate") or {}
+    rturns = rdebate.get("turns") if isinstance(rdebate, dict) else None
+    if rturns:
+        lines.append("---")
+        lines.append("")
+        lines.append("## 多空辩论 · Bull / Bear debate")
+        lines.append("")
+        for t in rturns:
+            speaker = (t.get("speaker") or "").upper()
+            content = (t.get("content") or "").strip()
+            lines.append(f"**{speaker}** (round {t.get('round', 0)})")
+            lines.append("")
+            lines.append("> " + content.replace("\n", "\n> "))
+            lines.append("")
+        synthesis = rdebate.get("synthesis")
+        if synthesis:
+            lines.append("**Synthesis:**")
+            lines.append("")
+            lines.append(synthesis.strip())
+            lines.append("")
+
+    # Risk debate (3-way risk committee)
+    rkdebate = result.get("risk_debate") or {}
+    rkturns = rkdebate.get("turns") if isinstance(rkdebate, dict) else None
+    if rkturns:
+        lines.append("---")
+        lines.append("")
+        lines.append("## 风控委员会 · Risk committee")
+        lines.append("")
+        for t in rkturns:
+            speaker = (t.get("speaker") or "").upper()
+            content = (t.get("content") or "").strip()
+            lines.append(f"**{speaker}**: {content}")
+            lines.append("")
+
+    # Trader plan
+    trader_plan = result.get("trader_plan")
+    if trader_plan:
+        lines.append("---")
+        lines.append("")
+        lines.append("## 交易员组装方案 · Trader plan")
+        lines.append("")
+        lines.append(trader_plan.strip())
+        lines.append("")
+
+    # Manager review (if different from rationale)
+    manager_review = result.get("manager_review")
+    if manager_review and manager_review.strip() != rationale.strip():
+        lines.append("---")
+        lines.append("")
+        lines.append("## 基金经理终审 · Manager review")
+        lines.append("")
+        lines.append(manager_review.strip())
+        lines.append("")
+
+    # Cost summary
+    usage = result.get("usage") or []
+    if usage:
+        total_cost = sum(float(u.get("usd_cost") or 0) for u in usage)
+        lines.append("---")
+        lines.append("")
+        lines.append("## LLM 调用 · Token usage")
+        lines.append("")
+        lines.append(f"Total cost: **${total_cost:.4f}** across {len(usage)} calls")
+        lines.append("")
+        lines.append("| Model | Input tokens | Output tokens | Cost (USD) |")
+        lines.append("|-------|--------------|---------------|------------|")
+        for u in usage:
+            lines.append(
+                f"| `{u.get('model','?')}` "
+                f"| {u.get('input_tokens', 0)} "
+                f"| {u.get('output_tokens', 0)} "
+                f"| ${float(u.get('usd_cost') or 0):.4f} |"
+            )
+        lines.append("")
+
+    # Footer
+    lines.append("---")
+    lines.append("")
+    lines.append("⚠ **投资有风险，入市需谨慎。本报告为 AI 决策支持，不构成投资建议。**")
+    lines.append("")
+    lines.append("Generated by TradingAgents · trading-agents-platform.vercel.app")
+    return "\n".join(lines)
+
+
 @app.post("/v1/backtests", response_model=JobResponse)
 def create_backtest(
     req: BacktestRequest,
