@@ -116,14 +116,20 @@ class CnEquityAdapter(MarketAdapter):
             )
         return s
 
-    def _hist_df(self, ticker: str, start: date, end: date):
+    def _hist_df(self, ticker: str, start: date, end: date, adjust: str = ""):
+        """Fetch OHLCV history. `adjust=''` = raw prices (matches Eastmoney
+        display, what users see in their broker app). Pass `'qfq'` for
+        backtests where dividend/split continuity matters.
+
+        IMPORTANT: akshare's 成交量 column is in 手 (lots of 100 shares).
+        Callers must multiply by 100 to get share count. See get_price_history."""
         ak = self._ak()
         return ak.stock_zh_a_hist(
             symbol=self._normalize_ticker(ticker),
             period="daily",
             start_date=_ymd(start),
             end_date=_ymd(end),
-            adjust="qfq",  # forward-adjusted prices (post-split, post-dividend)
+            adjust=adjust,
         )
 
     # ------------------------------------------------------------------
@@ -135,10 +141,14 @@ class CnEquityAdapter(MarketAdapter):
             return self._fallback.get_quote(ticker, asof)
         try:
             asof_d = asof.date() if isinstance(asof, datetime) else asof
-            df = self._hist_df(ticker, asof_d - timedelta(days=10), asof_d)
+            # Raw (unadjusted) prices for "current quote" — matches what
+            # the user sees on their broker app and on Eastmoney by default.
+            df = self._hist_df(ticker, asof_d - timedelta(days=10), asof_d, adjust="")
             if df is None or df.empty:
                 raise AdapterError(f"No A-share price data for {ticker} on {asof_d}")
             row = df.iloc[-1]
+            # 成交量 is in 手 (lots of 100 shares) — multiply for raw share count.
+            volume_shares = float(row["成交量"]) * 100
             return Quote(
                 ticker=ticker,
                 asof=asof,
@@ -146,13 +156,18 @@ class CnEquityAdapter(MarketAdapter):
                 high=float(row["最高"]),
                 low=float(row["最低"]),
                 close=float(row["收盘"]),
-                volume=float(row["成交量"]),
+                volume=volume_shares,
             )
         except AdapterError:
             raise
         except Exception as e:
-            log.warning("akshare quote failed (%s); falling back to mock", e)
-            return self._fallback.get_quote(ticker, asof)
+            # DO NOT silently fall through to mock for A-share quotes.
+            # Mock data being presented as real is the worst failure mode.
+            log.warning("akshare quote failed for %s: %s — refusing mock fallback", ticker, e)
+            raise AdapterError(
+                f"A-share quote upstream failed for {ticker}: {e}. "
+                "(akshare/EastMoney may be geo-blocked from this server's region.)"
+            )
 
     def get_fundamentals(self, ticker: str, asof: date) -> Fundamentals:
         # ---- backtest-safety guard (runs BEFORE the live/mock branch) ---
@@ -500,16 +515,27 @@ class CnEquityAdapter(MarketAdapter):
         self, ticker: str, start: date, end: date
     ) -> list[Quote]:
         if not self._available:
-            return self._fallback.get_price_history(ticker, start, end)
+            return []
         try:
-            df = self._hist_df(ticker, start, end)
+            # Raw prices for what the user sees on their broker. If the
+            # caller is doing backtest analytics they should pass the data
+            # through the qfq path separately — for the quote endpoint and
+            # MarketHeader we want display continuity with Eastmoney/同花顺.
+            df = self._hist_df(ticker, start, end, adjust="")
             if df is None or df.empty:
-                return self._fallback.get_price_history(ticker, start, end)
+                # Empty = the ticker has no trading in that window (newly
+                # listed, suspended, holiday). Return empty rather than
+                # making up mock data.
+                log.info("akshare hist returned empty for %s [%s..%s]", ticker, start, end)
+                return []
             quotes: list[Quote] = []
             for _, r in df.iterrows():
                 d_str = str(r["日期"])
+                # akshare dates come as "2024-05-13" already
                 d = datetime.fromisoformat(d_str).date() if "T" not in d_str else datetime.fromisoformat(d_str).date()
                 ts = datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
+                # 成交量 in 手 → × 100 to get share count
+                vol_shares = float(r["成交量"]) * 100
                 quotes.append(
                     Quote(
                         ticker=ticker,
@@ -518,13 +544,15 @@ class CnEquityAdapter(MarketAdapter):
                         high=float(r["最高"]),
                         low=float(r["最低"]),
                         close=float(r["收盘"]),
-                        volume=float(r["成交量"]),
+                        volume=vol_shares,
                     )
                 )
             return quotes
         except Exception as e:
-            log.warning("akshare price history failed (%s)", e)
-            return self._fallback.get_price_history(ticker, start, end)
+            # Don't fake data on failure — surface the empty list and let
+            # the caller / API endpoint return source_status='unavailable'.
+            log.warning("akshare price history failed for %s: %s", ticker, e)
+            return []
 
     # ---- macro context (OpenBB / FRED, region=CN) ------------------------
 

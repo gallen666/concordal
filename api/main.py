@@ -1776,25 +1776,37 @@ def get_quote(ticker: str, days: int = 30) -> dict:
     change = current - prev
     change_pct = (change / prev * 100.0) if prev else 0.0
 
+    # For A-share quotes, expose 成交量 in both shares (the standard) and
+    # 手 (the way Chinese brokers display it), plus 成交额 (turnover ¥)
+    # which retail Chinese investors check before price.
+    last_row = rows[-1] if rows else None
+
+    def serialise(q):
+        out = {
+            "date": q.asof.date().isoformat() if hasattr(q.asof, "date") else str(q.asof)[:10],
+            "open":  q.open,
+            "high":  q.high,
+            "low":   q.low,
+            "close": q.close,
+            "volume": q.volume,        # shares
+        }
+        if effective_market == "a_share":
+            out["volume_lots"] = q.volume / 100.0
+            out["turnover_cny"] = q.volume * q.close  # ≈ vwap×shares; close-anchored
+        return out
+
     return {
         "ticker": ticker,
         "market": effective_market,
         "currency": _currency_for(effective_market),
-        "ohlcv": [
-            {
-                "date": q.asof.date().isoformat() if hasattr(q.asof, "date") else str(q.asof)[:10],
-                "open":  q.open,
-                "high":  q.high,
-                "low":   q.low,
-                "close": q.close,
-                "volume": q.volume,
-            }
-            for q in rows
-        ],
+        "ohlcv": [serialise(q) for q in rows],
         "current": current,
         "prev": prev,
         "change": change,
         "changePct": change_pct,
+        "today_volume_shares":  last_row.volume if last_row else None,
+        "today_volume_lots":    (last_row.volume / 100.0) if (last_row and effective_market == "a_share") else None,
+        "today_turnover_cny":   (last_row.volume * last_row.close) if (last_row and effective_market == "a_share") else None,
         "asof": datetime.now(tz=timezone.utc).isoformat(),
         "source_status": "ok",
     }

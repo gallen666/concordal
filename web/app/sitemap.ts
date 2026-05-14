@@ -21,6 +21,8 @@ const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://trading-agents-platfor
 const TICKERS = [
   "AAPL", "NVDA", "TSLA", "MSFT", "GOOGL", "AMZN", "META",
   "600519", "000001", "300750", "002594",
+  "300059", "601318", "600036", "688981", "301666",
+  "002475", "600276", "300015",
   "BTC", "ETH", "SOL",
 ];
 

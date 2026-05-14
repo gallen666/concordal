@@ -44,11 +44,19 @@ const KNOWN_TICKERS: Record<string, { name: string; market: string; sector: stri
   GOOGL: { name: "Alphabet Inc.", market: "us_equity", sector: "Technology" },
   AMZN: { name: "Amazon.com", market: "us_equity", sector: "Consumer / Cloud" },
   META: { name: "Meta Platforms", market: "us_equity", sector: "Technology" },
-  // A-share
+  // A-share (mainboard, 创业板, STAR)
   "600519": { name: "贵州茅台", market: "a_share", sector: "白酒" },
   "000001": { name: "平安银行", market: "a_share", sector: "Banking" },
   "300750": { name: "宁德时代 (CATL)", market: "a_share", sector: "电池 / Battery" },
   "002594": { name: "比亚迪 (BYD)", market: "a_share", sector: "Auto / EV" },
+  "300059": { name: "东方财富", market: "a_share", sector: "金融 IT" },
+  "601318": { name: "中国平安", market: "a_share", sector: "保险" },
+  "600036": { name: "招商银行", market: "a_share", sector: "Banking" },
+  "688981": { name: "中芯国际", market: "a_share", sector: "半导体 / Semiconductors" },
+  "301666": { name: "江苏华辰", market: "a_share", sector: "变压器 / Transformers" },
+  "002475": { name: "立讯精密", market: "a_share", sector: "Apple supply chain" },
+  "600276": { name: "恒瑞医药", market: "a_share", sector: "医药 / Pharma" },
+  "300015": { name: "爱尔眼科", market: "a_share", sector: "医疗服务" },
   // Crypto
   BTC: { name: "Bitcoin", market: "crypto", sector: "Crypto" },
   ETH: { name: "Ethereum", market: "crypto", sector: "Crypto" },
