@@ -481,6 +481,9 @@ class LLMRouter:
         self._deepseek: OpenAICompatProvider | None = None
         self._qwen: OpenAICompatProvider | None = None
         self._glm: OpenAICompatProvider | None = None
+        # FinGPT — finance-tuned LLM via OpenAI-compatible HF endpoint.
+        # Only initialised when FINGPT_API_KEY + FINGPT_API_BASE are set.
+        self._fingpt: OpenAICompatProvider | None = None
 
         oa = os.getenv("OPENAI_API_KEY")
         if oa:
@@ -543,6 +546,26 @@ class LLMRouter:
                 )
             except Exception as e:
                 log.warning("GLM init failed: %s", e)
+
+        # FinGPT — finance-fine-tuned LLM. Two activation paths:
+        #   1. HuggingFace Inference Endpoint that exposes an OpenAI-compatible
+        #      route (works with `text-generation-inference` deployments).
+        #   2. A self-hosted vLLM/llama.cpp server with the same shape.
+        # Either way: set FINGPT_API_KEY + FINGPT_API_BASE on Render. When set
+        # and `TA_USE_FINGPT=true`, the router prefers it for analyst-stage
+        # calls where finance-domain priors help (fundamentals, news).
+        fg_key = os.getenv("FINGPT_API_KEY")
+        fg_base = os.getenv("FINGPT_API_BASE")
+        if fg_key and fg_base:
+            try:
+                self._fingpt = OpenAICompatProvider(
+                    name="fingpt",
+                    api_key=fg_key,
+                    base_url=fg_base,
+                )
+                log.info("FinGPT provider enabled (base=%s)", fg_base)
+            except Exception as e:
+                log.warning("FinGPT init failed: %s", e)
 
         # `TA_MODE=live` (default) → use whatever LLM provider keys are set.
         # `TA_MODE=mock` → force mock provider (used by tests / offline demos).

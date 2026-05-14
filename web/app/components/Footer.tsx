@@ -20,6 +20,11 @@ export default function Footer() {
     ? "投资有风险，入市需谨慎。本服务为决策支持工具，不构成投资建议。"
     : "Investing carries risk. This service is a decision-support tool, not investment advice.";
 
+  // ICP 备案号 — show only when set via env. Empty string by default so
+  // we don't fake it. Reads from NEXT_PUBLIC_ICP_BEIAN (set on Vercel
+  // once the operator has the actual beian number from MIIT).
+  const icpBeian = (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_ICP_BEIAN) || "";
+
   const cols: { heading: string; links: { href: string; label: string }[] }[] = [
     {
       heading: locale === "zh" ? "产品" : "Product",
@@ -102,12 +107,17 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* Risk line — Chinese regulatory norm, always visible */}
-        <div className="border-t border-border-subtle pt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <p className="text-2xs font-mono uppercase tracking-wider text-bear-ink/80 leading-relaxed">
-            ⚠ {riskLine}
+        {/* Risk banner — full-width, prominent. Regulatory norm in CN. */}
+        <div className="border border-bear/40 bg-bear-soft/40 rounded p-3 mb-5 flex items-start gap-3">
+          <span className="text-bear-ink font-mono text-sm mt-0.5">⚠</span>
+          <p className="text-sm text-bear-ink/90 leading-relaxed">
+            {riskLine}
           </p>
-          <div className="flex items-center gap-4 text-2xs font-mono uppercase tracking-wider text-ink-tertiary shrink-0">
+        </div>
+
+        {/* Compact version stamp + ICP */}
+        <div className="border-t border-border-subtle pt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3 text-2xs font-mono uppercase tracking-wider text-ink-tertiary">
             <span>v0.1.0</span>
             <span>{locale === "zh" ? "封闭测试" : "Closed beta"}</span>
             <a
@@ -118,7 +128,19 @@ export default function Footer() {
               <Github className="w-3 h-3" />
               MIT
             </a>
+            {icpBeian && (
+              <a
+                href="https://beian.miit.gov.cn/"
+                target="_blank" rel="noopener noreferrer"
+                className="hover:text-ink-primary"
+              >
+                {icpBeian}
+              </a>
+            )}
           </div>
+          <span className="text-2xs font-mono text-ink-tertiary tracking-wider uppercase">
+            © 2026 TradingAgents
+          </span>
         </div>
       </div>
     </footer>

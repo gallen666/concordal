@@ -31,6 +31,10 @@ api = [
     "pydantic[email]>=2.6",
     "sentry-sdk>=2.0",
 ]
+# Optional observability / queue / RL — env-gated, no import unless enabled.
+observability = ["langfuse>=2.0"]
+queue = ["arq>=0.26", "redis>=5.0"]
+rl = ["stable-baselines3>=2.3", "gymnasium>=0.29"]
 test = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 
 [project.scripts]
