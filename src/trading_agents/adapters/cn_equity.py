@@ -138,36 +138,53 @@ class CnEquityAdapter(MarketAdapter):
 
     def get_quote(self, ticker: str, asof: datetime) -> Quote:
         if not self._available:
-            return self._fallback.get_quote(ticker, asof)
+            return self._mc_quote_or_raise(ticker, asof)
+        asof_d = asof.date() if isinstance(asof, datetime) else asof
         try:
-            asof_d = asof.date() if isinstance(asof, datetime) else asof
-            # Raw (unadjusted) prices for "current quote" — matches what
-            # the user sees on their broker app and on Eastmoney by default.
             df = self._hist_df(ticker, asof_d - timedelta(days=10), asof_d, adjust="")
-            if df is None or df.empty:
-                raise AdapterError(f"No A-share price data for {ticker} on {asof_d}")
-            row = df.iloc[-1]
-            # 成交量 is in 手 (lots of 100 shares) — multiply for raw share count.
-            volume_shares = float(row["成交量"]) * 100
-            return Quote(
-                ticker=ticker,
-                asof=asof,
-                open=float(row["开盘"]),
-                high=float(row["最高"]),
-                low=float(row["最低"]),
-                close=float(row["收盘"]),
-                volume=volume_shares,
-            )
-        except AdapterError:
-            raise
+            if df is not None and not df.empty:
+                row = df.iloc[-1]
+                volume_shares = float(row["成交量"]) * 100  # 手 → 股
+                return Quote(
+                    ticker=ticker, asof=asof,
+                    open=float(row["开盘"]),
+                    high=float(row["最高"]),
+                    low=float(row["最低"]),
+                    close=float(row["收盘"]),
+                    volume=volume_shares,
+                )
+            log.info("akshare returned empty hist for %s — trying multi-source", ticker)
         except Exception as e:
-            # DO NOT silently fall through to mock for A-share quotes.
-            # Mock data being presented as real is the worst failure mode.
-            log.warning("akshare quote failed for %s: %s — refusing mock fallback", ticker, e)
+            log.warning("akshare quote failed for %s: %s — falling through to Tencent/Sina/Xueqiu", ticker, e)
+        # Multi-source fallback — Tencent first (globally reachable)
+        return self._mc_quote_or_raise(ticker, asof)
+
+    def _mc_quote_or_raise(self, ticker: str, asof: datetime) -> Quote:
+        """Last-resort: pull from Tencent/Sina/Xueqiu. Returns a Quote with
+        whatever fields the upstream provided. Only raises AdapterError if
+        ALL multi-sources fail too. NEVER falls through to MockAdapter for
+        live quotes — that would feed fake data into LLM analysts."""
+        try:
+            from .cn_stock_multi_source import fetch_a_share_quote_multi
+        except Exception as e:
+            raise AdapterError(f"multi-source module not importable: {e}")
+        q = fetch_a_share_quote_multi(ticker)
+        if not q or q.get("current") is None:
             raise AdapterError(
-                f"A-share quote upstream failed for {ticker}: {e}. "
-                "(akshare/EastMoney may be geo-blocked from this server's region.)"
+                f"A-share quote upstream failed for {ticker}: every source unreachable. "
+                "(akshare/Tencent/Sina/Xueqiu all returned no data — check server geo or akshare install.)"
             )
+        current = q["current"]
+        open_ = q.get("open") or current
+        # Tencent doesn't reliably give high/low (positions vary); Sina does.
+        high = q.get("high") or max(current, open_)
+        low  = q.get("low")  or min(current, open_)
+        vol_lots = q.get("volume_lots") or 0
+        return Quote(
+            ticker=ticker, asof=asof,
+            open=open_, high=high, low=low, close=current,
+            volume=vol_lots * 100,
+        )
 
     def get_fundamentals(self, ticker: str, asof: date) -> Fundamentals:
         # ---- backtest-safety guard (runs BEFORE the live/mock branch) ---
@@ -514,45 +531,52 @@ class CnEquityAdapter(MarketAdapter):
     def get_price_history(
         self, ticker: str, start: date, end: date
     ) -> list[Quote]:
-        if not self._available:
-            return []
+        # ---- Primary: akshare (full N-day OHLCV) -----------------------
+        if self._available:
+            try:
+                df = self._hist_df(ticker, start, end, adjust="")
+                if df is not None and not df.empty:
+                    quotes: list[Quote] = []
+                    for _, r in df.iterrows():
+                        d_str = str(r["日期"])
+                        d = datetime.fromisoformat(d_str).date() if "T" not in d_str else datetime.fromisoformat(d_str).date()
+                        ts = datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
+                        vol_shares = float(r["成交量"]) * 100  # 手 → 股
+                        quotes.append(Quote(
+                            ticker=ticker, asof=ts,
+                            open=float(r["开盘"]),
+                            high=float(r["最高"]),
+                            low=float(r["最低"]),
+                            close=float(r["收盘"]),
+                            volume=vol_shares,
+                        ))
+                    return quotes
+                log.info("akshare hist empty for %s [%s..%s] — trying multi-source", ticker, start, end)
+            except Exception as e:
+                log.warning("akshare price history failed for %s: %s — trying multi-source", ticker, e)
+
+        # ---- Fallback: Tencent/Sina/Xueqiu give CURRENT snapshot only --
+        # Better than empty: one real datapoint at `end` so technical
+        # analysts have something concrete to anchor on.
         try:
-            # Raw prices for what the user sees on their broker. If the
-            # caller is doing backtest analytics they should pass the data
-            # through the qfq path separately — for the quote endpoint and
-            # MarketHeader we want display continuity with Eastmoney/同花顺.
-            df = self._hist_df(ticker, start, end, adjust="")
-            if df is None or df.empty:
-                # Empty = the ticker has no trading in that window (newly
-                # listed, suspended, holiday). Return empty rather than
-                # making up mock data.
-                log.info("akshare hist returned empty for %s [%s..%s]", ticker, start, end)
-                return []
-            quotes: list[Quote] = []
-            for _, r in df.iterrows():
-                d_str = str(r["日期"])
-                # akshare dates come as "2024-05-13" already
-                d = datetime.fromisoformat(d_str).date() if "T" not in d_str else datetime.fromisoformat(d_str).date()
-                ts = datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
-                # 成交量 in 手 → × 100 to get share count
-                vol_shares = float(r["成交量"]) * 100
-                quotes.append(
-                    Quote(
-                        ticker=ticker,
-                        asof=ts,
-                        open=float(r["开盘"]),
-                        high=float(r["最高"]),
-                        low=float(r["最低"]),
-                        close=float(r["收盘"]),
-                        volume=vol_shares,
-                    )
-                )
-            return quotes
+            from .cn_stock_multi_source import fetch_a_share_quote_multi
+            q = fetch_a_share_quote_multi(ticker)
         except Exception as e:
-            # Don't fake data on failure — surface the empty list and let
-            # the caller / API endpoint return source_status='unavailable'.
-            log.warning("akshare price history failed for %s: %s", ticker, e)
+            log.warning("multi-source fallback failed for %s: %s", ticker, e)
+            q = None
+        if not q or q.get("current") is None:
             return []
+        ts = datetime.combine(end, datetime.min.time(), tzinfo=timezone.utc)
+        current = q["current"]
+        open_ = q.get("open") or current
+        high = q.get("high") or max(current, open_)
+        low  = q.get("low")  or min(current, open_)
+        vol_lots = q.get("volume_lots") or 0
+        return [Quote(
+            ticker=ticker, asof=ts,
+            open=open_, high=high, low=low, close=current,
+            volume=vol_lots * 100,
+        )]
 
     # ---- macro context (OpenBB / FRED, region=CN) ------------------------
 
