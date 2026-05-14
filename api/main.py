@@ -1707,6 +1707,96 @@ def cn_lhb(date_str: str | None = None) -> dict:
         return {"status": "unavailable", "message": str(e), "rows": []}
 
 
+@app.get("/v1/datasource/test", tags=["markets"])
+def datasource_test(ticker: str = "600519") -> dict:
+    """Probe every data source independently — for operators auditing
+    which upstreams are reachable from this server's IP, and verifying
+    that what we parse from each source matches what users expect.
+
+    Each entry returns {source, ok, name, current, prev, error, latency_ms}.
+    Use `?ticker=600519` (贵州茅台) as a sanity benchmark — every Chinese
+    user knows what its current price should be.
+    """
+    out = []
+
+    # 1. akshare (full data quality, may be geo-blocked)
+    t0 = time.time()
+    try:
+        import akshare as ak
+        df = ak.stock_individual_info_em(symbol=ticker)
+        info: dict[str, Any] = {}
+        if df is not None and not df.empty:
+            cols = list(df.columns)
+            for _, r in df.iterrows():
+                info[str(r[cols[0]]).strip()] = r[cols[1]] if len(cols) > 1 else None
+        name = str(info.get("股票简称") or "").strip() or None
+        # Pull current quote
+        try:
+            from datetime import date as _d, timedelta as _td
+            today = _d.today()
+            hist = ak.stock_zh_a_hist(symbol=ticker, period="daily",
+                                       start_date=(today - _td(days=7)).strftime("%Y%m%d"),
+                                       end_date=today.strftime("%Y%m%d"), adjust="")
+            current = float(hist.iloc[-1]["收盘"]) if hist is not None and not hist.empty else None
+        except Exception:
+            current = None
+        out.append({
+            "source": "akshare",
+            "ok": bool(name),
+            "name": name,
+            "current": current,
+            "latency_ms": int((time.time() - t0) * 1000),
+            "error": None if name else "no name parsed",
+        })
+    except Exception as e:
+        out.append({"source": "akshare", "ok": False, "name": None, "current": None,
+                    "latency_ms": int((time.time() - t0) * 1000), "error": str(e)[:200]})
+
+    # 2-4. Multi-source three providers, run individually
+    try:
+        from trading_agents.adapters.cn_stock_multi_source import (
+            fetch_a_share_quote_tencent,
+            fetch_a_share_quote_sina,
+            fetch_a_share_quote_xueqiu,
+        )
+        for fn, label in [
+            (fetch_a_share_quote_tencent, "tencent"),
+            (fetch_a_share_quote_sina,    "sina"),
+            (fetch_a_share_quote_xueqiu,  "xueqiu"),
+        ]:
+            t0 = time.time()
+            try:
+                d = fn(ticker)
+                if d:
+                    out.append({
+                        "source": label, "ok": True,
+                        "name": d.get("name"), "current": d.get("current"),
+                        "latency_ms": int((time.time() - t0) * 1000),
+                        "error": None,
+                    })
+                else:
+                    out.append({"source": label, "ok": False, "name": None, "current": None,
+                                "latency_ms": int((time.time() - t0) * 1000),
+                                "error": "returned None"})
+            except Exception as e:
+                out.append({"source": label, "ok": False, "name": None, "current": None,
+                            "latency_ms": int((time.time() - t0) * 1000), "error": str(e)[:200]})
+    except ImportError as e:
+        out.append({"source": "multi", "ok": False, "name": None, "current": None,
+                    "latency_ms": 0, "error": f"import failed: {e}"})
+
+    return {
+        "ticker": ticker,
+        "sources": out,
+        "summary": {
+            "n_ok":     sum(1 for s in out if s.get("ok")),
+            "n_failed": sum(1 for s in out if not s.get("ok")),
+            "names":    list({s["name"] for s in out if s.get("name")}),
+        },
+        "tested_at": datetime.now(tz=timezone.utc).isoformat(),
+    }
+
+
 @app.get("/v1/ticker/info", tags=["markets"])
 def get_ticker_info(ticker: str) -> dict:
     """Authoritative ticker metadata — name, sector, market cap, listing date.
@@ -1811,11 +1901,15 @@ def _fetch_a_share_meta(ticker: str) -> dict | None:
         q = None
     if not q or not q.get("name"):
         return None
-    mc_yi = q.get("market_cap_yi")
+    # We deliberately don't pass through market_cap / PE / PB from the
+    # multi-source path — those positions in Tencent's response aren't
+    # 100% stable across stocks, and presenting an unverified number as
+    # 总市值 is exactly the kind of "data dishonesty" we promised to avoid.
+    # Sector/industry similarly require akshare; multi-source doesn't have them.
     return {
         "name": q["name"],
         "sector": None, "industry": None,
-        "market_cap": mc_yi * 1e8 if mc_yi else None,  # 亿 → 元
+        "market_cap": None,  # only akshare gives this reliably; multi-source omits
         "currency": "CNY",
         "listing_date": None,
         "source": q.get("source") or "multi",

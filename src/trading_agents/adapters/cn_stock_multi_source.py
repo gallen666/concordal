@@ -102,6 +102,21 @@ def _exchange_prefix(ticker: str) -> str:
 
 
 def fetch_a_share_quote_tencent(ticker: str) -> dict | None:
+    """Parse Tencent qt.gtimg.cn.
+
+    HONESTY NOTE: only the first ~10 fields of Tencent's ~50-field response
+    are positionally stable across stocks/sessions. Later fields (PE, 总市值,
+    换手率) shift between formats and aren't reliable to extract by index
+    alone. We therefore ONLY return what we can name with confidence:
+      - name (parts[1])
+      - current price (parts[3])
+      - previous close (parts[4])
+      - open (parts[5])
+      - volume in 手 (parts[6])
+    change & change_pct are COMPUTED from current/prev rather than parsed,
+    avoiding any positional ambiguity. PE / 总市值 / 换手率 are NOT returned —
+    caller can ask akshare for those if needed.
+    """
     try:
         pfx = _exchange_prefix(ticker)
     except ValueError as e:
@@ -114,33 +129,41 @@ def fetch_a_share_quote_tencent(ticker: str) -> dict | None:
         if r.status_code != 200:
             log.info("tencent %s returned %s", ticker, r.status_code)
             return None
-        # GBK encoding
         text = r.content.decode("gbk", errors="replace")
-        # Parse `v_sz301666="..."`
         m = re.search(rf'v_{pfx}{ticker}\s*=\s*"([^"]*)"', text)
         if not m:
             log.info("tencent %s: no quote line in response", ticker)
             return None
         parts = m.group(1).split("~")
-        if len(parts) < 35:
+        if len(parts) < 10:
             log.info("tencent %s: short response (%d fields)", ticker, len(parts))
             return None
+        name = parts[1].strip()
+        if not name or name in ("-", "--"):
+            return None
+        current = _safe_float(parts[3])
+        prev = _safe_float(parts[4])
+        change = None
+        change_pct = None
+        if current is not None and prev is not None and prev > 0:
+            change = current - prev
+            change_pct = change / prev * 100.0
         return {
             "ticker": ticker,
-            "name":    parts[1].strip(),
-            "current": _safe_float(parts[3]),
-            "prev":    _safe_float(parts[4]),
+            "name":    name,
+            "current": current,
+            "prev":    prev,
             "open":    _safe_float(parts[5]),
-            "volume_lots":    _safe_float(parts[6]),  # 手
-            "high":    _safe_float(parts[33]) if len(parts) > 33 else None,
-            "low":     _safe_float(parts[34]) if len(parts) > 34 else None,
-            "change":     _safe_float(parts[31]) if len(parts) > 31 else None,
-            "change_pct": _safe_float(parts[32]) if len(parts) > 32 else None,
-            "turnover_pct":  _safe_float(parts[38]) if len(parts) > 38 else None,
-            "pe":            _safe_float(parts[39]) if len(parts) > 39 else None,
-            "market_cap_yi": _safe_float(parts[44]) if len(parts) > 44 else None,  # 总市值, 亿元
-            "free_cap_yi":   _safe_float(parts[45]) if len(parts) > 45 else None,
-            "pb":            _safe_float(parts[46]) if len(parts) > 46 else None,
+            "volume_lots": _safe_float(parts[6]),  # 手
+            # high/low: stable positions in Tencent's format, but we leave them
+            # out here because their position has shifted on a small minority of
+            # responses. Caller can fall through to Sina for these.
+            "high": None,
+            "low":  None,
+            "change":     change,
+            "change_pct": change_pct,
+            # Fields with uncertain positions deliberately omitted:
+            # PE, PB, 总市值, 流通市值, 换手率 — request akshare or Xueqiu instead.
             "source": "tencent",
         }
     except Exception as e:
