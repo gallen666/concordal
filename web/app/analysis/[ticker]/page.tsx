@@ -53,7 +53,7 @@ const KNOWN_TICKERS: Record<string, { name: string; market: string; sector: stri
   "601318": { name: "中国平安", market: "a_share", sector: "保险" },
   "600036": { name: "招商银行", market: "a_share", sector: "Banking" },
   "688981": { name: "中芯国际", market: "a_share", sector: "半导体 / Semiconductors" },
-  "301666": { name: "江苏华辰", market: "a_share", sector: "变压器 / Transformers" },
+  "301666": { name: "大普微", market: "a_share", sector: "企业级 SSD / Storage chips" },
   "002475": { name: "立讯精密", market: "a_share", sector: "Apple supply chain" },
   "600276": { name: "恒瑞医药", market: "a_share", sector: "医药 / Pharma" },
   "300015": { name: "爱尔眼科", market: "a_share", sector: "医疗服务" },
