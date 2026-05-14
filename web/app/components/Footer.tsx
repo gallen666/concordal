@@ -31,8 +31,9 @@ export default function Footer() {
       links: [
         { href: "/decision?ticker=AAPL", label: locale === "zh" ? "运行一次决策" : "Run a decision" },
         { href: "/track-record",         label: locale === "zh" ? "回测战绩" : "Track record" },
+        { href: "/me/paper-trades",      label: locale === "zh" ? "模拟盘 (Alpaca)" : "Paper trades" },
+        { href: "/cn-markets",           label: locale === "zh" ? "北向资金 / 龙虎榜" : "A-share flows" },
         { href: "/pricing",              label: locale === "zh" ? "定价" : "Pricing" },
-        { href: "/developers",           label: locale === "zh" ? "开发者 API" : "Developer API" },
       ],
     },
     {

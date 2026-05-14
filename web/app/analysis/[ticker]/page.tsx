@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Sparkles, TrendingUp } from "lucide-react";
+import { MarketHeader } from "../../components/MarketHeader";
 
 /**
  * /analysis/[ticker] — server-rendered SEO landing page per ticker.
@@ -116,6 +117,12 @@ export default async function TickerLandingPage({ params }: Props) {
           </p>
         )}
       </header>
+
+      {/* Live quote + 60-day sparkline. Loads client-side; doesn't block
+          the page render so SEO crawlers still see the prose copy. */}
+      <div className="mb-8">
+        <MarketHeader ticker={t} />
+      </div>
 
       <section className="surface-elev p-6 mb-6">
         <h2 className="text-lg font-semibold mb-3">

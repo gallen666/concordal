@@ -1575,6 +1575,72 @@ def alpaca_submit_paper_order(req: AlpacaPaperOrderRequest, user: CurrentUser = 
 
 
 # ---------------------------------------------------------------------------
+# Lean / QuantConnect Insight export — pure JSON, no auth required.
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/lean/insight/{job_id}", tags=["execution"])
+def lean_insight_export(job_id: str) -> dict:
+    """Export a finished decision as a Lean Algorithm Framework Insight.
+
+    QC users can take this JSON and paste it into their own QC algorithm
+    via `Insight.From(json)`. Read-only — never executes anything.
+    """
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job.get("status") != "completed":
+        raise HTTPException(409, f"Job not finished (status={job.get('status')})")
+    result = job.get("result") or {}
+    decision = result.get("decision") if isinstance(result, dict) else None
+    if not decision:
+        raise HTTPException(404, "No decision payload on job")
+    try:
+        from trading_agents.execution.lean_bridge import decision_to_insight
+        insight = decision_to_insight(decision)
+        return insight.to_lean_json()
+    except Exception as e:
+        raise HTTPException(500, f"Lean export failed: {e}")
+
+
+@app.post("/v1/alpaca/paper/orders/from-decision/{job_id}", tags=["execution"])
+def alpaca_order_from_decision(job_id: str, user: CurrentUser = Depends(get_current_user)) -> dict:
+    """Convert a finished decision into a paper order on Alpaca.
+
+    Auth-gated. Reads the cached decision, asks Alpaca to size it against
+    the user's paper account (3% cap), submits a market order. Skips
+    HOLD decisions entirely.
+    """
+    if user.id == "anonymous":
+        raise HTTPException(401, "Sign in to submit paper orders")
+    job = _jobs.get(job_id)
+    if not job or job.get("status") != "completed":
+        raise HTTPException(404, "Decision not found / not finished")
+    result = job.get("result") or {}
+    decision = result.get("decision") if isinstance(result, dict) else None
+    if not decision:
+        raise HTTPException(404, "No decision payload")
+    try:
+        from trading_agents.execution import (
+            alpaca_paper_configured,
+            alpaca_get_paper_account,
+            alpaca_decision_to_paper_order,
+        )
+    except ImportError:
+        raise HTTPException(503, "alpaca module not available")
+    if not alpaca_paper_configured():
+        raise HTTPException(503, "Alpaca paper not configured server-side")
+    try:
+        acct = alpaca_get_paper_account()
+        order = alpaca_decision_to_paper_order(
+            decision=decision,
+            portfolio_value_usd=acct["portfolio_value"],
+        )
+        return {"order": order.__dict__ if order else None, "account": acct}
+    except Exception as e:
+        raise HTTPException(502, f"Alpaca order error: {e}")
+
+
+# ---------------------------------------------------------------------------
 # 北向资金 (Mainland-HK Stock Connect flows) — Eastmoney parity.
 # ---------------------------------------------------------------------------
 
