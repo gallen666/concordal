@@ -1707,6 +1707,145 @@ def cn_lhb(date_str: str | None = None) -> dict:
         return {"status": "unavailable", "message": str(e), "rows": []}
 
 
+@app.get("/v1/ticker/info", tags=["markets"])
+def get_ticker_info(ticker: str) -> dict:
+    """Authoritative ticker metadata — name, sector, market cap, listing date.
+
+    NEVER guesses from training-set memory. Always fetches from the upstream
+    provider (akshare for A-share, yfinance for US, CCXT for crypto), caches
+    for 24h in SQLite. If upstream is down AND no cache exists, returns
+    `source='unavailable'` so the frontend can show 'data unavailable' rather
+    than a made-up name.
+    """
+    t = (ticker or "").strip().upper()
+    if not t:
+        raise HTTPException(400, "ticker required")
+    # Fresh-cache path
+    cached = persistence.get_ticker_meta(t)
+    if cached:
+        return cached
+
+    market = _auto_route_market(t, "us_equity")
+
+    # Per-market fetch
+    out: dict | None = None
+    if market == "a_share":
+        out = _fetch_a_share_meta(t)
+    elif market == "us_equity":
+        out = _fetch_us_equity_meta(t)
+    elif market == "crypto":
+        out = _fetch_crypto_meta(t)
+
+    if out:
+        persistence.save_ticker_meta(
+            ticker=t, market=market,
+            name=out.get("name"),
+            sector=out.get("sector"),
+            industry=out.get("industry"),
+            market_cap=out.get("market_cap"),
+            currency=out.get("currency"),
+            listing_date=out.get("listing_date"),
+            source=out.get("source") or "unknown",
+        )
+        return persistence.get_ticker_meta(t) or out
+
+    # Upstream failed — try stale cache before declaring unavailable
+    stale = persistence.get_ticker_meta_stale_ok(t)
+    if stale:
+        stale["source"] = (stale.get("source") or "") + ":stale"
+        return stale
+
+    return {
+        "ticker": t, "market": market, "name": None,
+        "sector": None, "industry": None,
+        "market_cap": None, "currency": _currency_for(market),
+        "listing_date": None, "source": "unavailable",
+        "fetched_at": time.time(),
+    }
+
+
+def _fetch_a_share_meta(ticker: str) -> dict | None:
+    """akshare.stock_individual_info_em returns: 股票简称, 股票代码, 行业,
+    上市时间, 总市值, 流通市值, 总股本, 流通股."""
+    try:
+        import akshare as ak
+        df = ak.stock_individual_info_em(symbol=ticker)
+    except Exception as e:
+        log.warning("akshare ticker info failed for %s: %s", ticker, e)
+        return None
+    if df is None or df.empty:
+        return None
+    info: dict[str, Any] = {}
+    cols = list(df.columns)
+    k_col = cols[0]
+    v_col = cols[1] if len(cols) > 1 else cols[0]
+    for _, r in df.iterrows():
+        info[str(r[k_col]).strip()] = r[v_col]
+    name = str(info.get("股票简称") or "").strip() or None
+    industry = str(info.get("行业") or "").strip() or None
+    mc = info.get("总市值")
+    # 总市值 may be a number (元) or a string with 亿/万 suffix
+    try:
+        market_cap = float(mc) if mc not in (None, "", "-", "--") else None
+    except (TypeError, ValueError):
+        market_cap = None
+    listing = str(info.get("上市时间") or "").strip() or None
+    if listing and len(listing) == 8 and listing.isdigit():
+        listing = f"{listing[:4]}-{listing[4:6]}-{listing[6:]}"
+    return {
+        "name": name, "sector": industry, "industry": industry,
+        "market_cap": market_cap, "currency": "CNY",
+        "listing_date": listing, "source": "akshare",
+    }
+
+
+def _fetch_us_equity_meta(ticker: str) -> dict | None:
+    """yfinance Ticker(t).info — `longName`, `sector`, `industry`, `marketCap`."""
+    try:
+        import yfinance as yf
+        info = yf.Ticker(ticker).info or {}
+    except Exception as e:
+        log.warning("yfinance ticker info failed for %s: %s", ticker, e)
+        return None
+    name = info.get("longName") or info.get("shortName")
+    if not name:
+        return None
+    return {
+        "name": name,
+        "sector": info.get("sector"),
+        "industry": info.get("industry"),
+        "market_cap": float(info.get("marketCap")) if info.get("marketCap") else None,
+        "currency": info.get("currency") or "USD",
+        "listing_date": None,
+        "source": "yfinance",
+    }
+
+
+def _fetch_crypto_meta(ticker: str) -> dict | None:
+    """CCXT doesn't have rich metadata per-symbol; we return a minimal
+    structured record so the frontend doesn't show 'unknown'."""
+    t = ticker.upper().strip()
+    base = t.split("/")[0] if "/" in t else t
+    common_names = {
+        "BTC": "Bitcoin", "ETH": "Ethereum", "SOL": "Solana",
+        "BNB": "BNB", "XRP": "XRP", "ADA": "Cardano",
+        "DOGE": "Dogecoin", "DOT": "Polkadot", "AVAX": "Avalanche",
+        "MATIC": "Polygon", "LINK": "Chainlink", "TRX": "TRON",
+        "LTC": "Litecoin", "TON": "Toncoin", "SHIB": "Shiba Inu",
+        "BCH": "Bitcoin Cash", "ATOM": "Cosmos", "NEAR": "NEAR Protocol",
+        "ETC": "Ethereum Classic", "XLM": "Stellar", "APT": "Aptos",
+        "ARB": "Arbitrum", "OP": "Optimism",
+    }
+    name = common_names.get(base)
+    if not name:
+        return None
+    return {
+        "name": name, "sector": "Crypto", "industry": "Cryptocurrency",
+        "market_cap": None, "currency": "USD",
+        "listing_date": None, "source": "ccxt-static",
+    }
+
+
 @app.get("/v1/quote")
 def get_quote(ticker: str, days: int = 30) -> dict:
     """Tiny quote endpoint for the /decision page's MarketHeader strip.

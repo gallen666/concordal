@@ -4,6 +4,39 @@ import Link from "next/link";
 import { ArrowRight, Sparkles, TrendingUp } from "lucide-react";
 import { MarketHeader } from "../../components/MarketHeader";
 
+const API_BASE = process.env.NEXT_PUBLIC_API || "http://localhost:8000";
+
+// ---------------------------------------------------------------------------
+// Live ticker metadata fetch — replaces the hardcoded KNOWN_TICKERS map as
+// source of truth. KNOWN_TICKERS is kept only as a last-resort fallback when
+// the backend is unreachable AND there's no cache.
+// ---------------------------------------------------------------------------
+interface TickerMeta {
+  ticker: string;
+  market: string;
+  name: string | null;
+  sector: string | null;
+  industry: string | null;
+  market_cap: number | null;
+  currency: string | null;
+  listing_date: string | null;
+  source: string;
+}
+
+async function fetchTickerMeta(t: string): Promise<TickerMeta | null> {
+  try {
+    const r = await fetch(`${API_BASE}/v1/ticker/info?ticker=${encodeURIComponent(t)}`, {
+      next: { revalidate: 3600 }, // 1 hour ISR — server itself caches 24h
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (!d?.name || d?.source === "unavailable") return null;
+    return d as TickerMeta;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * /analysis/[ticker] — server-rendered SEO landing page per ticker.
  *
@@ -73,26 +106,25 @@ function lookup(ticker: string) {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { ticker } = await params;
   const t = ticker.toUpperCase();
-  const meta = lookup(ticker);
-  const name = meta?.name || t;
+
+  // Truth order: live API → KNOWN_TICKERS fallback. NEVER guess names.
+  const live = await fetchTickerMeta(t);
+  const fallback = lookup(ticker);
+  const name = live?.name || fallback?.name || t;
+  const sector = live?.sector || fallback?.sector;
 
   const title = `${t} Multi-Agent AI Analysis · ${name} | TradingAgents`;
-  const description =
-    meta
-      ? `5-analyst LLM pipeline (fundamentals + sentiment + news + technical + macro) ` +
-        `debates ${name} (${t}) on every run. Real SEC EDGAR / Reddit / OpenBB data. ` +
-        `Free first decision; Pro $29/mo for unlimited real-LLM runs.`
-      : `Multi-agent AI decision-support analysis for ${t}. ` +
-        `5-analyst LLM pipeline + cross-validated backtest. Free trial.`;
+  const description = sector
+    ? `5-analyst LLM pipeline (fundamentals + sentiment + news + technical + macro) ` +
+      `debates ${name} (${t}) on every run. Sector: ${sector}. ` +
+      `Real SEC EDGAR / akshare / Reddit data. Free first decision.`
+    : `Multi-agent AI decision-support analysis for ${t}. ` +
+      `5-analyst LLM pipeline + cross-validated backtest. Free trial.`;
 
   return {
     title,
     description,
-    openGraph: {
-      title,
-      description,
-      type: "website",
-    },
+    openGraph: { title, description, type: "website" },
     twitter: { card: "summary_large_image", title, description },
     alternates: { canonical: `/analysis/${t}` },
   };
@@ -103,11 +135,26 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function TickerLandingPage({ params }: Props) {
   const { ticker } = await params;
   const t = ticker.toUpperCase();
-  const meta = lookup(ticker);
-  // We don't 404 unknown tickers — Google would penalise broken links.
-  // Unknown tickers still render with a generic frame and the CTA still
-  // works; if the user runs the decision and the adapter rejects the
-  // ticker, the API surfaces a clear error.
+
+  // Live API is source of truth. Fall back to KNOWN_TICKERS ONLY if upstream
+  // is unreachable. We don't 404 unknowns — the CTA still works; if the user
+  // runs the decision and the adapter rejects the ticker, the API surfaces
+  // a clear error.
+  const live = await fetchTickerMeta(t);
+  const fallback = lookup(ticker);
+  const meta = live
+    ? {
+        name: live.name || t,
+        market: live.market,
+        sector: live.sector || live.industry || "—",
+        listing_date: live.listing_date || undefined,
+        market_cap: live.market_cap || undefined,
+        currency: live.currency || undefined,
+        source: live.source,
+      }
+    : fallback
+      ? { ...fallback, source: "fallback-static" as const }
+      : null;
 
   const decisionLink = `/decision?ticker=${encodeURIComponent(t)}`;
 

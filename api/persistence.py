@@ -137,6 +137,22 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             generated_at REAL NOT NULL,
             PRIMARY KEY (ticker, decision_date, seed)
         );
+
+        -- Ticker metadata (name, sector, market cap) fetched from upstream
+        -- providers. Cached 24h. Source-of-truth column lets us audit which
+        -- provider we trusted (akshare vs yfinance vs ccxt vs fallback).
+        CREATE TABLE IF NOT EXISTS ticker_meta (
+            ticker TEXT PRIMARY KEY,
+            market TEXT NOT NULL,
+            name TEXT,
+            sector TEXT,
+            industry TEXT,
+            market_cap REAL,
+            currency TEXT,
+            listing_date TEXT,
+            source TEXT NOT NULL,         -- "akshare" | "yfinance" | "ccxt" | "fallback"
+            fetched_at REAL NOT NULL
+        );
     """)
 
 
@@ -480,6 +496,84 @@ def get_seed_distribution(ticker: str, decision_date: str) -> dict:
         "p_sell": actions.count("SELL") / n,
         "mean_conf": sum(confs) / n,
     }
+
+
+# ---------------------------------------------------------------------------
+# Ticker metadata (24h cache around upstream lookups)
+# ---------------------------------------------------------------------------
+
+
+_TICKER_META_TTL_SEC = 24 * 3600
+
+
+def get_ticker_meta(ticker: str) -> dict | None:
+    c = _get_conn()
+    cur = c.execute(
+        "SELECT ticker, market, name, sector, industry, market_cap, currency, "
+        "       listing_date, source, fetched_at "
+        "FROM ticker_meta WHERE ticker = ?",
+        (ticker,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    fetched_at = float(row[9])
+    if time.time() - fetched_at > _TICKER_META_TTL_SEC:
+        # Stale — return None so caller re-fetches. We don't auto-delete:
+        # if upstream is down, the stale row is better than a 500.
+        return None
+    return {
+        "ticker": row[0], "market": row[1], "name": row[2],
+        "sector": row[3], "industry": row[4],
+        "market_cap": row[5], "currency": row[6],
+        "listing_date": row[7], "source": row[8],
+        "fetched_at": fetched_at,
+    }
+
+
+def get_ticker_meta_stale_ok(ticker: str) -> dict | None:
+    """Return cached row even if TTL expired — used as last-resort
+    fallback when upstream is unreachable and we want a possibly-stale
+    name rather than 'unknown'."""
+    c = _get_conn()
+    cur = c.execute(
+        "SELECT ticker, market, name, sector, industry, market_cap, currency, "
+        "       listing_date, source, fetched_at "
+        "FROM ticker_meta WHERE ticker = ?",
+        (ticker,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "ticker": row[0], "market": row[1], "name": row[2],
+        "sector": row[3], "industry": row[4],
+        "market_cap": row[5], "currency": row[6],
+        "listing_date": row[7], "source": row[8],
+        "fetched_at": float(row[9]),
+    }
+
+
+def save_ticker_meta(
+    ticker: str,
+    market: str,
+    name: str | None,
+    sector: str | None = None,
+    industry: str | None = None,
+    market_cap: float | None = None,
+    currency: str | None = None,
+    listing_date: str | None = None,
+    source: str = "unknown",
+) -> None:
+    c = _get_conn()
+    c.execute(
+        "INSERT OR REPLACE INTO ticker_meta "
+        "(ticker, market, name, sector, industry, market_cap, currency, "
+        " listing_date, source, fetched_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (ticker, market, name, sector, industry, market_cap,
+         currency, listing_date, source, time.time()),
+    )
 
 
 # ---------------------------------------------------------------------------
