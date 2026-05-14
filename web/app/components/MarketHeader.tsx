@@ -24,11 +24,16 @@ interface QuoteResponse {
   ohlcv: {
     date: string;
     open: number; high: number; low: number; close: number; volume: number;
+    volume_lots?: number; turnover_cny?: number;
   }[];
   current: number | null;
   prev:    number | null;
   change:  number | null;
   changePct: number | null;
+  // A-share extras
+  today_volume_shares?: number | null;
+  today_volume_lots?: number | null;
+  today_turnover_cny?: number | null;
   asof: string;
   source_status: "ok" | "unavailable";
   message?: string;
@@ -108,6 +113,24 @@ export function MarketHeader({ ticker }: { ticker: string }) {
               vs previous close
             </span>
           </div>
+
+          {/* A-share extras — 成交额 + 成交量 in 手 (what Chinese broker apps show) */}
+          {data.market === "a_share" && (data.today_turnover_cny || data.today_volume_lots) && (
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              {data.today_turnover_cny != null && (
+                <div>
+                  <div className="text-2xs uppercase tracking-kicker text-ink-tertiary">成交额</div>
+                  <div className="font-mono text-ink-primary tabular-nums">{fmtTurnoverCny(data.today_turnover_cny)}</div>
+                </div>
+              )}
+              {data.today_volume_lots != null && (
+                <div>
+                  <div className="text-2xs uppercase tracking-kicker text-ink-tertiary">成交量</div>
+                  <div className="font-mono text-ink-primary tabular-nums">{fmtLots(data.today_volume_lots)}</div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* RIGHT — 30-day sparkline */}
@@ -162,4 +185,18 @@ function currencySymbol(c: string): string {
 
 function marketLabel(m: string): string {
   return m === "us_equity" ? "US Equity" : m === "a_share" ? "A-Share" : m === "crypto" ? "Crypto" : m;
+}
+
+function fmtTurnoverCny(v: number): string {
+  // 中国财经习惯单位：百亿 / 亿 / 万
+  if (v >= 1e10) return `${(v / 1e8).toFixed(1)} 亿元`;
+  if (v >= 1e8) return `${(v / 1e8).toFixed(2)} 亿元`;
+  if (v >= 1e4) return `${(v / 1e4).toFixed(0)} 万元`;
+  return `${v.toFixed(0)} 元`;
+}
+
+function fmtLots(v: number): string {
+  if (v >= 1e6) return `${(v / 1e4).toFixed(1)} 万手`;
+  if (v >= 1e4) return `${(v / 1e4).toFixed(2)} 万手`;
+  return `${v.toFixed(0)} 手`;
 }
