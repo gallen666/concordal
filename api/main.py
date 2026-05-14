@@ -1765,37 +1765,60 @@ def get_ticker_info(ticker: str) -> dict:
 
 
 def _fetch_a_share_meta(ticker: str) -> dict | None:
-    """akshare.stock_individual_info_em returns: 股票简称, 股票代码, 行业,
-    上市时间, 总市值, 流通市值, 总股本, 流通股."""
+    """Tries akshare first (deepest data: 行业 + 上市日期 + 总市值), then
+    falls through to Tencent/Sina/Xueqiu via cn_stock_multi_source — those
+    work from any IP so we never end up with zero data.
+
+    Returns None only if ALL four sources fail. The `source` field on the
+    returned dict tells the caller which one served, so we can audit.
+    """
+    # ---- 1) akshare — gives us 行业 + 上市日期 if reachable
     try:
         import akshare as ak
         df = ak.stock_individual_info_em(symbol=ticker)
+        if df is not None and not df.empty:
+            info: dict[str, Any] = {}
+            cols = list(df.columns)
+            k_col = cols[0]
+            v_col = cols[1] if len(cols) > 1 else cols[0]
+            for _, r in df.iterrows():
+                info[str(r[k_col]).strip()] = r[v_col]
+            name = str(info.get("股票简称") or "").strip() or None
+            industry = str(info.get("行业") or "").strip() or None
+            mc = info.get("总市值")
+            try:
+                market_cap = float(mc) if mc not in (None, "", "-", "--") else None
+            except (TypeError, ValueError):
+                market_cap = None
+            listing = str(info.get("上市时间") or "").strip() or None
+            if listing and len(listing) == 8 and listing.isdigit():
+                listing = f"{listing[:4]}-{listing[4:6]}-{listing[6:]}"
+            if name:
+                return {
+                    "name": name, "sector": industry, "industry": industry,
+                    "market_cap": market_cap, "currency": "CNY",
+                    "listing_date": listing, "source": "akshare",
+                }
     except Exception as e:
         log.warning("akshare ticker info failed for %s: %s", ticker, e)
-        return None
-    if df is None or df.empty:
-        return None
-    info: dict[str, Any] = {}
-    cols = list(df.columns)
-    k_col = cols[0]
-    v_col = cols[1] if len(cols) > 1 else cols[0]
-    for _, r in df.iterrows():
-        info[str(r[k_col]).strip()] = r[v_col]
-    name = str(info.get("股票简称") or "").strip() or None
-    industry = str(info.get("行业") or "").strip() or None
-    mc = info.get("总市值")
-    # 总市值 may be a number (元) or a string with 亿/万 suffix
+
+    # ---- 2-4) Tencent / Sina / Xueqiu via multi-source helper
     try:
-        market_cap = float(mc) if mc not in (None, "", "-", "--") else None
-    except (TypeError, ValueError):
-        market_cap = None
-    listing = str(info.get("上市时间") or "").strip() or None
-    if listing and len(listing) == 8 and listing.isdigit():
-        listing = f"{listing[:4]}-{listing[4:6]}-{listing[6:]}"
+        from trading_agents.adapters.cn_stock_multi_source import fetch_a_share_quote_multi
+        q = fetch_a_share_quote_multi(ticker)
+    except Exception as e:
+        log.warning("multi-source ticker info failed for %s: %s", ticker, e)
+        q = None
+    if not q or not q.get("name"):
+        return None
+    mc_yi = q.get("market_cap_yi")
     return {
-        "name": name, "sector": industry, "industry": industry,
-        "market_cap": market_cap, "currency": "CNY",
-        "listing_date": listing, "source": "akshare",
+        "name": q["name"],
+        "sector": None, "industry": None,
+        "market_cap": mc_yi * 1e8 if mc_yi else None,  # 亿 → 元
+        "currency": "CNY",
+        "listing_date": None,
+        "source": q.get("source") or "multi",
     }
 
 
@@ -1882,20 +1905,48 @@ def get_quote(ticker: str, days: int = 30) -> dict:
         adapter = get_adapter(effective_market)
         quotes = adapter.get_price_history(ticker, start, end)
     except Exception as e:
-        log.warning("quote endpoint failed for %s: %s", ticker, e)
-        return {
-            "ticker": ticker,
-            "market": effective_market,
-            "currency": _currency_for(effective_market),
-            "ohlcv": [],
-            "current": None,
-            "prev": None,
-            "change": None,
-            "changePct": None,
-            "asof": datetime.now(tz=timezone.utc).isoformat(),
-            "source_status": "unavailable",
-            "message": str(e),
-        }
+        log.warning("primary adapter failed for %s: %s — trying multi-source fallback", ticker, e)
+        quotes = []
+
+    # If we got no history from the primary adapter AND this is A-share,
+    # try Tencent/Sina for at least the current quote so the UI isn't empty.
+    if (not quotes) and effective_market == "a_share":
+        try:
+            from trading_agents.adapters.cn_stock_multi_source import fetch_a_share_quote_multi
+            q = fetch_a_share_quote_multi(ticker)
+        except Exception as e:
+            log.warning("multi-source fallback also failed for %s: %s", ticker, e)
+            q = None
+        if q and q.get("current") is not None:
+            # Synthesise a single-day OHLCV record so the response is well-formed.
+            today = date.today().isoformat()
+            current = q["current"]
+            prev = q.get("prev") or current
+            return {
+                "ticker": ticker,
+                "market": effective_market,
+                "currency": "CNY",
+                "ohlcv": [{
+                    "date": today,
+                    "open":  q.get("open")  or current,
+                    "high":  q.get("high")  or current,
+                    "low":   q.get("low")   or current,
+                    "close": current,
+                    "volume": (q.get("volume_lots") or 0) * 100,
+                    "volume_lots":  q.get("volume_lots") or 0,
+                    "turnover_cny": q.get("turnover_cny") or 0,
+                }],
+                "current": current,
+                "prev": prev,
+                "change": current - prev,
+                "changePct": ((current - prev) / prev * 100.0) if prev else 0.0,
+                "today_volume_lots":  q.get("volume_lots"),
+                "today_turnover_cny": q.get("turnover_cny"),
+                "asof": datetime.now(tz=timezone.utc).isoformat(),
+                "source_status": "ok",
+                "source": q.get("source") or "multi",  # audit field
+                "note": "Single-day snapshot from " + (q.get("source") or "multi-source") + " — historical OHLCV unavailable from primary adapter",
+            }
 
     if not quotes:
         return {
