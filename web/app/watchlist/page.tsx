@@ -110,28 +110,32 @@ export default function WatchlistPage() {
 
 function TickerCard({ item }: { item: Item }) {
   return (
-    <Link
-      href={`/decision?ticker=${item.ticker}`}
-      className="surface p-5 hover:border-border hover:bg-bg-hover/40 transition-all group block"
-    >
+    <div className="surface p-5 hover:border-border hover:bg-bg-hover/40 transition-all group block">
       <div className="flex items-start justify-between mb-3">
-        <div>
-          <div className="font-mono text-lg font-semibold tracking-wider">
+        <Link
+          href={`/stock/${item.ticker}`}
+          className="block"
+          title="个股一站式综合页"
+        >
+          <div className="font-mono text-lg font-semibold tracking-wider group-hover:text-accent transition-colors">
             {item.ticker}
           </div>
           <div className="text-2xs label-cap mt-0.5">{item.market}</div>
-        </div>
-        <span className="pill bg-bg-subtle text-ink-tertiary border border-border-subtle group-hover:text-accent group-hover:border-accent/30 transition-colors">
+        </Link>
+        <Link
+          href={`/decision?ticker=${item.ticker}`}
+          className="pill bg-bg-subtle text-ink-tertiary border border-border-subtle hover:text-accent hover:border-accent/30 transition-colors"
+        >
           <Sparkles className="w-3 h-3" />
           Run
-        </span>
+        </Link>
       </div>
       {item.note && (
         <div className="text-xs text-ink-secondary line-clamp-2">
           {item.note}
         </div>
       )}
-    </Link>
+    </div>
   );
 }
 

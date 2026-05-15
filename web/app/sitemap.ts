@@ -56,13 +56,23 @@ export default function sitemap(): MetadataRoute.Sitemap {
   ];
 
   // One entry per ticker landing page — these are the SEO long-tail
-  // pages that should pull in organic traffic over time.
-  const tickerPages: MetadataRoute.Sitemap = TICKERS.map((t) => ({
-    url: `${SITE}/analysis/${t}`,
-    lastModified: now,
-    changeFrequency: "weekly",
-    priority: 0.7,
-  }));
+  // pages that should pull in organic traffic over time. Each ticker
+  // gets BOTH /analysis/{t} (server-rendered marketing) and /stock/{t}
+  // (interactive one-stop F10 + decision page).
+  const tickerPages: MetadataRoute.Sitemap = [
+    ...TICKERS.map((t) => ({
+      url: `${SITE}/analysis/${t}`,
+      lastModified: now,
+      changeFrequency: "weekly" as const,
+      priority: 0.7,
+    })),
+    ...TICKERS.map((t) => ({
+      url: `${SITE}/stock/${t}`,
+      lastModified: now,
+      changeFrequency: "daily" as const,
+      priority: 0.75,
+    })),
+  ];
 
   // One entry per long-form blog post — these articles target Google
   // long-tail keywords (e.g. "lookahead bias backtest", "东方财富 量化")

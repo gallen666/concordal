@@ -2426,6 +2426,251 @@ def cn_zt_pool(kind: str = "zt", date_str: str | None = None) -> dict:
         return {"status": "unavailable", "message": str(e), "rows": []}
 
 
+# ---------------------------------------------------------------------------
+# Package D — F10 + 研报 + 公告 per-ticker depth
+# ---------------------------------------------------------------------------
+# East-money's F10 panels are what users open when they want to KNOW a
+# stock, not just see its price. We tap the four most-cited datasets:
+#
+#   /v1/cn/f10/holders/{ticker}     大股东 + 流通股东        (snapshot table)
+#   /v1/cn/f10/restricted/{ticker}  限售解禁 timeline         (calendar)
+#   /v1/cn/f10/pledge/{ticker}      股权质押 比例 + 详情      (risk signal)
+#   /v1/cn/f10/management/{ticker}  高管 + 大股东 增减持      (insider flow)
+#   /v1/cn/research/{ticker}        卖方研报 标题/评级/目标价  (sell-side view)
+#   /v1/cn/notice/{ticker}          公司公告 标题/日期/链接    (regulatory)
+#
+# Every response: {status, ticker, rows, source}. Failures degrade
+# gracefully — the /stock/[ticker] page renders an "unavailable" pill
+# rather than blowing up the whole panel.
+#
+# akshare function names sometimes shift between releases; each block
+# is wrapped in try/except so an upstream rename doesn't take down the
+# rest of the API. Source attribution is a string so the UI can show
+# "from East-money" or "from CNINFO" depending on what fired.
+
+
+def _normalize_cn_ticker(t: str) -> str:
+    """Strip whitespace, uppercase, ensure 6-digit shape if numeric."""
+    s = (t or "").strip().upper()
+    if s.isdigit() and len(s) < 6:
+        s = s.zfill(6)
+    return s
+
+
+@app.get("/v1/cn/f10/holders/{ticker}", tags=["markets"])
+def cn_f10_holders(ticker: str) -> dict:
+    """十大股东 + 十大流通股东 snapshot. East-money's F10 'shareholders'
+    tab — the single most-read F10 view because it tells you who owns
+    the stock. Tries main shareholders first, falls back to circulating
+    shareholders if only those are available."""
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    t = _normalize_cn_ticker(ticker)
+    try:
+        try:
+            df = ak.stock_main_stock_holder(stock=t)
+            kind = "main"
+        except Exception:
+            df = ak.stock_circulate_stock_holder(symbol=t)
+            kind = "circulate"
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "no rows", "rows": []}
+        return {
+            "status": "ok",
+            "ticker": t,
+            "kind": kind,
+            "rows": _rows_to_jsonable(df.head(20)),
+            "source": "akshare/eastmoney",
+        }
+    except Exception as e:
+        log.warning("f10/holders fetch failed for %s: %s", t, e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
+@app.get("/v1/cn/f10/restricted/{ticker}", tags=["markets"])
+def cn_f10_restricted(ticker: str) -> dict:
+    """限售解禁 — upcoming unlock dates + shares unlocked + market cap.
+    Huge short-term mover; retail tracks 'next-week unlock' obsessively."""
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    t = _normalize_cn_ticker(ticker)
+    try:
+        # Try per-ticker detail first; some akshare versions only ship
+        # the queue (all-tickers) function — filter that client-side.
+        df = None
+        for fn_name in (
+            "stock_restricted_release_detail_em",
+            "stock_restricted_release_queue_em",
+        ):
+            fn = getattr(ak, fn_name, None)
+            if fn is None:
+                continue
+            try:
+                df = fn(symbol=t) if "detail" in fn_name else fn()
+                if df is not None and not df.empty:
+                    # Filter the queue function to this ticker if needed.
+                    if "queue" in fn_name and "代码" in df.columns:
+                        df = df[df["代码"].astype(str).str.contains(t)]
+                    break
+            except Exception:
+                continue
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "no rows", "rows": []}
+        return {
+            "status": "ok",
+            "ticker": t,
+            "rows": _rows_to_jsonable(df.head(40)),
+            "source": "akshare/eastmoney",
+        }
+    except Exception as e:
+        log.warning("f10/restricted fetch failed for %s: %s", t, e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
+@app.get("/v1/cn/f10/pledge/{ticker}", tags=["markets"])
+def cn_f10_pledge(ticker: str) -> dict:
+    """股权质押比例 — controlling-shareholder pledged shares as % of total.
+    High pledge ratio is a textbook risk flag (forced-selling spiral
+    on margin call). East-money surfaces this prominently."""
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    t = _normalize_cn_ticker(ticker)
+    try:
+        # The market-wide ratio table; we filter client-side.
+        df = ak.stock_gpzy_pledge_ratio_em()
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "akshare returned empty", "rows": []}
+        if "股票代码" in df.columns:
+            df = df[df["股票代码"].astype(str).str.contains(t)]
+        if df.empty:
+            return {"status": "unavailable", "message": f"no pledge row for {t}", "rows": []}
+        return {
+            "status": "ok",
+            "ticker": t,
+            "rows": _rows_to_jsonable(df.head(1)),
+            "source": "akshare/eastmoney",
+        }
+    except Exception as e:
+        log.warning("f10/pledge fetch failed for %s: %s", t, e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
+@app.get("/v1/cn/f10/management/{ticker}", tags=["markets"])
+def cn_f10_management(ticker: str) -> dict:
+    """高管/大股东 增减持. 'Insider flow' signal — directors selling
+    near the top is one of the cleanest behavioural-finance signals
+    in CN markets."""
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    t = _normalize_cn_ticker(ticker)
+    try:
+        # Try a few akshare function names — coverage varies by release.
+        df = None
+        for fn_name in (
+            "stock_management_change_ths",
+            "stock_share_change_cninfo",
+            "stock_holder_change_em",
+        ):
+            fn = getattr(ak, fn_name, None)
+            if fn is None:
+                continue
+            try:
+                df = fn(symbol=t)
+                if df is not None and not df.empty:
+                    break
+            except Exception:
+                continue
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "no rows", "rows": []}
+        return {
+            "status": "ok",
+            "ticker": t,
+            "rows": _rows_to_jsonable(df.head(30)),
+            "source": "akshare/eastmoney",
+        }
+    except Exception as e:
+        log.warning("f10/management fetch failed for %s: %s", t, e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
+@app.get("/v1/cn/research/{ticker}", tags=["markets"])
+def cn_research(ticker: str) -> dict:
+    """卖方研报 list. Title / rating / target-price / institution.
+    Eastmoney aggregates 国内卖方 research — we surface the headline
+    line per report. Acts as a market-consensus prior the user can
+    compare against our 7-agent verdict."""
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    t = _normalize_cn_ticker(ticker)
+    try:
+        df = None
+        for fn_name in ("stock_research_report_em", "stock_zh_a_st_em"):
+            fn = getattr(ak, fn_name, None)
+            if fn is None:
+                continue
+            try:
+                df = fn(symbol=t)
+                if df is not None and not df.empty:
+                    break
+            except Exception:
+                continue
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "no rows", "rows": []}
+        return {
+            "status": "ok",
+            "ticker": t,
+            "rows": _rows_to_jsonable(df.head(30)),
+            "source": "akshare/eastmoney",
+        }
+    except Exception as e:
+        log.warning("research fetch failed for %s: %s", t, e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
+@app.get("/v1/cn/notice/{ticker}", tags=["markets"])
+def cn_notice(ticker: str) -> dict:
+    """公司公告. Title + date + url to PDF (CNINFO / 巨潮).
+    The regulatory ground-truth — every 8-K-equivalent event lives here."""
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    t = _normalize_cn_ticker(ticker)
+    try:
+        df = None
+        for fn_name in ("stock_notice_report", "stock_zh_a_news"):
+            fn = getattr(ak, fn_name, None)
+            if fn is None:
+                continue
+            try:
+                df = fn(symbol=t) if "notice" in fn_name else fn(symbol=t)
+                if df is not None and not df.empty:
+                    break
+            except Exception:
+                continue
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "no rows", "rows": []}
+        return {
+            "status": "ok",
+            "ticker": t,
+            "rows": _rows_to_jsonable(df.head(30)),
+            "source": "akshare/cninfo",
+        }
+    except Exception as e:
+        log.warning("notice fetch failed for %s: %s", t, e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
 @app.get("/v1/datasource/test", tags=["markets"])
 def datasource_test(ticker: str = "600519") -> dict:
     """Probe every data source independently — for operators auditing

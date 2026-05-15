@@ -69,6 +69,20 @@ export default function DecisionTimelinePage() {
         <p className="text-sm text-ink-secondary mt-2 max-w-2xl">
           {t("tl.subheading")}
         </p>
+        <div className="mt-3 flex items-center gap-3 text-xs flex-wrap">
+          <Link
+            href={`/stock/${ticker}`}
+            className="text-accent hover:underline"
+          >
+            ← 个股综合页 (F10 · 研报 · 公告)
+          </Link>
+          <Link
+            href={`/decision?ticker=${ticker}`}
+            className="text-ink-secondary hover:text-accent"
+          >
+            ▶ 跑新决策
+          </Link>
+        </div>
       </header>
 
       {!rows && !error && (
