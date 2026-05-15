@@ -174,6 +174,12 @@ def _rate_limit(user_id: str) -> None:
 # Tracks decision counts per user per UTC-day so we can hard-stop free users
 # at their daily quota and serve them a 402 with an upgrade URL. Pro users
 # (real_llm=True) skip the cap entirely.
+#
+# GLOBAL TOGGLE: while the system is in beta debugging, the cap is NOT
+# enforced — every user gets effectively unlimited decisions. The check
+# code below is preserved so that when the product is ready to monetize,
+# flipping TA_DECISIONS_ENFORCE_CAP=true on Render re-enables the gate.
+_CAP_ENFORCED = os.environ.get("TA_DECISIONS_ENFORCE_CAP", "false").lower() == "true"
 _FREE_DAILY_CAP = int(os.environ.get("TA_FREE_DAILY_DECISIONS", "5"))
 # Anonymous (no JWT) gets a smaller cap because they share an IP-derived key
 # in some deployments and we don't want to gift unauth'd quota.
@@ -280,6 +286,10 @@ def _daily_cap_check(user: CurrentUser, request: Request | None = None) -> None:
       pro / team    → 30+/day per user (TA_PRO_DAILY_DECISIONS)
     A 7-day referral bonus adds +5/day on top for both inviter + invitee.
     """
+    # Beta override — paid tiers not yet activated, so cap is a no-op.
+    # Flip TA_DECISIONS_ENFORCE_CAP=true on Render to re-enable.
+    if not _CAP_ENFORCED:
+        return
     today_key = _bucket_key(user, request)
     base, tier = _base_cap_and_tier(user)
     bonus = _bonus_cap_for(user.id) if user.id != "anonymous" else 0
@@ -306,17 +316,23 @@ def _daily_cap_check(user: CurrentUser, request: Request | None = None) -> None:
 
 
 def _daily_cap_status(user: CurrentUser, request: Request | None = None) -> dict:
-    """Read-only view used by the frontend's usage badge."""
+    """Read-only view used by the frontend's usage badge.
+
+    When the global cap is disabled (beta debugging mode), `enforced=False`
+    is returned so the frontend can hide the "X / N free decisions" badge
+    and the upgrade-Pro nudge — there's no cap to display.
+    """
     today_key = _bucket_key(user, request)
     base, tier = _base_cap_and_tier(user)
     bonus = _bonus_cap_for(user.id) if user.id != "anonymous" else 0
     used = _daily_count.get(today_key, 0)
     return {
         "used": used,
-        "cap": base + bonus,
+        "cap": (base + bonus) if _CAP_ENFORCED else None,
         "base_cap": base,
         "bonus_cap": bonus,
         "tier": tier,
+        "enforced": _CAP_ENFORCED,
     }
 
 
