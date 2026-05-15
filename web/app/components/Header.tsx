@@ -86,6 +86,7 @@ export default function Header() {
     ? (isZh
         ? [
             { href: "/decision",        label: t("header.newDecision") },
+            { href: "/ask",             label: "AI 问答" },
             { href: "/cn-markets",      label: "A 股市场" },
             { href: "/hot",             label: "人气榜" },
             { href: "/me/history",      label: t("header.myHistory") || "我的决策" },
@@ -96,6 +97,7 @@ export default function Header() {
           ]
         : [
             { href: "/decision",        label: t("header.newDecision") },
+            { href: "/ask",             label: "Ask AI" },
             { href: "/me/history",      label: t("header.myHistory") || "我的决策" },
             { href: "/watchlist",       label: t("header.watchlist") },
             { href: "/track-record",    label: t("header.trackRecord") },
@@ -106,6 +108,7 @@ export default function Header() {
     : (isZh
         ? [
             { href: "/decision?ticker=600519", label: "试一下" },
+            { href: "/ask",                     label: "AI 问答" },
             { href: "/how-it-works",            label: t("header.howItWorks") },
             { href: "/track-record",            label: t("header.trackRecord") },
             { href: "/hot",                     label: "人气榜" },
@@ -114,6 +117,7 @@ export default function Header() {
           ]
         : [
             { href: "/decision?ticker=AAPL",    label: "Try it" },
+            { href: "/ask",                     label: "Ask AI" },
             { href: "/how-it-works",            label: t("header.howItWorks") },
             { href: "/track-record",            label: t("header.trackRecord") },
             { href: "/blog",                    label: "Blog" },

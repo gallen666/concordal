@@ -2868,6 +2868,246 @@ def pd_to_datetime(s):
     return _pd.to_datetime(s, errors="coerce")
 
 
+# ---------------------------------------------------------------------------
+# Package F — natural-language Q&A (问财 clone)
+# ---------------------------------------------------------------------------
+# 同花顺's 问财 is the single sticky feature of their app — users type
+# free-form questions and get back ranked-tickers + structured answers.
+# We can match it AND go one step further: every suggested ticker is
+# clickable into the 7-agent debate, which they don't have.
+#
+# Architecture:
+#   1. POST /v1/ask {question, locale}
+#   2. Backend extracts mentioned tickers (regex 6-digit + uppercase US)
+#   3. Pre-fetches lightweight context (quote / top fund-flow / sector
+#      ranking) so the LLM is grounded in today's data
+#   4. Calls LLM (MID tier) with structured system prompt
+#   5. LLM returns natural-language answer ENDING WITH a JSON block
+#      {tickers_to_research: [...], suggested_next: [...]}
+#   6. Backend parses + returns {answer, suggested_tickers,
+#      context_used, latency_ms, cost_usd}
+#
+# Cost guard: capped at MID tier (~$0.001 per call) and answer length
+# is bounded so 一次 ask 不会突然花掉 10x 决策成本.
+
+
+class AskRequest(BaseModel):
+    question: str
+    locale: str = "zh"
+
+
+_ASK_SYSTEM_ZH = """你是 TradingAgents 平台的 AI 投研助理。用户用自然语言问你 A 股 / 美股 / 港股 / 加密币的问题。
+
+你的能力:
+1. 解读问题意图(对比/解释/筛选/板块/新闻)
+2. 用提供的实时数据回答
+3. 推荐 2-5 只值得深入研究的 ticker
+4. 引导用户用 7-agent 多空辩论做最终决策
+
+规则:
+- 不要给具体的买卖建议(那是 7-agent 决策的事)
+- 如果数据不足,诚实说"需要看 7-agent 决策"
+- 中文回答,数字保留 2 位小数
+- 答案末尾必须用 JSON 标注:
+  ```json
+  {"tickers_to_research": ["600519", "000858"], "suggested_next": "对比这两只白酒龙头"}
+  ```
+
+输入会包括:
+- USER_QUESTION: 用户原始问题
+- CONTEXT: 我们预取的相关数据(若有)
+"""
+
+_ASK_SYSTEM_EN = """You are the TradingAgents AI research assistant. Users ask
+natural-language questions about A-shares, US equities, HK stocks, or crypto.
+
+Your job:
+1. Parse intent (compare / explain / screen / sector / news)
+2. Use the provided live data to answer
+3. Recommend 2-5 tickers worth deeper research
+4. Steer toward our 7-agent bull/bear debate for the actual call
+
+Rules:
+- DON'T give buy/sell calls — that's what /decision is for
+- If data is thin, say so honestly
+- English answer, 2 decimal places for numbers
+- ALWAYS end the answer with a JSON block:
+  ```json
+  {"tickers_to_research": ["AAPL", "NVDA"], "suggested_next": "Compare these two semis"}
+  ```
+
+Input includes:
+- USER_QUESTION: the raw question
+- CONTEXT: pre-fetched live data we think is relevant
+"""
+
+
+def _extract_tickers_from_question(q: str) -> list[str]:
+    """Pull 6-digit A-share codes + uppercase 1-5 letter US tickers out
+    of the question text. Best-effort — passes false positives downstream
+    where they'll just hit /v1/quote and return 'unavailable'."""
+    import re
+    found = set()
+    # 6-digit codes (A-share)
+    for m in re.findall(r"\b\d{6}\b", q):
+        found.add(m)
+    # Uppercase US tickers (length 1-5, common case)
+    for m in re.findall(r"\b[A-Z]{1,5}\b", q):
+        # Skip common words that look like tickers
+        if m in {"I", "A", "AI", "VS", "US", "CN", "HK", "OR", "AND", "THE", "PE", "ROE", "AAPL"}:
+            if m == "AAPL":
+                found.add(m)
+            continue
+        found.add(m)
+    return list(found)[:6]
+
+
+def _ask_fetch_context(tickers: list[str], question_lower: str) -> dict:
+    """Lightweight pre-fetch — quote for each mentioned ticker, plus
+    sector flow if the question mentions 板块 / 行业, plus top fund
+    inflows if it mentions 主力 / 资金."""
+    ctx: dict = {}
+    # Per-ticker quote (≤3 to control cost)
+    quotes = []
+    for t in tickers[:3]:
+        try:
+            q = get_quote(ticker=t, days=10)
+            if q.get("source_status") == "ok":
+                quotes.append({
+                    "ticker": t,
+                    "name": q.get("name") or None,
+                    "current": q.get("current"),
+                    "change_pct": q.get("changePct"),
+                    "currency": q.get("currency"),
+                })
+        except Exception:
+            pass
+    if quotes:
+        ctx["quotes"] = quotes
+
+    # Sector / fund-flow context only on demand (these are heavy fetches)
+    if any(kw in question_lower for kw in ("板块", "行业", "sector")):
+        try:
+            sect = cn_fund_flow_sectors(kind="industry")
+            if sect.get("status") == "ok":
+                ctx["top_sectors_today"] = sect["rows"][:10]
+        except Exception:
+            pass
+    if any(kw in question_lower for kw in ("主力", "资金", "净流入", "fund flow", "inflow")):
+        try:
+            flow = cn_fund_flow_individual(top=20)
+            if flow.get("status") == "ok":
+                ctx["top_inflow_today"] = flow["rows"][:10]
+        except Exception:
+            pass
+    if any(kw in question_lower for kw in ("涨停", "limit-up", "limit up", "zt")):
+        try:
+            zt = cn_zt_pool(kind="zt")
+            if zt.get("status") == "ok":
+                ctx["zt_pool_today"] = zt["rows"][:20]
+        except Exception:
+            pass
+    return ctx
+
+
+def _ask_parse_suggestions(answer_text: str) -> dict:
+    """Extract the trailing JSON block we ask the LLM to emit.
+    Tolerates ```json ... ``` fences and bare {...}. Returns
+    {tickers_to_research, suggested_next} or empty dict on miss."""
+    import json
+    import re
+    # Look for last fenced JSON
+    m = re.search(r"```(?:json)?\s*(\{.+?\})\s*```", answer_text, re.DOTALL)
+    if not m:
+        # Bare trailing brace block
+        m = re.search(r"(\{[^{}]*\"tickers_to_research\"[^{}]*\})", answer_text, re.DOTALL)
+    if not m:
+        return {}
+    try:
+        data = json.loads(m.group(1))
+        return {
+            "tickers_to_research": [str(t).upper() for t in (data.get("tickers_to_research") or [])][:6],
+            "suggested_next": str(data.get("suggested_next") or "")[:300],
+        }
+    except Exception:
+        return {}
+
+
+@app.post("/v1/ask", tags=["ai"])
+def ask(req: AskRequest) -> dict:
+    """Natural-language research assistant (问财-style).
+
+    Returns:
+      answer: str            free-form LLM answer in user's locale
+      tickers_to_research: list[str]   chips the UI links to /decision
+      suggested_next: str    one-line CTA for the next user action
+      mentioned_tickers: list[str]   tickers extracted from the question
+      context_used: list[str]   which datasets we pre-fetched
+      cost_usd: float        $-cost of the LLM call
+      latency_ms: int        wall-clock latency
+    """
+    from time import time as _now
+    started = _now()
+    question = (req.question or "").strip()[:800]
+    if not question:
+        return {
+            "answer": "请输入问题。" if req.locale == "zh" else "Please ask something.",
+            "tickers_to_research": [],
+            "suggested_next": "",
+            "mentioned_tickers": [],
+            "context_used": [],
+            "cost_usd": 0.0,
+            "latency_ms": 0,
+        }
+
+    # Extract tickers + pre-fetch context.
+    mentioned = _extract_tickers_from_question(question)
+    ctx = _ask_fetch_context(mentioned, question.lower())
+
+    # Build the user payload — LLM sees question + JSON-serialised context.
+    import json as _json
+    user_prompt = (
+        f"USER_QUESTION:\n{question}\n\n"
+        f"CONTEXT (live data we pre-fetched for you):\n```json\n"
+        f"{_json.dumps(ctx, ensure_ascii=False, default=str)[:6000]}\n```"
+    )
+    system = _ASK_SYSTEM_ZH if req.locale == "zh" else _ASK_SYSTEM_EN
+
+    # Run the LLM via the existing router (Gemini / DeepSeek / Mock chain).
+    answer = ""
+    cost = 0.0
+    try:
+        from trading_agents.llm.router import LLMRouter, Tier
+        router = LLMRouter(locale=req.locale)
+        resp = router.complete(tier=Tier.MID, system=system, user=user_prompt, temperature=0.4)
+        answer = resp.text or ""
+        cost = float(getattr(resp.usage, "usd_cost", 0.0) or 0.0)
+    except Exception as e:
+        log.warning("ask LLM failed: %s", e)
+        answer = (
+            f"AI 暂时不可用 ({e}). 请直接对 ticker 跑 /decision 决策。"
+            if req.locale == "zh" else
+            f"AI temporarily unavailable ({e}). Run /decision on the ticker directly."
+        )
+
+    parsed = _ask_parse_suggestions(answer)
+    suggested_tickers = parsed.get("tickers_to_research", [])
+    if not suggested_tickers and mentioned:
+        # Fallback: if the LLM didn't emit JSON, surface tickers we
+        # already extracted from the question so the chips still render.
+        suggested_tickers = mentioned
+
+    return {
+        "answer": answer,
+        "tickers_to_research": suggested_tickers,
+        "suggested_next": parsed.get("suggested_next", ""),
+        "mentioned_tickers": mentioned,
+        "context_used": list(ctx.keys()),
+        "cost_usd": round(cost, 6),
+        "latency_ms": int((_now() - started) * 1000),
+    }
+
+
 @app.get("/v1/datasource/test", tags=["markets"])
 def datasource_test(ticker: str = "600519") -> dict:
     """Probe every data source independently — for operators auditing

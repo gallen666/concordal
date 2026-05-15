@@ -49,15 +49,21 @@ log = logging.getLogger(__name__)
 # -------------------- Quote sources ----------------------------------------
 
 def _register_a_share_quote_sources() -> None:
-    """A-share quote.
+    """A-share quote + OHLCV.
 
-    Primary path: CnEquityAdapter.get_quote() — already chains akshare →
-    Tencent → Sina → Xueqiu internally and handles GBK + 成交量 unit
-    conversion. We expose it as a single Source rather than registering
-    each upstream individually, because the adapter encapsulates the
-    routing logic (sh/sz/bj prefix etc) that we'd otherwise duplicate.
-    The /v1/datasource/test endpoint already exposes per-upstream health."""
+    Primary path: CnEquityAdapter — already chains akshare → Tencent
+    → Sina → Xueqiu internally and handles GBK + 成交量 unit conversion.
+    We expose it as a Source for both QUOTE and OHLCV needs, with a
+    digit-prefix gate so non-A-share tickers fall through to yfinance.
+
+    Before this registration, /chain (FRED→Qlib→Backtrader→Lean) was
+    silently broken for 6-digit codes because bus.fetch(OHLCV) only had
+    yfinance registered and yfinance can't fetch SH/SZ history. The
+    factor cascade (which composes via bus.fetch(OHLCV)) then also
+    failed. Registering this Source fixes both at the architectural
+    layer — no /chain code change required."""
     try:
+        from datetime import timedelta as _td
         from ..adapters.cn_equity import CnEquityAdapter
         adapter = CnEquityAdapter()
         bus.register(Source(
@@ -70,6 +76,19 @@ def _register_a_share_quote_sources() -> None:
                 else None
             ),
             description="akshare → Tencent → Sina → Xueqiu chain (A-shares only)",
+        ))
+        bus.register(Source(
+            project_slug="cn_equity_multi_source",
+            handles=NeedKind.OHLCV,
+            priority=5,  # beats yfinance (10) for A-share tickers
+            handler=lambda n: (
+                adapter.get_price_history(
+                    n.params["ticker"],
+                    start=(n.params["asof"] - _td(days=n.params.get("lookback_days", 90))),
+                    end=n.params["asof"],
+                ) if str(n.params["ticker"])[:1].isdigit() else None
+            ),
+            description="A-share OHLCV via akshare (CnEquityAdapter)",
         ))
     except Exception as e:
         log.info("databus: cn_equity quote source not registered (%s)", e)
@@ -222,10 +241,13 @@ def _register_factors() -> None:
     try:
         from ..factors.alpha158_lite import compute_factors
         def _factor_handler(n: Need) -> dict | None:
+            # Honor the caller's lookback_days so /chain's user-supplied
+            # window doesn't get clobbered to 90 (cache-key drift would
+            # cause two yfinance fetches per chain run).
             quotes = bus.fetch(Need(NeedKind.OHLCV, {
                 "ticker": n.params["ticker"],
                 "asof": n.params["asof"],
-                "lookback_days": 90,
+                "lookback_days": n.params.get("lookback_days", 90),
             }))
             if not quotes:
                 return None

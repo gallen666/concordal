@@ -147,6 +147,16 @@ export default function ChainPage() {
           <div className="text-2xs text-ink-tertiary mt-2 font-mono">
             spine: {JSON.stringify(data.spine_traversed)}
           </div>
+          {/* Concrete remediation hints — the audit found the most
+              common failure is asking for a ticker whose OHLCV the
+              bus can't fetch (crypto, HK, illiquid name). */}
+          <div className="mt-3 text-xs text-ink-secondary leading-relaxed">
+            {/^\d{6}$/.test(data.ticker || "")
+              ? "A 股 ticker — 如果失败，请确认 ticker 真实存在（akshare 偶尔会上游空返回）。"
+              : /^(BTC|ETH|SOL|DOGE)/i.test(data.ticker || "")
+              ? "加密币 OHLCV 走 Need.CRYPTO_OHLCV，不在 /chain 路径上。请回到 /decision 跑 crypto。"
+              : "建议试试常见股票：AAPL、NVDA、600519、300750。罕见 ticker 上游可能没数据。"}
+          </div>
         </div>
       )}
 

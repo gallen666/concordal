@@ -33,6 +33,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const staticPages: MetadataRoute.Sitemap = [
     { url: `${SITE}/`,             lastModified: now, changeFrequency: "weekly",  priority: 1.0 },
     { url: `${SITE}/decision`,     lastModified: now, changeFrequency: "weekly",  priority: 0.9 },
+    { url: `${SITE}/ask`,          lastModified: now, changeFrequency: "weekly",  priority: 0.9 },
     { url: `${SITE}/pricing`,      lastModified: now, changeFrequency: "monthly", priority: 0.9 },
     { url: `${SITE}/proof`,        lastModified: now, changeFrequency: "monthly", priority: 0.8 },
     { url: `${SITE}/ecosystem`,    lastModified: now, changeFrequency: "weekly",  priority: 0.7 },
