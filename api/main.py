@@ -867,7 +867,7 @@ def chain_full_stack(ticker: str, lookback_days: int = 90) -> dict:
             "action": side,
             "confidence": confidence,
             "position_pct": abs(target_weight),
-        }).to_dict()
+        }).to_lean_json()
     except Exception as e:
         lean_json = {"error": str(e)}
     _step("lean", "lean_bridge.decision_to_insight", t0)
