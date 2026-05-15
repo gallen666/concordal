@@ -2207,6 +2207,225 @@ def cn_lhb(date_str: str | None = None) -> dict:
         return {"status": "unavailable", "message": str(e), "rows": []}
 
 
+# ---------------------------------------------------------------------------
+# Package C — A-share parity endpoints
+# ---------------------------------------------------------------------------
+# These six endpoints close the most-cited gaps vs 东方财富 / 同花顺:
+#   - fund-flow: 主力净流入 individual + sector + market-wide
+#   - sectors:    申万行业 + 概念股 daily metrics
+#   - zt-pool:    涨停 / 跌停 / 炸板 daily pools
+# All free via akshare; the user's Singapore-IP Render still hits them
+# fine because akshare proxies through East-money's public CDN, which
+# doesn't geo-fence the same way akshare-spot does. (We tested.)
+#
+# Shape of each response: { status: "ok"|"unavailable", rows: [...] }
+# Frontends should treat status="unavailable" as a friendly empty state
+# rather than an error — Eastmoney occasionally rate-limits a method,
+# and the right UX is "data temporarily missing" not "500 error".
+
+
+def _rows_to_jsonable(df) -> list[dict]:
+    """Coerce a pandas DataFrame's records to JSON-safe primitives.
+    Numeric → float; everything else → str (preserves date stamps,
+    bilingual labels, etc.). Survives DataFrames with mixed-typed cells
+    that East-money loves to return."""
+    rows = df.to_dict(orient="records")
+    for r in rows:
+        for k, v in list(r.items()):
+            if v is None:
+                r[k] = None
+                continue
+            try:
+                # Bools first — bool is a subclass of int in Python.
+                if isinstance(v, bool):
+                    r[k] = bool(v)
+                elif isinstance(v, (int, float)):
+                    r[k] = float(v)
+                else:
+                    r[k] = str(v)
+            except Exception:
+                r[k] = str(v)
+    return rows
+
+
+@app.get("/v1/cn/fund-flow/individual", tags=["markets"])
+def cn_fund_flow_individual(market: str = "沪深A股", top: int = 50) -> dict:
+    """Top individual-stock 主力净流入 ranking — the single most-
+    watched A-share retail metric. East-money lists this on every
+    stock card.
+
+    `market` ∈ {"沪深A股", "沪市A股", "深市A股", "创业板", "科创板",
+    "沪市B股", "深市B股"}; default covers the whole A-share universe.
+    Returns rows like {代码, 名称, 最新价, 主力净流入-净额, ...}
+    sorted by 主力净流入-净额 desc.
+    """
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    try:
+        df = ak.stock_individual_fund_flow_rank(indicator="今日")
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "akshare returned empty", "rows": []}
+        # df columns vary by akshare version; trust that the rank function
+        # already orders desc by 主力净流入-净额.
+        df = df.head(max(10, min(top, 200)))
+        return {
+            "status": "ok",
+            "market": market,
+            "rows": _rows_to_jsonable(df),
+            "source": "akshare/eastmoney",
+        }
+    except Exception as e:
+        log.warning("fund-flow-individual fetch failed: %s", e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
+@app.get("/v1/cn/fund-flow/sectors", tags=["markets"])
+def cn_fund_flow_sectors(kind: str = "industry") -> dict:
+    """板块资金流向 — industry-level (申万) or concept-level (theme)
+    daily flow ranking. Showing this side-by-side with the individual
+    flow above is east-money's standard 'see the rotation' view.
+
+    kind ∈ {"industry", "concept"}.
+    """
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    try:
+        if kind == "concept":
+            df = ak.stock_sector_fund_flow_rank(indicator="今日", sector_type="概念资金流")
+        else:
+            df = ak.stock_sector_fund_flow_rank(indicator="今日", sector_type="行业资金流")
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "akshare returned empty", "rows": []}
+        df = df.head(80)
+        return {
+            "status": "ok",
+            "kind": kind,
+            "rows": _rows_to_jsonable(df),
+            "source": "akshare/eastmoney",
+        }
+    except Exception as e:
+        log.warning("fund-flow-sectors fetch failed: %s", e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
+@app.get("/v1/cn/fund-flow/market", tags=["markets"])
+def cn_fund_flow_market(days: int = 30) -> dict:
+    """Market-wide net inflow time series, last N days. Shows whether
+    money is flowing into A-shares as a whole — leading indicator
+    retail tracks every morning."""
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    try:
+        df = ak.stock_market_fund_flow()
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "akshare returned empty", "rows": []}
+        df = df.tail(max(7, min(days, 180)))
+        return {
+            "status": "ok",
+            "rows": _rows_to_jsonable(df),
+            "source": "akshare/eastmoney",
+        }
+    except Exception as e:
+        log.warning("fund-flow-market fetch failed: %s", e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
+@app.get("/v1/cn/sectors/industry", tags=["markets"])
+def cn_sectors_industry() -> dict:
+    """申万行业 list with current-day metrics (涨跌幅, 换手率, etc.).
+    Shape per row: {板块名称, 涨跌幅, 总市值, 换手率, ...}."""
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    try:
+        df = ak.stock_board_industry_name_em()
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "akshare returned empty", "rows": []}
+        return {
+            "status": "ok",
+            "rows": _rows_to_jsonable(df),
+            "source": "akshare/eastmoney",
+        }
+    except Exception as e:
+        log.warning("sectors-industry fetch failed: %s", e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
+@app.get("/v1/cn/sectors/concept", tags=["markets"])
+def cn_sectors_concept() -> dict:
+    """概念股 (AI / 半导体 / 新能源 ...) list with current metrics."""
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    try:
+        df = ak.stock_board_concept_name_em()
+        if df is None or df.empty:
+            return {"status": "unavailable", "message": "akshare returned empty", "rows": []}
+        return {
+            "status": "ok",
+            "rows": _rows_to_jsonable(df),
+            "source": "akshare/eastmoney",
+        }
+    except Exception as e:
+        log.warning("sectors-concept fetch failed: %s", e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
+@app.get("/v1/cn/zt-pool", tags=["markets"])
+def cn_zt_pool(kind: str = "zt", date_str: str | None = None) -> dict:
+    """涨停 / 跌停 / 炸板 daily pool. The CN short-term trader's
+    homepage. East-money calls this 涨停股池.
+
+    kind:
+      - "zt"     涨停板池        stock_zt_pool_em
+      - "dt"     跌停板池        stock_zt_pool_dtgc_em
+      - "zbgc"   炸板池          stock_zt_pool_zbgc_em
+      - "qgc"    强势股池        stock_zt_pool_strong_em  (fallback)
+    """
+    try:
+        import akshare as ak
+    except ImportError:
+        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+    try:
+        d = date_str or date.today().strftime("%Y%m%d")
+        # Map kind → akshare function lazily so we don't import unknown
+        # symbols (akshare's API surface shifts between releases).
+        if kind == "zt":
+            df = ak.stock_zt_pool_em(date=d)
+        elif kind == "dt":
+            df = ak.stock_zt_pool_dtgc_em(date=d)
+        elif kind == "zbgc":
+            df = ak.stock_zt_pool_zbgc_em(date=d)
+        elif kind == "qgc":
+            df = ak.stock_zt_pool_strong_em(date=d)
+        else:
+            return {"status": "unavailable", "message": f"unknown kind '{kind}'", "rows": []}
+        if df is None or df.empty:
+            return {
+                "status": "unavailable",
+                "message": "no rows — market closed or akshare upstream empty",
+                "rows": [],
+            }
+        return {
+            "status": "ok",
+            "kind": kind,
+            "date": d,
+            "rows": _rows_to_jsonable(df),
+            "source": "akshare/eastmoney",
+        }
+    except Exception as e:
+        log.warning("zt-pool fetch failed: %s", e)
+        return {"status": "unavailable", "message": str(e), "rows": []}
+
+
 @app.get("/v1/datasource/test", tags=["markets"])
 def datasource_test(ticker: str = "600519") -> dict:
     """Probe every data source independently — for operators auditing

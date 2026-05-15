@@ -54,6 +54,38 @@ export default function CnMarketsPage() {
         </p>
       </header>
 
+      {/* Tab strip to the three new sibling pages — fund-flow / sectors / zt-pool.
+          Pure navigation; this landing page keeps showing 北向 + 龙虎. */}
+      <nav className="flex items-center gap-2 mb-8 flex-wrap text-sm border-b border-border-subtle pb-3">
+        <span className="text-2xs uppercase tracking-wider text-ink-tertiary mr-2">
+          A 股工具:
+        </span>
+        <Link
+          href="/cn-markets/fund-flow"
+          className="px-3 py-1 rounded surface text-ink-secondary hover:text-accent hover:border-accent/30 transition"
+        >
+          💰 资金流向
+        </Link>
+        <Link
+          href="/cn-markets/sectors"
+          className="px-3 py-1 rounded surface text-ink-secondary hover:text-accent hover:border-accent/30 transition"
+        >
+          🔥 板块热力图
+        </Link>
+        <Link
+          href="/hot/zt-pool"
+          className="px-3 py-1 rounded surface text-ink-secondary hover:text-accent hover:border-accent/30 transition"
+        >
+          ⚡ 涨停股池
+        </Link>
+        <Link
+          href="/hot"
+          className="px-3 py-1 rounded surface text-ink-secondary hover:text-accent hover:border-accent/30 transition ml-auto"
+        >
+          🌡 人气榜 →
+        </Link>
+      </nav>
+
       {loading && (
         <div className="text-center text-ink-tertiary font-mono uppercase tracking-kicker py-20">
           loading…

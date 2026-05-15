@@ -88,6 +88,13 @@ export default function HotPage() {
               )}
             </span>
           )}
+          <a
+            href="/hot/zt-pool"
+            className="btn-secondary"
+            title="涨停 / 跌停 / 炸板 / 强势股池"
+          >
+            ⚡ {locale === "zh" ? "涨停股池" : "Limit-up pool"}
+          </a>
           <button onClick={fetchData} disabled={loading} className="btn-secondary">
             {loading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
