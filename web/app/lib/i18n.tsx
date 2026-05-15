@@ -480,6 +480,7 @@ const dict = {
   },
 
   // ---- Decision sharing -------------------------------------------------
+  "decision.exportPrompt":      { en: "Export this decision",               zh: "导出本次决策" },
   "share.button":               { en: "Share decision",                     zh: "分享决策" },
   "share.creating":              { en: "Creating link…",                    zh: "生成链接…" },
   "share.copied":               { en: "Link copied!",                       zh: "链接已复制！" },
