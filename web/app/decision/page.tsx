@@ -623,22 +623,28 @@ function ShareButton({ jobId }: { jobId: string }) {
   }
 
   if (shareUrl) {
+    const shareId = shareUrl.split("/d/")[1] || "";
     return (
-      <div className="flex items-center gap-2 surface px-3 py-1.5 text-xs">
-        <code className="font-mono truncate max-w-[280px] sm:max-w-md">{shareUrl}</code>
-        <button onClick={copy} className="btn-ghost text-xs px-2 py-1">
-          {copied ? (
-            <>
-              <CheckCircle2 className="w-3.5 h-3.5 text-accent" />
-              {t("share.copied")}
-            </>
-          ) : (
-            <>
-              <Copy className="w-3.5 h-3.5" />
-              {t("share.copy")}
-            </>
-          )}
-        </button>
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 surface px-3 py-1.5 text-xs">
+          <code className="font-mono truncate max-w-[260px] sm:max-w-md">{shareUrl}</code>
+          <button onClick={copy} className="btn-ghost text-xs px-2 py-1">
+            {copied ? (
+              <>
+                <CheckCircle2 className="w-3.5 h-3.5 text-accent" />
+                {t("share.copied")}
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                {t("share.copy")}
+              </>
+            )}
+          </button>
+        </div>
+        <Link href={`/d/${shareId}/report`} className="btn-secondary text-xs">
+          📄 完整报告 / Report
+        </Link>
       </div>
     );
   }

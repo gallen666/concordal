@@ -1203,6 +1203,32 @@ def get_shared_decision(share_id: str) -> dict:
 from fastapi.responses import PlainTextResponse  # noqa: E402
 
 
+@app.get("/v1/decisions/job/{job_id}/report.md", response_class=PlainTextResponse,
+         tags=["decisions"])
+def get_job_report_md(job_id: str, user: CurrentUser = Depends(get_current_user)) -> str:
+    """Render a JUST-FINISHED job as a markdown report — skips the share step.
+
+    Auth-gated to the original requester. Lets the frontend show a "View Report"
+    button as soon as the pipeline completes without forcing the user to mint
+    a share-id first.
+    """
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown job")
+    if job.get("user") != user.id and user.id != "anonymous":
+        # Allow anonymous users to read their own anonymous jobs by ID
+        # (they have the URL, the URL is essentially the token).
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your job")
+    if job.get("status") != "done" or not job.get("result"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Decision not finished yet")
+    payload = {
+        "result": job["result"],
+        "mode": job.get("mode"),
+        "shared_at": time.time(),  # ad-hoc timestamp for the rendered report
+    }
+    return _decision_to_markdown(payload, share_id=None)
+
+
 @app.get("/v1/decisions/share/{share_id}/report.md", response_class=PlainTextResponse,
          tags=["decisions"])
 def get_shared_decision_report_md(share_id: str) -> str:

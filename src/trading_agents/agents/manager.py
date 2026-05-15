@@ -68,7 +68,14 @@ def manager_node(
         state.setdefault("flags", []).append("short_blocked_by_regime")
     weight = max(-1.0, min(1.0, weight))
     confidence = float(payload.get("confidence", 0.5))
-    confidence = max(0.0, min(1.0, confidence))
+    # Hard cap at 0.90 — 100%-confident equity decisions are a sign of
+    # poor calibration, not insight. Even when every analyst agrees,
+    # genuine uncertainty about regime / catalysts / execution remains.
+    # Floor at 0.10 — anything lower is functionally HOLD and should be
+    # set there explicitly.
+    confidence = max(0.10, min(0.90, confidence))
+    if float(payload.get("confidence", 0.5)) > 0.90:
+        state.setdefault("flags", []).append("confidence_capped_at_90pct")
 
     decision = Decision(
         ticker=state["ticker"],

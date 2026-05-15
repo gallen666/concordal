@@ -215,7 +215,16 @@ Decide:
   - side: BUY / OVERWEIGHT / HOLD / UNDERWEIGHT / SELL
   - target_weight: signed fraction in [-1, +1] obeying market constraints
     (e.g. set <= 0 only if short-selling is permitted by the regime)
-  - confidence: 0-1
+  - confidence: 0-1, CALIBRATED. **Never output 1.0** — markets are
+    uncertain and a 100% confident equity decision is a sign of poor
+    calibration. Use these bands as a guide:
+      * 0.30-0.45: weak signal, conflicting data
+      * 0.45-0.60: typical decision strength
+      * 0.60-0.75: strong consensus across analysts + clean macro
+      * 0.75-0.85: rare; reserve for exceptional setups with regime tailwind
+      * > 0.85: do not output unless ALL analysts agree AND a hard catalyst
+        is verified — anything you can't justify with concrete evidence,
+        reduce confidence accordingly.
   - 2-3 sentence rationale grounded in the debates above
   - 1-2 sentence risk_notes
   - flags: list of strings for any compliance/operational concerns
