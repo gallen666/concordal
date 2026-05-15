@@ -39,6 +39,7 @@ import {
 import { cn } from "../lib/cn";
 import { useT } from "../lib/i18n";
 import { MarketHeader } from "../components/MarketHeader";
+import { KLinePanel } from "../components/KLinePanel";
 
 const SIDE_STYLES: Record<
   string,
@@ -232,8 +233,12 @@ export default function DecisionPage() {
       {/* Live quote strip — shows current price + 60-day sparkline for the
           ticker currently in the input. Defaults to AAPL on first load. */}
       {ticker && (
-        <div className="mb-6">
+        <div className="mb-6 space-y-3">
           <MarketHeader ticker={ticker.toUpperCase()} />
+          {/* Full K-line chart with MA20/MA60 overlays + tooltip.
+              This is what makes the page feel like a professional
+              terminal vs a sparkline-only landing. */}
+          <KLinePanel ticker={ticker.toUpperCase()} />
         </div>
       )}
 

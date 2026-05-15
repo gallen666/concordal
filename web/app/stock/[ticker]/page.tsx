@@ -37,6 +37,7 @@ import {
   Users,
 } from "lucide-react";
 import { MarketHeader } from "../../components/MarketHeader";
+import { KLinePanel } from "../../components/KLinePanel";
 import { cn } from "../../lib/cn";
 
 const API_BASE = process.env.NEXT_PUBLIC_API || "http://localhost:8000";
@@ -155,6 +156,11 @@ export default function StockDetailPage() {
 
       {/* Quote strip — reuse MarketHeader for the sparkline. */}
       <MarketHeader ticker={ticker} />
+
+      {/* Full K-line chart */}
+      <div className="my-6">
+        <KLinePanel ticker={ticker} />
+      </div>
 
       {/* Run-decision CTA — this is the wedge */}
       <div className="surface-elev p-4 mb-6 flex items-center gap-4 flex-wrap border-l-2 border-l-accent">

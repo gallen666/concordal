@@ -125,6 +125,10 @@ export default function Header() {
     ? (isZh
         ? [
             { href: "/me/referral",  label: t("header.referral") || "邀请赚配额" },
+            { href: "/etf",          label: "ETF / 基金" },
+            { href: "/hk-markets",   label: "港股" },
+            { href: "/calendar",     label: "财经日历" },
+            { href: "/cn-markets/block-trade", label: "大宗交易" },
             { href: "/chain",        label: "数据脊柱" },
             { href: "/ecosystem",    label: t("header.ecosystem") },
             { href: "/integrations", label: t("header.integrations") },
@@ -138,6 +142,9 @@ export default function Header() {
             { href: "/me/referral",  label: t("header.referral") || "Referral" },
             { href: "/hot",          label: "Hot tickers" },
             { href: "/cn-markets",   label: "A-shares" },
+            { href: "/etf",          label: "ETF / Funds" },
+            { href: "/hk-markets",   label: "HK markets" },
+            { href: "/calendar",     label: "Calendar" },
             { href: "/ecosystem",    label: t("header.ecosystem") },
             { href: "/integrations", label: t("header.integrations") },
             { href: "/proof",        label: t("header.proof") },
