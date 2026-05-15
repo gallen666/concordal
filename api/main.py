@@ -542,7 +542,10 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
                 asof=str(asof),
                 market=req.market,
                 user=user.id,
-                tier=user.tier,
+                # CurrentUser doesn't carry tier directly; look it up
+                # from the same source the cap check uses. Defensive
+                # getattr so this can't ever crash the pipeline.
+                tier=_base_cap_and_tier(user)[1] if hasattr(user, "id") else "unknown",
             ):
                 trace = run_decision(
                     ticker=req.ticker.upper(),
