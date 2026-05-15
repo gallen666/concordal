@@ -29,6 +29,17 @@ import {
   TrendingDown,
   Quote,
   Sparkles,
+  MessageSquare,
+  GitBranch,
+  Flame,
+  BarChart3,
+  Trophy,
+  Calendar,
+  Building2,
+  Star,
+  Microscope,
+  Network,
+  ShieldCheck,
 } from "lucide-react";
 import { api } from "./lib/api";
 import { useT } from "./lib/i18n";
@@ -37,6 +48,7 @@ export default function Landing() {
   return (
     <div className="min-h-screen">
       <Hero />
+      <FeatureHub />
       <TodayPulse />
       <TheWay />
       <Architecture />
@@ -44,6 +56,184 @@ export default function Landing() {
       <PullQuote />
       <ClosingCta />
       <Disclaimer />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FEATURE HUB — answer "what can I do here?" in one screen.
+// ---------------------------------------------------------------------------
+//
+// First-principles IA: a retail-investor user comes here for one of four
+// jobs. The hub cards mirror the four Header nav categories so the user
+// learns the site's structure in one glance.
+//
+// Order matters: 决策 first (the moat), 市场 second (the daily habit),
+// 业绩 third (trust before tools), 研究 fourth (power-user tail).
+
+function FeatureHub() {
+  const { locale } = useT();
+  const isZh = locale === "zh";
+  const lbl = (zh: string, en: string) => (isZh ? zh : en);
+
+  const cards: HubCardData[] = [
+    {
+      kicker: lbl("决策", "Decide"),
+      title:  lbl("把一只票交给 7 个 agent 辩论", "Run a 7-agent debate on any ticker"),
+      desc:   lbl(
+        "多空写对立报告 → 风险三角色横排 → manager 拍板。每个 LLM 调用都可追溯。",
+        "Bulls and bears write opposing reports. Risk panel votes. Manager signs off. Every LLM call traced.",
+      ),
+      primary: { href: "/decision",            label: lbl("新建决策", "New decision") },
+      links: [
+        { href: "/ask",         label: lbl("AI 问答 · 问财 clone", "Ask AI · 问财 clone"),  icon: <MessageSquare className="w-3.5 h-3.5" /> },
+        { href: "/me/history",  label: lbl("我的历史决策",          "My decisions"),         icon: <Star className="w-3.5 h-3.5" /> },
+        { href: "/watchlist",   label: lbl("自选股 + 早评",          "Watchlist + AI brief"), icon: <Sparkles className="w-3.5 h-3.5" /> },
+      ],
+      icon: <Sparkles className="w-5 h-5" />,
+      tone: "accent",
+    },
+    {
+      kicker: lbl("市场", "Markets"),
+      title:  lbl("今天有什么值得关注", "What's interesting today"),
+      desc:   lbl(
+        "涨停股池、主力资金流向、申万板块、港股、ETF、财经日历 — 一站式 A 股 + 海外。",
+        "Limit-up pool, fund flow, sectors, HK, ETF, calendar — A-share + worldwide in one place.",
+      ),
+      primary: { href: "/hot/zt-pool", label: lbl("涨停股池", "Limit-up pool") },
+      links: [
+        { href: "/cn-markets/fund-flow", label: lbl("资金流向",     "Fund flow"),    icon: <TrendingUp className="w-3.5 h-3.5" /> },
+        { href: "/cn-markets/sectors",   label: lbl("板块热力图",    "Sector heat"),  icon: <BarChart3 className="w-3.5 h-3.5" /> },
+        { href: "/hk-markets",           label: lbl("港股 / 南向",   "HK markets"),   icon: <Building2 className="w-3.5 h-3.5" /> },
+        { href: "/calendar",             label: lbl("财经日历",     "Calendar"),     icon: <Calendar className="w-3.5 h-3.5" /> },
+      ],
+      icon: <Flame className="w-5 h-5" />,
+      tone: "bull",
+    },
+    {
+      kicker: lbl("业绩", "Proof"),
+      title:  lbl("准不准？拿历史回测说话", "Does it work? Backtest evidence."),
+      desc:   lbl(
+        "20 ticker × 78 周回测 sharpe + 命中率。每个决策可点开追溯，看 LLM 是怎么想的。",
+        "20 ticker × 78 week backtest — sharpe + hit rate. Click any decision to trace LLM reasoning.",
+      ),
+      primary: { href: "/track-record", label: lbl("回测战绩", "Track record") },
+      links: [
+        { href: "/proof",       label: lbl("信任证据",     "Trust evidence"),  icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+        { href: "/how-it-works",label: lbl("工作原理",     "How it works"),    icon: <Microscope className="w-3.5 h-3.5" /> },
+        { href: "/blog",        label: lbl("AI 早评 · Blog","AI daily · Blog"), icon: <Sparkles className="w-3.5 h-3.5" /> },
+      ],
+      icon: <Trophy className="w-5 h-5" />,
+      tone: "gold",
+    },
+    {
+      kicker: lbl("研究", "Research"),
+      title:  lbl("数据脊柱可见的研究工具", "Power-user research tooling"),
+      desc:   lbl(
+        "FRED → Qlib → Backtrader → Lean 一条龙。生态图实时显示 12 个上游集成的健康度。",
+        "FRED → Qlib → Backtrader → Lean live chain. Ecosystem map shows 12 integrations in real time.",
+      ),
+      primary: { href: "/chain",        label: lbl("数据脊柱", "Data spine") },
+      links: [
+        { href: "/backtest",   label: lbl("回测引擎",    "Backtest engine"),   icon: <Microscope className="w-3.5 h-3.5" /> },
+        { href: "/ecosystem",  label: lbl("生态地图",    "Ecosystem map"),     icon: <Network className="w-3.5 h-3.5" /> },
+        { href: "/developers", label: lbl("开发者 API",   "Developers API"),    icon: <GitBranch className="w-3.5 h-3.5" /> },
+      ],
+      icon: <GitBranch className="w-5 h-5" />,
+      tone: "neutral",
+    },
+  ];
+
+  return (
+    <section className="border-t border-border-subtle">
+      <div className="max-w-6xl mx-auto px-6 py-20">
+        <div className="text-center mb-12">
+          <div className="kicker justify-center mb-4">
+            {isZh ? "你来这里想做什么？" : "What brings you here?"}
+          </div>
+          <h2 className="display text-3xl md:text-4xl text-ink-primary tracking-tighter leading-tight">
+            {isZh
+              ? "四件事 — 决策、看市场、看业绩、用工具。"
+              : "Four jobs. Decide, browse, verify, build."}
+          </h2>
+          <p className="text-ink-secondary mt-4 max-w-2xl mx-auto">
+            {isZh
+              ? "每张卡片下面的链接对应顶部导航的一组功能 — 任何一个页面都在 3 次点击之内。"
+              : "Each card mirrors a navigation group above — every page is within 3 clicks."}
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-5">
+          {cards.map((c) => (
+            <HubCard key={c.kicker} data={c} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+interface HubLink {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+}
+interface HubCardData {
+  kicker: string;
+  title: string;
+  desc: string;
+  primary: { href: string; label: string };
+  links: HubLink[];
+  icon: React.ReactNode;
+  tone: "accent" | "bull" | "gold" | "neutral";
+}
+
+function HubCard({ data }: { data: HubCardData }) {
+  const toneClass = {
+    accent:  "border-l-accent",
+    bull:    "border-l-signal-buy",
+    gold:    "border-l-gold",
+    neutral: "border-l-border",
+  }[data.tone];
+  const iconClass = {
+    accent:  "text-accent",
+    bull:    "text-signal-buy",
+    gold:    "text-gold",
+    neutral: "text-ink-secondary",
+  }[data.tone];
+  return (
+    <div className={`surface-elev p-6 border-l-4 ${toneClass} flex flex-col`}>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="kicker">{data.kicker}</div>
+        <span className={iconClass}>{data.icon}</span>
+      </div>
+      <h3 className="text-xl text-ink-primary leading-snug font-semibold">
+        {data.title}
+      </h3>
+      <p className="text-ink-secondary text-sm leading-relaxed mt-3 flex-1">
+        {data.desc}
+      </p>
+      <div className="mt-5 flex items-center justify-between gap-3 flex-wrap">
+        <Link
+          href={data.primary.href}
+          className="btn-primary text-sm py-1.5"
+        >
+          {data.primary.label}
+          <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          {data.links.map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              className="inline-flex items-center gap-1 text-ink-tertiary hover:text-accent transition-colors"
+            >
+              {l.icon}
+              {l.label}
+            </Link>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
