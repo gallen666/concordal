@@ -28,7 +28,8 @@ RUN pip install --upgrade pip && \
         "yfinance>=0.2.40" \
         "akshare>=1.16.0" "beautifulsoup4>=4.12" "lxml>=4.9" \
         "ccxt>=4.4" \
-        "backtrader>=1.9.78"
+        "backtrader>=1.9.78" \
+        "langfuse>=2.0"
 
 # Copy app
 COPY src/ ./src/
