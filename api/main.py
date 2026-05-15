@@ -720,6 +720,182 @@ def databus_telemetry(last_n: int = 50) -> dict:
     return {"records": data_bus.telemetry(last_n=last_n)}
 
 
+@app.get("/v1/chain/full-stack")
+def chain_full_stack(ticker: str, lookback_days: int = 90) -> dict:
+    """Flagship demo: the FRED → Qlib → Backtrader → Lean chain materialised.
+
+    Every step routes through the UniversalDataBus, so adding a new
+    factor library or swapping in a new macro source is one-line registration
+    — every downstream layer picks up the new data for free.
+
+    Pipeline:
+      1. bus.fetch(Need.MACRO)           — OpenBB / FRED yield curve + CPI
+      2. bus.fetch(Need.OHLCV)            — yfinance daily bars (90d window)
+      3. bus.fetch(Need.FACTOR)           — Alpha158-lite, computed lazily by
+                                            calling bus.fetch(OHLCV) inside —
+                                            composability through the spine
+      4. signal ensembler                 — deterministic linear combo of
+                                            factor signs × macro tilt
+      5. mini-backtest                    — flat-weight strategy applied to the
+                                            same OHLCV window we just fetched
+      6. lean_bridge.decision_to_insight  — JSON the user pastes into a
+                                            QuantConnect algorithm
+
+    Designed for transparency, not alpha: every chain step is shown so the
+    'whole > sum of parts' claim is auditable instead of hand-wavy."""
+    from trading_agents.ecosystem.data_bus import Need, NeedKind
+    from trading_agents.execution.lean_bridge import decision_to_insight
+    chain_log: list[dict] = []
+
+    def _step(name: str, source: str, started_at: float, extra: dict | None = None) -> None:
+        rec = {
+            "step": name,
+            "source": source,
+            "elapsed_ms": round((time.time() - started_at) * 1000, 1),
+        }
+        if extra:
+            rec.update(extra)
+        chain_log.append(rec)
+
+    asof_d = date.today() - timedelta(days=1)
+
+    # --- 1. Macro ---------------------------------------------------------
+    t0 = time.time()
+    try:
+        macro = data_bus.fetch(Need.macro(asof=asof_d))
+    except Exception:
+        macro = None
+    _step(
+        "macro", "openbb→fred", t0,
+        {"got": macro is not None},
+    )
+    macro_dict = None
+    if macro:
+        # MacroSnapshot may be a dataclass — pull what we need.
+        macro_dict = {
+            k: getattr(macro, k, None)
+            for k in ("yield_curve_2y10y_bps", "cpi_yoy", "unemployment_rate")
+            if hasattr(macro, k)
+        }
+
+    # --- 2. OHLCV ---------------------------------------------------------
+    t0 = time.time()
+    try:
+        ohlcv = data_bus.fetch(Need(NeedKind.OHLCV, {
+            "ticker": ticker, "asof": asof_d, "lookback_days": lookback_days,
+        }))
+    except Exception:
+        ohlcv = None
+    bars = len(ohlcv) if ohlcv else 0
+    _step("ohlcv", "yfinance", t0, {"bars": bars})
+
+    if not ohlcv or bars < 30:
+        return {
+            "ticker": ticker,
+            "asof": str(asof_d),
+            "chain": chain_log,
+            "error": "insufficient OHLCV bars — bus could not fulfil Need.OHLCV",
+            "spine_status": data_bus.registered_sources(),
+        }
+
+    # --- 3. Factors (Qlib-named, pure-Python) ----------------------------
+    t0 = time.time()
+    try:
+        factors = data_bus.fetch(Need.factor(
+            name="alpha158_lite", ticker=ticker, asof=asof_d,
+        ))
+    except Exception:
+        factors = None
+    _step(
+        "factor", "alpha158_lite", t0,
+        {"computed": bool(factors), "n_factors": len(factors) if factors else 0},
+    )
+
+    # --- 4. Signal ensemble (deterministic; no LLM call) -----------------
+    t0 = time.time()
+    factor_sum = 0.0
+    if factors:
+        for v in factors.values():
+            if isinstance(v, (int, float)) and not (v != v):  # not NaN
+                factor_sum += max(-2.0, min(2.0, float(v)))
+    macro_tilt = 0
+    if macro_dict and macro_dict.get("yield_curve_2y10y_bps") is not None:
+        macro_tilt = 1 if macro_dict["yield_curve_2y10y_bps"] > 0 else -1
+    score = factor_sum * 0.05 + macro_tilt * 0.4
+    if score > 0.3:
+        side = "BUY"
+    elif score < -0.3:
+        side = "SELL"
+    else:
+        side = "HOLD"
+    target_weight = max(-0.03, min(0.03, score * 0.01))
+    confidence = round(min(0.85, abs(score) / 1.5), 2)
+    _step(
+        "signal", "deterministic ensembler", t0,
+        {"side": side, "score": round(score, 3), "weight": target_weight},
+    )
+
+    # --- 5. Mini backtest (hand-rolled flat-weight) -----------------------
+    # Apply target_weight constantly across the OHLCV window. Daily P&L =
+    # weight * close-to-close return. This is intentionally simple — the
+    # full Backtrader cross-validation lives in /v1/backtest and needs a
+    # real BacktestResult input.
+    t0 = time.time()
+    closes = [float(q.close) for q in ohlcv]
+    daily_rets = [
+        (closes[i] / closes[i - 1] - 1.0) for i in range(1, len(closes))
+    ]
+    pnl = sum(daily_rets) * target_weight if target_weight else 0.0
+    final_eq = 1.0 + pnl
+    sharpe = 0.0
+    if daily_rets:
+        mean_r = sum(daily_rets) / len(daily_rets) * target_weight
+        var_r = sum((r * target_weight - mean_r) ** 2 for r in daily_rets) / max(1, len(daily_rets) - 1)
+        std_r = var_r ** 0.5
+        if std_r:
+            sharpe = round((mean_r / std_r) * (252 ** 0.5), 3)
+    _step(
+        "backtest", "mini in-memory", t0,
+        {"days": len(daily_rets), "return_pct": round(pnl * 100, 2), "sharpe": sharpe},
+    )
+
+    # --- 6. Lean export ---------------------------------------------------
+    t0 = time.time()
+    try:
+        lean_json = decision_to_insight({
+            "ticker": ticker,
+            "action": side,
+            "confidence": confidence,
+            "position_pct": abs(target_weight),
+        }).to_dict()
+    except Exception as e:
+        lean_json = {"error": str(e)}
+    _step("lean", "lean_bridge.decision_to_insight", t0)
+
+    return {
+        "ticker": ticker,
+        "asof": str(asof_d),
+        "lookback_days": lookback_days,
+        "chain": chain_log,
+        "macro": macro_dict,
+        "factors": factors,
+        "signal": {
+            "side": side,
+            "target_weight": target_weight,
+            "confidence": confidence,
+            "score": round(score, 3),
+        },
+        "backtest": {
+            "days": len(daily_rets),
+            "final_equity": round(final_eq, 4),
+            "return_pct": round(pnl * 100, 2),
+            "sharpe_annualised": sharpe,
+        },
+        "lean_insight": lean_json,
+        "spine_traversed": [r["step"] for r in chain_log],
+    }
+
+
 @app.get("/v1/observability/status")
 def observability_status() -> dict:
     """Surface whether Langfuse is wired so the user can confirm in one

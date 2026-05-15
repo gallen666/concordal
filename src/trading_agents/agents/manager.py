@@ -89,6 +89,51 @@ def manager_node(
         risk_notes=payload.get("risk_notes", ""),
         flags=list(payload.get("flags", [])) + list(state.get("flags", [])),
     )
+
+    # ---- Consensus check (dual-LLM agreement score) ----------------------
+    # Env-gated: only fires when TA_DECISIONS_CONSENSUS_CHECK=true AND a
+    # second-family API key is set. Re-runs the manager prompt through a
+    # different LLM family (DeepSeek by default) and computes:
+    #   agreement_score = 0.6 * side_match + 0.4 * conf_proximity
+    # Below 0.5 = clear disagreement → flag for human review.
+    import os
+    consensus_enabled = os.environ.get("TA_DECISIONS_CONSENSUS_CHECK", "false").lower() == "true"
+    if consensus_enabled:
+        with current_span("manager.consensus_check"):
+            second_model = (
+                "deepseek-chat" if os.environ.get("DEEPSEEK_API_KEY")
+                else "qwen-plus" if os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("QWEN_API_KEY")
+                else "glm-4" if os.environ.get("ZHIPU_API_KEY") or os.environ.get("GLM_API_KEY")
+                else None
+            )
+            if second_model:
+                try:
+                    resp2 = llm.complete(
+                        tier=Tier.DEEP, system=pack.fund_manager_system, user=user,
+                        force_model=second_model,
+                    )
+                    state.setdefault("usage", []).append(resp2.usage)
+                    payload2 = extract_json(resp2.text) or {}
+                    side2 = _coerce_side(payload2.get("side", "HOLD"))
+                    conf2 = float(payload2.get("confidence", 0.5))
+                    conf2 = max(0.10, min(0.90, conf2))
+                    side_match = 1.0 if side2 == side else 0.0
+                    conf_proximity = 1.0 - min(1.0, abs(conf2 - confidence))
+                    agreement_score = round(0.6 * side_match + 0.4 * conf_proximity, 2)
+                    decision.consensus = {
+                        "agreement_score": agreement_score,
+                        "primary_model": resp.usage.model,
+                        "second_model": resp2.usage.model,
+                        "primary_side": side.value,
+                        "second_side": side2.value,
+                        "primary_confidence": confidence,
+                        "second_confidence": conf2,
+                    }
+                    if agreement_score < 0.5:
+                        decision.flags.append("consensus_low_agreement")
+                except Exception as e:
+                    decision.consensus = {"error": f"second-model call failed: {e}"}
+
     state["decision"] = decision
     state["manager_review"] = resp.text
     return state

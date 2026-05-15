@@ -84,6 +84,7 @@ export default function Header() {
         { href: "/me/history",   label: t("header.myHistory") || "我的决策" },
         { href: "/watchlist",    label: t("header.watchlist") },
         { href: "/track-record", label: t("header.trackRecord") },
+        { href: "/chain",        label: locale === "zh" ? "数据脊柱" : "Spine" },
         { href: "/blog",         label: "Blog" },
       ]
     : [

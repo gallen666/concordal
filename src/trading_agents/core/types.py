@@ -39,6 +39,13 @@ class Decision(BaseModel):
     rationale: str
     risk_notes: str
     flags: list[str] = Field(default_factory=list)
+    # --- consensus check (optional, env-gated) ----------------------------
+    # When TA_DECISIONS_CONSENSUS_CHECK=true AND a second LLM provider key
+    # is set (e.g. DEEPSEEK_API_KEY), the manager re-runs the final
+    # synthesis with a different model and compares. agreement_score=1.0
+    # = identical side + identical confidence; <1.0 = disagreement. None
+    # = consensus check disabled or unavailable.
+    consensus: dict | None = None
 
 
 # ---------------------------------------------------------------------------

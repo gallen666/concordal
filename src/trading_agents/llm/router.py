@@ -670,8 +670,14 @@ class LLMRouter:
         system: str,
         user: str,
         temperature: float = 0.3,
+        force_model: str | None = None,
     ) -> LLMResponse:
-        model = self.models[tier]
+        # When the caller passes force_model (used by the manager
+        # consensus-check), bypass the tier→model map and use that model
+        # as the chain starter. Same fallback family + mock-last logic
+        # applies. This is how we run the same prompt through two LLM
+        # families (Gemini vs DeepSeek) for an agreement score.
+        model = force_model or self.models[tier]
         # Append a language directive when the request asks for non-English
         # output. Done at the router level so every provider (OpenAI,
         # Anthropic, Gemini, Mock) gets the same treatment without us
