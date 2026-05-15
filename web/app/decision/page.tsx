@@ -423,6 +423,20 @@ function DecisionView({ trace, jobId }: { trace: DecisionTrace; jobId: string | 
         </div>
       </div>
 
+      {/* Prominent export bar — first thing the user sees after the
+          decision card. One click → full report, no "share first" friction. */}
+      {jobId && (
+        <div className="surface-elev p-4 flex items-center gap-3 flex-wrap">
+          <div className="text-sm text-ink-secondary">
+            <span className="text-ink-primary font-medium">{t("decision.exportPrompt") || "导出本次决策"}</span>
+            <span className="text-ink-tertiary ml-2">/ Export this decision</span>
+          </div>
+          <div className="ml-auto">
+            <ShareButton jobId={jobId} prominent />
+          </div>
+        </div>
+      )}
+
       <PipelineTimeline trace={trace} />
 
       {trace.analyst_reports.length > 0 && (
@@ -591,78 +605,130 @@ function BrokerLinks({ trace }: { trace: DecisionTrace }) {
 }
 
 /** Share button — generates a /d/[shareId] public URL the user can paste anywhere. */
-function ShareButton({ jobId }: { jobId: string }) {
-  const { t } = useT();
-  const [busy, setBusy] = useState(false);
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
+/**
+ * ShareButton — post-decision export hub.
+ *
+ * One-click flow: clicking ANY of the actions auto-mints a share-id behind
+ * the scenes (idempotent — only minted once, reused thereafter), so the
+ * user never has to "first share, then do thing X". That two-step dance
+ * was the friction point the user called out.
+ *
+ *   📄 完整报告 → auto-share + open /d/{shareId}/report in new tab
+ *   ⬇ Markdown → auto-share + download .md
+ *   🔗 复制链接 → auto-share + copy share URL to clipboard
+ *
+ * The minted share is cached in component state so subsequent clicks
+ * don't ping the backend again.
+ */
+function ShareButton({ jobId, prominent = false }: { jobId: string; prominent?: boolean }) {
+  const { t, locale } = useT();
+  const [busy, setBusy] = useState<null | "report" | "md" | "copy">(null);
+  const [shareId, setShareId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  async function generate() {
+  async function ensureShare(): Promise<string> {
+    if (shareId) return shareId;
+    const { share_id } = await api.shareDecision(jobId);
+    setShareId(share_id);
+    return share_id;
+  }
+
+  async function openReport() {
     if (busy) return;
-    setBusy(true);
+    setBusy("report");
     try {
-      const { share_id } = await api.shareDecision(jobId);
-      const url = `${window.location.origin}/d/${share_id}`;
-      setShareUrl(url);
+      const sid = await ensureShare();
+      window.open(`/d/${sid}/report`, "_blank", "noopener");
     } catch (e: unknown) {
       alert((e as Error).message);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
-  async function copy() {
-    if (!shareUrl) return;
+  async function downloadMd() {
+    if (busy) return;
+    setBusy("md");
     try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // ignore
+      const sid = await ensureShare();
+      window.location.href = `${process.env.NEXT_PUBLIC_API || "http://localhost:8000"}/v1/decisions/share/${sid}/report.md`;
+    } catch (e: unknown) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(null);
     }
   }
 
-  if (shareUrl) {
-    const shareId = shareUrl.split("/d/")[1] || "";
+  async function copyLink() {
+    if (busy) return;
+    setBusy("copy");
+    try {
+      const sid = await ensureShare();
+      const url = `${window.location.origin}/d/${sid}`;
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e: unknown) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // PROMINENT variant — used at top of decision result. Single big primary CTA.
+  if (prominent) {
     return (
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex items-center gap-2 surface px-3 py-1.5 text-xs">
-          <code className="font-mono truncate max-w-[260px] sm:max-w-md">{shareUrl}</code>
-          <button onClick={copy} className="btn-ghost text-xs px-2 py-1">
-            {copied ? (
-              <>
-                <CheckCircle2 className="w-3.5 h-3.5 text-accent" />
-                {t("share.copied")}
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                {t("share.copy")}
-              </>
-            )}
-          </button>
-        </div>
-        <Link href={`/d/${shareId}/report`} className="btn-secondary text-xs">
-          📄 完整报告 / Report
-        </Link>
+        <button
+          onClick={openReport}
+          disabled={busy !== null}
+          className="btn-primary text-sm"
+        >
+          {busy === "report" ? (
+            <><Loader2 className="w-4 h-4 animate-spin" /> {locale === "zh" ? "生成中..." : "Generating..."}</>
+          ) : (
+            <>📄 {locale === "zh" ? "完整报告" : "Full report"}</>
+          )}
+        </button>
+        <button onClick={downloadMd} disabled={busy !== null} className="btn-secondary text-sm">
+          {busy === "md" ? (
+            <><Loader2 className="w-4 h-4 animate-spin" /></>
+          ) : (
+            <>⬇ Markdown</>
+          )}
+        </button>
+        <button onClick={copyLink} disabled={busy !== null} className="btn-secondary text-sm">
+          {busy === "copy" ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : copied ? (
+            <><CheckCircle2 className="w-4 h-4 text-accent" /> {locale === "zh" ? "已复制" : "Copied"}</>
+          ) : (
+            <><Share2 className="w-4 h-4" /> {locale === "zh" ? "复制链接" : "Copy link"}</>
+          )}
+        </button>
       </div>
     );
   }
 
+  // COMPACT variant — used at bottom of decision view.
   return (
-    <button onClick={generate} disabled={busy} className="btn-secondary text-sm">
-      {busy ? (
-        <>
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <button onClick={openReport} disabled={busy !== null} className="btn-secondary text-xs">
+        {busy === "report" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <>📄 {locale === "zh" ? "完整报告" : "Report"}</>}
+      </button>
+      <button onClick={downloadMd} disabled={busy !== null} className="btn-ghost text-xs px-2 py-1">
+        {busy === "md" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <>⬇ .md</>}
+      </button>
+      <button onClick={copyLink} disabled={busy !== null} className="btn-ghost text-xs px-2 py-1">
+        {busy === "copy" ? (
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          {t("share.creating")}
-        </>
-      ) : (
-        <>
-          <Share2 className="w-3.5 h-3.5" />
-          {t("share.button")}
-        </>
-      )}
-    </button>
+        ) : copied ? (
+          <><CheckCircle2 className="w-3.5 h-3.5 text-accent" /> {t("share.copied")}</>
+        ) : (
+          <><Share2 className="w-3.5 h-3.5" /> {t("share.button")}</>
+        )}
+      </button>
+    </div>
   );
 }
 
