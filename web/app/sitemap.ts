@@ -41,6 +41,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE}/how-it-works`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
     { url: `${SITE}/track-record`, lastModified: now, changeFrequency: "weekly",  priority: 0.6 },
     { url: `${SITE}/hot`,          lastModified: now, changeFrequency: "daily",   priority: 0.6 },
+    { url: `${SITE}/cn-markets`,   lastModified: now, changeFrequency: "daily",   priority: 0.7 },
+    { url: `${SITE}/chain`,        lastModified: now, changeFrequency: "weekly",  priority: 0.6 },
     { url: `${SITE}/backtest`,     lastModified: now, changeFrequency: "monthly", priority: 0.6 },
     { url: `${SITE}/blog`,         lastModified: now, changeFrequency: "weekly",  priority: 0.8 },
     // /redeem is disallowed in robots.txt — keep it out of the sitemap

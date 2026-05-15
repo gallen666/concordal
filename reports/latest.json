@@ -1,0 +1,481 @@
+{
+  "config": {
+    "tickers": [
+      [
+        "AAPL",
+        "us_equity"
+      ],
+      [
+        "NVDA",
+        "us_equity"
+      ],
+      [
+        "TSLA",
+        "us_equity"
+      ]
+    ],
+    "start": "2025-04-01",
+    "end": "2025-05-01",
+    "rebalance_every_days": 5,
+    "locale": "en",
+    "debate_rounds": 1,
+    "user_risk_profile": "balanced"
+  },
+  "started_at": "2026-05-09T09:17:56.794648+00:00",
+  "finished_at": "2026-05-09T09:17:56.808947+00:00",
+  "wall_clock_seconds": 0.014576196670532227,
+  "per_ticker": [
+    {
+      "ticker": "AAPL",
+      "market": "us_equity",
+      "agent_metrics": {
+        "cumulative_return": -0.0005,
+        "annual_return": -0.0062,
+        "annual_volatility": 0.0107,
+        "sharpe": -0.574,
+        "sortino": -0.759,
+        "max_drawdown": -0.0023,
+        "win_rate": 0.0,
+        "n_trades": 0,
+        "avg_holding_days": 0.0
+      },
+      "bh_metrics": {
+        "cumulative_return": -0.0285,
+        "annual_return": -0.2823,
+        "annual_volatility": 0.4281,
+        "sharpe": -0.574,
+        "sortino": -0.759,
+        "max_drawdown": -0.091,
+        "win_rate": 0.0,
+        "n_trades": 0,
+        "avg_holding_days": 0.0
+      },
+      "macd_metrics": {
+        "cumulative_return": 0.0,
+        "annual_return": 0.0,
+        "annual_volatility": 0.0,
+        "sharpe": 0.0,
+        "sortino": 0.0,
+        "max_drawdown": 0.0,
+        "win_rate": 0.0,
+        "n_trades": 0,
+        "avg_holding_days": 0.0
+      },
+      "agent_curve": [
+        100000.0,
+        99999.25,
+        99999.25,
+        99999.25,
+        100024.51981296935,
+        99984.3291676978,
+        99915.21013532829,
+        99921.54626437368,
+        99842.07336238949,
+        100039.5529170588,
+        100002.75652402898,
+        99979.28952556485,
+        100067.70261688782,
+        100049.25255976865,
+        100038.57611116781,
+        100021.00757800716,
+        100074.56998587634,
+        100180.79280601066,
+        100075.66819300382,
+        99999.95000132901,
+        100003.69060426492,
+        99973.90956005268,
+        99945.89377507963
+      ],
+      "bh_curve": [
+        100000.0,
+        99970.0,
+        99970.0,
+        99970.0,
+        100980.49685974533,
+        99357.50628254542,
+        96610.07786048652,
+        96855.1392158412,
+        93773.77817877324,
+        101192.85646140795,
+        99704.03248745458,
+        98768.15653419984,
+        102261.83930986188,
+        101507.65520168772,
+        101074.37209936554,
+        100364.35461333267,
+        102514.20558064422,
+        106866.69913505713,
+        102381.08065461784,
+        99282.58111767532,
+        99431.13187771446,
+        98246.71041621383,
+        97145.43960448226
+      ],
+      "rebalance_dates": [
+        "2025-04-01",
+        "2025-04-08",
+        "2025-04-15",
+        "2025-04-22",
+        "2025-04-29"
+      ],
+      "decisions": [
+        {
+          "ticker": "AAPL",
+          "market": "us_equity",
+          "asof": "2025-04-01",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        },
+        {
+          "ticker": "AAPL",
+          "market": "us_equity",
+          "asof": "2025-04-08",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        },
+        {
+          "ticker": "AAPL",
+          "market": "us_equity",
+          "asof": "2025-04-15",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        },
+        {
+          "ticker": "AAPL",
+          "market": "us_equity",
+          "asof": "2025-04-22",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        },
+        {
+          "ticker": "AAPL",
+          "market": "us_equity",
+          "asof": "2025-04-29",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        }
+      ]
+    },
+    {
+      "ticker": "NVDA",
+      "market": "us_equity",
+      "agent_metrics": {
+        "cumulative_return": 0.0007,
+        "annual_return": 0.008,
+        "annual_volatility": 0.0086,
+        "sharpe": 0.937,
+        "sortino": 1.111,
+        "max_drawdown": -0.0025,
+        "win_rate": 0.0,
+        "n_trades": 0,
+        "avg_holding_days": 0.0
+      },
+      "bh_metrics": {
+        "cumulative_return": 0.0235,
+        "annual_return": 0.3045,
+        "annual_volatility": 0.343,
+        "sharpe": 0.937,
+        "sortino": 1.111,
+        "max_drawdown": -0.097,
+        "win_rate": 0.0,
+        "n_trades": 0,
+        "avg_holding_days": 0.0
+      },
+      "macd_metrics": {
+        "cumulative_return": 0.0,
+        "annual_return": 0.0,
+        "annual_volatility": 0.0,
+        "sharpe": 0.0,
+        "sortino": 0.0,
+        "max_drawdown": 0.0,
+        "win_rate": 0.0,
+        "n_trades": 0,
+        "avg_holding_days": 0.0
+      },
+      "agent_curve": [
+        100000.0,
+        99999.25,
+        99999.25,
+        99999.25,
+        100159.3384040448,
+        100140.71566816405,
+        100189.41813938737,
+        100222.27953661686,
+        100214.08027041881,
+        100173.92457569388,
+        100234.43230561953,
+        100214.90356211369,
+        100141.2730573529,
+        100079.20942695817,
+        99982.79442049853,
+        99996.92786988334,
+        99995.33247762788,
+        100004.82797633993,
+        100017.50607523507,
+        100076.59532793566,
+        100068.81208831836,
+        100113.22304905628,
+        100069.87875348063
+      ],
+      "bh_curve": [
+        100000.0,
+        99970.0,
+        99970.0,
+        99970.0,
+        106371.66311341619,
+        105580.55110372408,
+        107634.47441256508,
+        109046.6072644948,
+        108689.75959944853,
+        106947.68391729893,
+        109531.65438747902,
+        108678.04927989218,
+        105484.10532925528,
+        102869.10900424425,
+        98904.99862969888,
+        99464.2423676403,
+        99400.76662479553,
+        99778.32818815076,
+        100284.30356472377,
+        102654.17851472723,
+        102334.83029290634,
+        104151.49545977102,
+        102347.78839036959
+      ],
+      "rebalance_dates": [
+        "2025-04-01",
+        "2025-04-08",
+        "2025-04-15",
+        "2025-04-22",
+        "2025-04-29"
+      ],
+      "decisions": [
+        {
+          "ticker": "NVDA",
+          "market": "us_equity",
+          "asof": "2025-04-01",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        },
+        {
+          "ticker": "NVDA",
+          "market": "us_equity",
+          "asof": "2025-04-08",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        },
+        {
+          "ticker": "NVDA",
+          "market": "us_equity",
+          "asof": "2025-04-15",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        },
+        {
+          "ticker": "NVDA",
+          "market": "us_equity",
+          "asof": "2025-04-22",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        },
+        {
+          "ticker": "NVDA",
+          "market": "us_equity",
+          "asof": "2025-04-29",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        }
+      ]
+    },
+    {
+      "ticker": "TSLA",
+      "market": "us_equity",
+      "agent_metrics": {
+        "cumulative_return": 0.0021,
+        "annual_return": 0.0243,
+        "annual_volatility": 0.0085,
+        "sharpe": 2.822,
+        "sortino": 2.486,
+        "max_drawdown": -0.0015,
+        "win_rate": 0.0,
+        "n_trades": 0,
+        "avg_holding_days": 0.0
+      },
+      "bh_metrics": {
+        "cumulative_return": 0.0821,
+        "annual_return": 1.4692,
+        "annual_volatility": 0.3408,
+        "sharpe": 2.822,
+        "sortino": 2.486,
+        "max_drawdown": -0.0593,
+        "win_rate": 0.0,
+        "n_trades": 0,
+        "avg_holding_days": 0.0
+      },
+      "macd_metrics": {
+        "cumulative_return": 0.0,
+        "annual_return": 0.0,
+        "annual_volatility": 0.0,
+        "sharpe": 0.0,
+        "sortino": 0.0,
+        "max_drawdown": 0.0,
+        "win_rate": 0.0,
+        "n_trades": 0,
+        "avg_holding_days": 0.0
+      },
+      "agent_curve": [
+        100000.0,
+        99999.25,
+        99999.25,
+        99999.25,
+        99851.8015706419,
+        99871.42813247221,
+        99939.3777780508,
+        100016.14994882011,
+        100078.30118041729,
+        100114.97015408914,
+        100115.93439199818,
+        100134.09392764466,
+        100224.4674436242,
+        100172.39974427933,
+        100235.08081618013,
+        100229.37698208533,
+        100181.91624588303,
+        100171.30308515862,
+        100126.37410659809,
+        100097.23452572424,
+        100136.01534436517,
+        100178.94042105829,
+        100209.764382938
+      ],
+      "bh_curve": [
+        100000.0,
+        99970.0,
+        99970.0,
+        99970.0,
+        94073.78798523814,
+        94813.42211800776,
+        97393.75507187948,
+        100386.4212911339,
+        102881.67419661806,
+        104389.51969676561,
+        104429.73599290653,
+        105187.41578677049,
+        108984.78638397095,
+        106720.03517686752,
+        109391.1606426655,
+        109142.16636774213,
+        107074.92112587867,
+        106621.18520624547,
+        104708.30964340737,
+        103489.38754251551,
+        105093.18936124201,
+        106895.19164693054,
+        108210.81079746297
+      ],
+      "rebalance_dates": [
+        "2025-04-01",
+        "2025-04-08",
+        "2025-04-15",
+        "2025-04-22",
+        "2025-04-29"
+      ],
+      "decisions": [
+        {
+          "ticker": "TSLA",
+          "market": "us_equity",
+          "asof": "2025-04-01",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        },
+        {
+          "ticker": "TSLA",
+          "market": "us_equity",
+          "asof": "2025-04-08",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        },
+        {
+          "ticker": "TSLA",
+          "market": "us_equity",
+          "asof": "2025-04-15",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        },
+        {
+          "ticker": "TSLA",
+          "market": "us_equity",
+          "asof": "2025-04-22",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        },
+        {
+          "ticker": "TSLA",
+          "market": "us_equity",
+          "asof": "2025-04-29",
+          "side": "OVERWEIGHT",
+          "target_weight": 0.025,
+          "confidence": 0.55,
+          "rationale": "Constructive setup but valuation is mid-range and risk has flagged regulatory tail; size at 60% of trader request to balance asymmetry."
+        }
+      ]
+    }
+  ],
+  "portfolio": {
+    "agent": {
+      "cumulative_return": 0.0008,
+      "annual_return": 0.0086,
+      "annual_volatility": 0.0041,
+      "sharpe": 2.114,
+      "sortino": 2.429,
+      "max_drawdown": -0.0009,
+      "win_rate": 0.0,
+      "n_trades": 0,
+      "avg_holding_days": 0.0
+    },
+    "bh": {
+      "cumulative_return": 0.0257,
+      "annual_return": 0.337,
+      "annual_volatility": 0.159,
+      "sharpe": 1.904,
+      "sortino": 2.105,
+      "max_drawdown": -0.0357,
+      "win_rate": 0.0,
+      "n_trades": 0,
+      "avg_holding_days": 0.0
+    },
+    "excess_return_vs_bh": -0.024900000000000002,
+    "excess_sharpe_vs_bh": 0.20999999999999996,
+    "pct_tickers_agent_beats_bh": 0.3333333333333333
+  },
+  "n_decisions": 15,
+  "estimated_cost_usd": 0.75
+}

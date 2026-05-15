@@ -77,44 +77,91 @@ export default function Header() {
   const toggleLabel = locale === "en" ? "中" : "EN";
   const toggleTitle = locale === "en" ? "切换到中文" : "Switch to English";
 
-  // Primary nav for logged-in / logged-out users
+  // Primary nav for logged-in / logged-out users.
+  // For zh users, surface the A-share-centric pages (人气榜 / 北向龙虎 /
+  // 涨停 板块) that were previously orphaned in the footer — that's where
+  // a Chinese retail user expects to start their morning routine.
+  const isZh = locale === "zh";
   const primaryLinks = user
-    ? [
-        { href: "/decision",     label: t("header.newDecision") },
-        { href: "/me/history",   label: t("header.myHistory") || "我的决策" },
-        { href: "/watchlist",    label: t("header.watchlist") },
-        { href: "/track-record", label: t("header.trackRecord") },
-        { href: "/chain",        label: locale === "zh" ? "数据脊柱" : "Spine" },
-        { href: "/blog",         label: "Blog" },
-      ]
-    : [
-        { href: "/decision?ticker=AAPL", label: locale === "zh" ? "试一下" : "Try it" },
-        { href: "/how-it-works",          label: t("header.howItWorks") },
-        { href: "/track-record",          label: t("header.trackRecord") },
-        { href: "/blog",                  label: "Blog" },
-        { href: "/pricing",               label: t("header.pricing") },
-      ];
+    ? (isZh
+        ? [
+            { href: "/decision",        label: t("header.newDecision") },
+            { href: "/cn-markets",      label: "A 股市场" },
+            { href: "/hot",             label: "人气榜" },
+            { href: "/me/history",      label: t("header.myHistory") || "我的决策" },
+            { href: "/watchlist",       label: t("header.watchlist") },
+            { href: "/track-record",    label: t("header.trackRecord") },
+            { href: "/backtest",        label: "回测" },
+            { href: "/blog",            label: "Blog" },
+          ]
+        : [
+            { href: "/decision",        label: t("header.newDecision") },
+            { href: "/me/history",      label: t("header.myHistory") || "我的决策" },
+            { href: "/watchlist",       label: t("header.watchlist") },
+            { href: "/track-record",    label: t("header.trackRecord") },
+            { href: "/backtest",        label: "Backtest" },
+            { href: "/chain",           label: "Spine" },
+            { href: "/blog",            label: "Blog" },
+          ])
+    : (isZh
+        ? [
+            { href: "/decision?ticker=600519", label: "试一下" },
+            { href: "/how-it-works",            label: t("header.howItWorks") },
+            { href: "/track-record",            label: t("header.trackRecord") },
+            { href: "/hot",                     label: "人气榜" },
+            { href: "/blog",                    label: "Blog" },
+            { href: "/pricing",                 label: t("header.pricing") },
+          ]
+        : [
+            { href: "/decision?ticker=AAPL",    label: "Try it" },
+            { href: "/how-it-works",            label: t("header.howItWorks") },
+            { href: "/track-record",            label: t("header.trackRecord") },
+            { href: "/blog",                    label: "Blog" },
+            { href: "/pricing",                 label: t("header.pricing") },
+          ]);
 
   // Secondary links live in the drawer only.
   const drawerSecondary = user
-    ? [
-        { href: "/me/referral", label: t("header.referral") || "邀请赚配额" },
-        { href: "/hot",         label: t("header.hot") || "热度榜" },
-        { href: "/ecosystem",   label: t("header.ecosystem") },
-        { href: "/integrations",label: t("header.integrations") },
-        { href: "/proof",       label: t("header.proof") },
-        { href: "/developers",  label: t("header.developers") },
-        { href: "/pricing",     label: t("header.pricing") },
-        { href: "/sponsor",     label: t("header.sponsor") },
-        { href: "/how-it-works",label: t("header.howItWorks") },
-      ]
-    : [
-        { href: "/hot",         label: locale === "zh" ? "热度榜" : "Hot tickers" },
-        { href: "/ecosystem",   label: t("header.ecosystem") },
-        { href: "/proof",       label: t("header.proof") },
-        { href: "/developers",  label: t("header.developers") },
-        { href: "/sponsor",     label: t("header.sponsor") },
-      ];
+    ? (isZh
+        ? [
+            { href: "/me/referral",  label: t("header.referral") || "邀请赚配额" },
+            { href: "/chain",        label: "数据脊柱" },
+            { href: "/ecosystem",    label: t("header.ecosystem") },
+            { href: "/integrations", label: t("header.integrations") },
+            { href: "/proof",        label: t("header.proof") },
+            { href: "/developers",   label: t("header.developers") },
+            { href: "/pricing",      label: t("header.pricing") },
+            { href: "/sponsor",      label: t("header.sponsor") },
+            { href: "/how-it-works", label: t("header.howItWorks") },
+          ]
+        : [
+            { href: "/me/referral",  label: t("header.referral") || "Referral" },
+            { href: "/hot",          label: "Hot tickers" },
+            { href: "/cn-markets",   label: "A-shares" },
+            { href: "/ecosystem",    label: t("header.ecosystem") },
+            { href: "/integrations", label: t("header.integrations") },
+            { href: "/proof",        label: t("header.proof") },
+            { href: "/developers",   label: t("header.developers") },
+            { href: "/pricing",      label: t("header.pricing") },
+            { href: "/sponsor",      label: t("header.sponsor") },
+            { href: "/how-it-works", label: t("header.howItWorks") },
+          ])
+    : (isZh
+        ? [
+            { href: "/cn-markets",  label: "A 股市场" },
+            { href: "/ecosystem",   label: t("header.ecosystem") },
+            { href: "/proof",       label: t("header.proof") },
+            { href: "/developers",  label: t("header.developers") },
+            { href: "/sponsor",     label: t("header.sponsor") },
+          ]
+        : [
+            { href: "/hot",         label: "Hot tickers" },
+            { href: "/cn-markets",  label: "A-shares" },
+            { href: "/ecosystem",   label: t("header.ecosystem") },
+            { href: "/proof",       label: t("header.proof") },
+            { href: "/developers",  label: t("header.developers") },
+            { href: "/sponsor",     label: t("header.sponsor") },
+          ]);
 
   return (
     <header className="sticky top-0 z-40 border-b border-border-subtle bg-bg-base/85 backdrop-blur-xl">

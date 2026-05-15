@@ -38,13 +38,15 @@ const AIFADIAN = process.env.NEXT_PUBLIC_AIFADIAN_HANDLE;         // afdian.com/
 const GH_SPONSORS = process.env.NEXT_PUBLIC_GITHUB_SPONSORS_HANDLE; // github.com/sponsors/<handle>
 const PATREON = process.env.NEXT_PUBLIC_PATREON_HANDLE;           // patreon.com/<handle>
 
-// Affiliate ref codes. Default values are placeholders — operator
-// replaces with their real ref code after each broker partner signup.
-const IBKR_REF = process.env.NEXT_PUBLIC_IBKR_REF || "tradingagents";
-const ALPACA_REF = process.env.NEXT_PUBLIC_ALPACA_REF || "tradingagents";
-const BINANCE_REF = process.env.NEXT_PUBLIC_BINANCE_REF || "tradingagents";
-const FUTU_REF = process.env.NEXT_PUBLIC_FUTU_REF || "tradingagents";
-const TIGER_REF = process.env.NEXT_PUBLIC_TIGER_REF || "tradingagents";
+// Affiliate ref codes. When env vars aren't set, treat as "channel not
+// configured" rather than send the user to a broken affiliate URL with
+// the literal placeholder string. The render code below filters out
+// channels whose ref is null so users never see dead clicks.
+const IBKR_REF = process.env.NEXT_PUBLIC_IBKR_REF || null;
+const ALPACA_REF = process.env.NEXT_PUBLIC_ALPACA_REF || null;
+const BINANCE_REF = process.env.NEXT_PUBLIC_BINANCE_REF || null;
+const FUTU_REF = process.env.NEXT_PUBLIC_FUTU_REF || null;
+const TIGER_REF = process.env.NEXT_PUBLIC_TIGER_REF || null;
 
 interface Channel {
   name: string;
@@ -93,43 +95,46 @@ export default function SponsorPage() {
     },
   ];
 
+  // Only render the affiliate channel when the operator has actually
+  // set a real ref code. Otherwise users get a 404 click on a URL
+  // ending with the literal "tradingagents" placeholder.
   const affiliates: Channel[] = [
     {
       name: "Interactive Brokers",
-      url: `https://www.interactivebrokers.com/?aff=${IBKR_REF}`,
+      url: IBKR_REF ? `https://www.interactivebrokers.com/?aff=${IBKR_REF}` : null,
       icon: <Briefcase className="w-5 h-5" />,
       blurb: "Best for US equity + global. ~$200 per funded account.",
       payoff: "~$200 / signup",
     },
     {
       name: "Alpaca",
-      url: `https://alpaca.markets/?ref=${ALPACA_REF}`,
+      url: ALPACA_REF ? `https://alpaca.markets/?ref=${ALPACA_REF}` : null,
       icon: <Briefcase className="w-5 h-5" />,
       blurb: "Commission-free US equity + crypto. Recurring trading-fee share.",
       payoff: "recurring",
     },
     {
       name: "Binance",
-      url: `https://www.binance.com/en/register?ref=${BINANCE_REF}`,
+      url: BINANCE_REF ? `https://www.binance.com/en/register?ref=${BINANCE_REF}` : null,
       icon: <Briefcase className="w-5 h-5" />,
       blurb: "Crypto. 20-40% rebate on every trading fee. Highest-recurring.",
       payoff: "20-40% of fees",
     },
     {
       name: "富途 Futu",
-      url: `https://www.futunn.com/?ref=${FUTU_REF}`,
+      url: FUTU_REF ? `https://www.futunn.com/?ref=${FUTU_REF}` : null,
       icon: <Briefcase className="w-5 h-5" />,
       blurb: "A股 + 港美股，国内最受欢迎。",
       payoff: "~¥200 / signup",
     },
     {
       name: "老虎 Tiger",
-      url: `https://www.tigerbrokers.com/?ref=${TIGER_REF}`,
+      url: TIGER_REF ? `https://www.tigerbrokers.com/?ref=${TIGER_REF}` : null,
       icon: <Briefcase className="w-5 h-5" />,
       blurb: "国际券商，A股 + 美股 + 期权。",
       payoff: "~¥150 / signup",
     },
-  ];
+  ].filter((c) => c.url !== null);
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-12">

@@ -170,6 +170,8 @@ const dict = {
   "decision.researchersSubtitle": { en: "Bull vs Bear, multi-round.",       zh: "多空双方多轮辩论。" },
   "decision.bull":              { en: "Bull",                               zh: "多方" },
   "decision.bear":              { en: "Bear",                               zh: "空方" },
+  "decision.round":             { en: "Round",                              zh: "第" },
+  "decision.synthesis":         { en: "Synthesis",                          zh: "综合观点" },
   "decision.trader":            { en: "Trader plan",                        zh: "交易员方案" },
   "decision.traderSubtitle":    { en: "Synthesizes the debate into a sized, conditioned trade.", zh: "把辩论综合成有仓位、有条件的具体方案。" },
   "decision.risk":              { en: "Risk committee",                     zh: "风控委员会" },

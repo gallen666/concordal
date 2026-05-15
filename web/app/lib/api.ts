@@ -18,6 +18,18 @@ export interface Decision {
   rationale: string;
   risk_notes: string;
   flags: string[];
+  // Dual-LLM consensus check result. Present iff
+  // TA_DECISIONS_CONSENSUS_CHECK=true on the backend AND a second
+  // model API key (DEEPSEEK/QWEN/GLM) is configured.
+  consensus?: {
+    agreement_score: number;
+    primary_model: string;
+    second_model: string;
+    primary_side: string;
+    second_side: string;
+    primary_confidence: number;
+    second_confidence: number;
+  } | { error: string } | null;
 }
 
 export interface AnalystReport {

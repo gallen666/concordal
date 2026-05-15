@@ -325,17 +325,184 @@ export default function DecisionPage() {
         </>
       )}
 
-      {result && <DecisionView trace={result} jobId={jobId} />}
+      {result && <DecisionView trace={result} jobId={jobId} lessonsInjected={lessonsInjected} />}
     </div>
   );
 }
 
-function DecisionView({ trace, jobId }: { trace: DecisionTrace; jobId: string | null }) {
-  const { t } = useT();
+/**
+ * MoatBadges — surfaces the three features 东方财富/同花顺 don't have:
+ *   1. Forward-return reflection (the manager saw your past calls)
+ *   2. Dual-LLM consensus score (two model families voted)
+ *   3. Langfuse trace link (per-LLM-call timing/cost/output)
+ *
+ * Renders inline beneath the decision headline so it's the FIRST thing
+ * the eye lands on after the verdict. Each badge is colour-coded by
+ * confidence — agreement < 0.5 turns red so disagreement is visible
+ * at a glance (the opposite of what East-money does — they hide
+ * uncertainty).
+ */
+function MoatBadges({
+  lessonsInjected,
+  consensus,
+  jobId,
+  locale,
+}: {
+  lessonsInjected: boolean;
+  consensus: {
+    agreement_score: number;
+    primary_model: string;
+    second_model: string;
+    primary_side: string;
+    second_side: string;
+    primary_confidence: number;
+    second_confidence: number;
+  } | null;
+  jobId: string | null;
+  locale: "en" | "zh";
+}) {
+  const badges: React.ReactNode[] = [];
+
+  // Forward-return memory injected into manager
+  if (lessonsInjected) {
+    badges.push(
+      <div
+        key="memory"
+        className="surface-elev p-3 flex items-start gap-3 border-l-2 border-l-accent flex-1 min-w-[200px]"
+        title={locale === "zh"
+          ? "经理 prompt 注入了你过去对这只票的决策 + 实际回报。系统在记账。"
+          : "Manager prompt was injected with your past decisions on this ticker + their realised returns."}
+      >
+        <Sparkles className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+        <div className="leading-tight">
+          <div className="text-xs font-semibold text-ink-primary">
+            {locale === "zh" ? "记忆已注入" : "Memory injected"}
+          </div>
+          <div className="text-2xs text-ink-tertiary mt-0.5">
+            {locale === "zh"
+              ? "经理看到了你过去的决策 + 实际回报"
+              : "Manager saw past calls + realised returns"}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Dual-LLM consensus
+  if (consensus) {
+    const score = consensus.agreement_score;
+    const sideMatch = consensus.primary_side === consensus.second_side;
+    const ok = score >= 0.7;
+    const warn = score >= 0.5 && score < 0.7;
+    const accent = ok
+      ? "border-l-signal-buy"
+      : warn
+      ? "border-l-signal-warn"
+      : "border-l-signal-sell";
+    const dotColor = ok
+      ? "bg-signal-buy"
+      : warn
+      ? "bg-signal-warn"
+      : "bg-signal-sell";
+    badges.push(
+      <div
+        key="consensus"
+        className={cn("surface-elev p-3 border-l-2 flex-1 min-w-[240px]", accent)}
+        title={locale === "zh"
+          ? `主模型 ${consensus.primary_model} 给出 ${consensus.primary_side} (${(consensus.primary_confidence * 100).toFixed(0)}%); 第二模型 ${consensus.second_model} 给出 ${consensus.second_side} (${(consensus.second_confidence * 100).toFixed(0)}%).`
+          : `Primary ${consensus.primary_model}: ${consensus.primary_side} @ ${(consensus.primary_confidence * 100).toFixed(0)}%; Secondary ${consensus.second_model}: ${consensus.second_side} @ ${(consensus.second_confidence * 100).toFixed(0)}%.`}
+      >
+        <div className="flex items-center gap-2 mb-1">
+          <span className={cn("w-1.5 h-1.5 rounded-full", dotColor)} />
+          <span className="text-xs font-semibold text-ink-primary">
+            {locale === "zh" ? "双 LLM 共识" : "Dual-LLM consensus"}
+          </span>
+          <span className="ml-auto text-xs font-mono text-ink-primary">
+            {(score * 100).toFixed(0)}%
+          </span>
+        </div>
+        <div className="text-2xs text-ink-tertiary leading-snug">
+          {sideMatch ? (
+            locale === "zh"
+              ? `两个模型都给 ${consensus.primary_side}`
+              : `Both models agree: ${consensus.primary_side}`
+          ) : (
+            <span className="text-signal-sell font-semibold">
+              {locale === "zh"
+                ? `分歧：${consensus.primary_side} vs ${consensus.second_side}`
+                : `Disagree: ${consensus.primary_side} vs ${consensus.second_side}`}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Langfuse trace link
+  if (jobId) {
+    badges.push(
+      <Link
+        key="trace"
+        href={`/decision/${jobId}/trace`}
+        className="surface-elev p-3 border-l-2 border-l-ink-tertiary flex-1 min-w-[200px] hover:border-l-accent transition-colors group"
+        title={locale === "zh"
+          ? "查看每个 LLM 调用的模型、延迟、token、成本"
+          : "See every LLM call: model, latency, tokens, cost"}
+      >
+        <div className="flex items-center gap-2 mb-1">
+          <Activity className="w-3.5 h-3.5 text-ink-tertiary group-hover:text-accent transition-colors" />
+          <span className="text-xs font-semibold text-ink-primary">
+            {locale === "zh" ? "推理追溯" : "Inference trace"}
+          </span>
+          <ArrowRight className="w-3 h-3 ml-auto text-ink-tertiary group-hover:text-accent transition-colors" />
+        </div>
+        <div className="text-2xs text-ink-tertiary leading-snug">
+          {locale === "zh"
+            ? "每个 LLM 调用: 模型 · 延迟 · token · 成本"
+            : "Every LLM call: model · latency · tokens · $"}
+        </div>
+      </Link>
+    );
+  }
+
+  if (badges.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-3">
+      {badges}
+    </div>
+  );
+}
+
+
+function DecisionView({
+  trace,
+  jobId,
+  lessonsInjected,
+}: {
+  trace: DecisionTrace;
+  jobId: string | null;
+  lessonsInjected?: boolean;
+}) {
+  const { t, locale } = useT();
   const d = trace.decision;
   const style = SIDE_STYLES[d.side] || SIDE_STYLES.HOLD;
+  // Extract consensus score safely — backend may set the field to
+  // {agreement_score:...} or {error:...} or omit it entirely.
+  const consensus =
+    d.consensus && "agreement_score" in d.consensus ? d.consensus : null;
   return (
     <div className="mt-8 space-y-8 animate-fade-in">
+      {/* MOAT BADGES — features 东方财富/同花顺 structurally can't ship.
+          Renders only what actually fired this run (no dummy badges). */}
+      {(lessonsInjected || consensus || jobId) && (
+        <MoatBadges
+          lessonsInjected={!!lessonsInjected}
+          consensus={consensus}
+          jobId={jobId}
+          locale={locale}
+        />
+      )}
       {/* Headline card with side accent + horizontal stat strip at bottom */}
       <div
         className={cn(
@@ -934,33 +1101,83 @@ function AnalystTabs({ reports }: { reports: AnalystReport[] }) {
   );
 }
 
+/**
+ * DebateView — bull vs bear, ROUND-ALIGNED.
+ *
+ * Why round-aligned (not pure-column): the dialectic is the product. A
+ * reader needs to see "bear countered the bull's round 1 with round 1
+ * of their own" laid out horizontally, like a court transcript, not
+ * two separate stacks. The previous render had bull-stack + bear-stack
+ * which collapsed the back-and-forth into two parallel monologues.
+ *
+ * Layout per round:
+ *
+ *   ┌─ Round N ──────────────────────────────────────────────┐
+ *   │  BULL (left, green)           BEAR (right, red)        │
+ *   │  "..."                         "..."                   │
+ *   └────────────────────────────────────────────────────────┘
+ *
+ * On mobile, the two columns stack vertically but the round number
+ * stays as a banding header so the reader doesn't lose the structure.
+ *
+ * Synthesis (facilitator's verdict) lives at the bottom as a pull-quote.
+ */
 function DebateView({ transcript }: { transcript: DebateTranscript }) {
   const { t } = useT();
   const turns = transcript.turns || [];
+  // Group turns by round, then split each round into bull/bear sides.
+  const rounds = Array.from(new Set(turns.map((x) => x.round))).sort((a, b) => a - b);
+
   return (
     <div className="space-y-4">
-      <div className="grid md:grid-cols-2 gap-3">
-        <DebateColumn
-          label={t("decision.bull")}
-          icon={<TrendingUp className="w-4 h-4" />}
-          turns={turns.filter((t) => t.speaker === "bull")}
-          color="signal-buy"
-        />
-        <DebateColumn
-          label={t("decision.bear")}
-          icon={<TrendingDown className="w-4 h-4" />}
-          turns={turns.filter((t) => t.speaker === "bear")}
-          color="signal-sell"
-        />
+      {/* Column headers — visible above all rounds */}
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-center sticky top-14 z-10 bg-bg-base/95 backdrop-blur-xl pt-2 pb-2 -mt-2">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded border border-signal-buy/30 bg-signal-buy_soft text-signal-buy text-sm font-semibold">
+          <TrendingUp className="w-4 h-4" />
+          {t("decision.bull")}
+        </div>
+        <div className="hidden md:block w-px h-6 bg-border-subtle mx-auto" />
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded border border-signal-sell/30 bg-signal-sell_soft text-signal-sell text-sm font-semibold">
+          <TrendingDown className="w-4 h-4" />
+          {t("decision.bear")}
+        </div>
       </div>
-      {transcript.synthesis && (
-        <div className="surface p-4 border-l-2 border-l-accent">
-          <div className="flex items-center gap-2 mb-1.5">
-            <Sparkles className="w-4 h-4 text-accent" />
-            <span className="label-cap text-accent">Synthesis</span>
+
+      {/* One row per round, bull left + bear right, horizontally aligned. */}
+      {rounds.map((r) => {
+        const bull = turns.find((x) => x.round === r && x.speaker === "bull");
+        const bear = turns.find((x) => x.round === r && x.speaker === "bear");
+        return (
+          <div key={r} className="relative">
+            <div className="absolute -left-2 top-0 bottom-0 w-px bg-border-subtle hidden md:block" />
+            <div className="label-cap mb-2 ml-1 text-accent">
+              {t("decision.round") || "Round"} {r}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <DebateBubble
+                content={bull?.content}
+                color="bull"
+              />
+              <DebateBubble
+                content={bear?.content}
+                color="bear"
+              />
+            </div>
           </div>
-          <p className="text-sm text-ink-primary leading-relaxed">
-            {transcript.synthesis}
+        );
+      })}
+
+      {/* Facilitator synthesis — pull-quote style */}
+      {transcript.synthesis && (
+        <div className="surface-elev p-5 border-l-2 border-l-accent mt-6">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="w-4 h-4 text-accent" />
+            <span className="label-cap text-accent">
+              {t("decision.synthesis") || "Synthesis"}
+            </span>
+          </div>
+          <p className="text-sm text-ink-primary leading-relaxed italic">
+            "{transcript.synthesis}"
           </p>
         </div>
       )}
@@ -968,47 +1185,31 @@ function DebateView({ transcript }: { transcript: DebateTranscript }) {
   );
 }
 
-function DebateColumn({
-  label,
-  icon,
-  turns,
+function DebateBubble({
+  content,
   color,
 }: {
-  label: string;
-  icon: React.ReactNode;
-  turns: DebateTranscript["turns"];
-  color: string;
+  content?: string;
+  color: "bull" | "bear";
 }) {
+  const accent =
+    color === "bull"
+      ? "border-l-signal-buy bg-signal-buy_soft/40"
+      : "border-l-signal-sell bg-signal-sell_soft/40";
+  if (!content) {
+    return (
+      <div className={cn("surface p-4 border-l-2 opacity-50", accent)}>
+        <span className="text-xs text-ink-tertiary italic">
+          (no statement)
+        </span>
+      </div>
+    );
+  }
   return (
-    <div className="surface overflow-hidden">
-      <div
-        className={cn(
-          "flex items-center gap-2 px-4 py-2.5 border-b border-border-subtle",
-          color === "signal-buy" ? "bg-signal-buy_soft" : "bg-signal-sell_soft"
-        )}
-      >
-        <span
-          className={cn(
-            color === "signal-buy" ? "text-signal-buy" : "text-signal-sell"
-          )}
-        >
-          {icon}
-        </span>
-        <span className="font-semibold text-sm">{label}</span>
-        <span className="text-xs text-ink-tertiary ml-auto">
-          {turns.length} turn{turns.length === 1 ? "" : "s"}
-        </span>
-      </div>
-      <div className="p-4 space-y-4">
-        {turns.map((t, i) => (
-          <div key={i}>
-            <div className="label-cap mb-1.5">Round {t.round}</div>
-            <p className="text-sm text-ink-primary leading-relaxed">
-              {stripRolePrefix(t.content)}
-            </p>
-          </div>
-        ))}
-      </div>
+    <div className={cn("surface p-4 border-l-2 leading-relaxed", accent)}>
+      <p className="text-sm text-ink-primary">
+        {stripRolePrefix(content)}
+      </p>
     </div>
   );
 }
