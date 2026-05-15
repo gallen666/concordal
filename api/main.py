@@ -39,6 +39,10 @@ from trading_agents.core.graph import run_decision
 from trading_agents.llm import observability as _obs
 from trading_agents.ecosystem.data_bus import bus as data_bus
 from trading_agents.ecosystem.registry import to_json as ecosystem_json, stats as ecosystem_stats
+# Side-effect import: ecosystem.sources auto-registers every available
+# adapter as a UniversalDataBus Source. Without this import the bus is
+# empty except for the OpenBB→MACRO entry it self-registers.
+from trading_agents import ecosystem as _ecosystem_pkg  # noqa: F401
 from trading_agents.memory.reflection import collect_lessons
 from trading_agents.memory.store import MemoryStore
 
@@ -677,6 +681,40 @@ def _new_job(user: CurrentUser) -> str:
 
 
 # --- routes -------------------------------------------------------------
+
+
+@app.get("/v1/databus/status")
+def databus_status() -> dict:
+    """Show what Sources are currently registered on the UniversalDataBus.
+
+    Each Need kind (QUOTE, OHLCV, FUNDAMENTALS, NEWS, SENTIMENT, TECHNICAL,
+    MACRO, CRYPTO_OHLCV, FACTOR) maps to a priority-ranked list of project
+    slugs that can fulfill it. When the user looks at this endpoint they
+    can see — at a glance — which of the 10 ecosystem projects are
+    actually wired into the data spine vs just listed on /ecosystem.
+
+    Companion to /v1/observability/status: that one shows whether the
+    LLM pipeline is being traced; this shows whether the data layer is
+    being routed through the spine.
+    """
+    registered = data_bus.registered_sources()
+    total_sources = sum(len(v) for v in registered.values())
+    return {
+        "spine_wired": total_sources > 1,  # >1 because OpenBB→MACRO is always there
+        "total_sources": total_sources,
+        "need_kinds_covered": len(registered),
+        "sources_by_need": registered,
+    }
+
+
+@app.get("/v1/databus/telemetry")
+def databus_telemetry(last_n: int = 50) -> dict:
+    """Recent bus fetches with source + latency + cache hit.
+
+    Useful for spotting: which source is hot/cold, what's hitting cache,
+    where the slowest fetches live, and which Need kinds get zero traffic
+    (suggesting analysts still bypass the bus)."""
+    return {"records": data_bus.telemetry(last_n=last_n)}
 
 
 @app.get("/v1/observability/status")

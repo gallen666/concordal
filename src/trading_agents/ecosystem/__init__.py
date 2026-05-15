@@ -21,3 +21,9 @@ pull from any source through a single typed interface.
 """
 
 from .registry import ECOSYSTEM, EcosystemProject, IntegrationStatus  # noqa: F401
+
+# Side-effect import: registers every available adapter as a UniversalDataBus
+# Source at boot. This is what turns the bus from a façade into the spine —
+# now `bus.fetch(Need.QUOTE, ticker, asof)` routes to akshare → tencent →
+# sina → xueqiu for A-shares, yfinance for US equities, etc.
+from . import sources  # noqa: F401, E402
