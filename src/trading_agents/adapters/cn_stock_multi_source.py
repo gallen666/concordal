@@ -304,6 +304,191 @@ def fetch_a_share_quote_multi(ticker: str) -> dict | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Historical OHLCV — Tencent + Sina k-line endpoints
+# ---------------------------------------------------------------------------
+#
+# Why this exists: the realtime endpoints above give a single price point.
+# /chain's factor compute (Alpha158-lite needs MA20/MA60/STD_20) and the
+# mini-backtest need 30+ daily bars. akshare's historical endpoints get
+# geo-blocked from Render Singapore (regular CDN quirk). Tencent and Sina
+# both expose globally-reachable daily k-line endpoints used by every
+# Chinese broker mobile app, so they survive the IP filter.
+#
+# We try Tencent first (faster, lower latency), Sina second.
+
+
+def fetch_a_share_history_tencent(
+    ticker: str, lookback_days: int = 120
+) -> list[dict] | None:
+    """Daily OHLCV from Tencent's qfqkline endpoint.
+
+    URL shape:
+      https://web.ifzq.gtimg.cn/appstock/app/fqkline/get
+        ?param=sh600519,day,,,120,qfq
+
+    Response shape:
+      {
+        "code": 0,
+        "data": {
+          "sh600519": {
+            "qfqday": [
+              ["2024-08-15", "1393.00", "1392.00", "1396.50", "1380.00",
+               "20682", {...}],
+              ...                                           ↑volume in 手
+            ]
+          }
+        }
+      }
+
+    Each row: [date, open, close, high, low, volume_lots, {extras}].
+    Returned list is chronological (oldest → newest), each entry is a
+    plain dict matching the shape callers expect from CnEquityAdapter's
+    get_price_history → list[Quote] adapter layer above us.
+    """
+    try:
+        pfx = _exchange_prefix(ticker)
+    except ValueError:
+        return None
+    n = max(60, min(lookback_days + 30, 500))  # request a little buffer
+    url = (
+        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+        f"?param={pfx}{ticker},day,,,{n},qfq"
+    )
+    try:
+        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as c:
+            r = c.get(url, headers={"Referer": "https://gu.qq.com/"})
+        if r.status_code != 200:
+            log.info("tencent history %s returned %s", ticker, r.status_code)
+            return None
+        payload = r.json()
+        if payload.get("code") != 0:
+            log.info("tencent history %s code=%s", ticker, payload.get("code"))
+            return None
+        ticker_block = payload.get("data", {}).get(f"{pfx}{ticker}") or {}
+        # Tencent uses "qfqday" for adjusted, "day" for raw — try both.
+        rows = ticker_block.get("qfqday") or ticker_block.get("day") or []
+        if not rows:
+            log.info("tencent history %s: empty qfqday", ticker)
+            return None
+        out: list[dict] = []
+        for r0 in rows:
+            if len(r0) < 6:
+                continue
+            d, o, c0, h, low_, vol_lots = r0[0], r0[1], r0[2], r0[3], r0[4], r0[5]
+            try:
+                out.append({
+                    "date": str(d),
+                    "open":   float(o),
+                    "close":  float(c0),
+                    "high":   float(h),
+                    "low":    float(low_),
+                    # Tencent volume here is in 手 (1 手 = 100 股 for A-shares).
+                    # Convert to shares to match akshare's contract.
+                    "volume": float(vol_lots) * 100.0,
+                })
+            except (TypeError, ValueError):
+                continue
+        if len(out) < 5:
+            log.info("tencent history %s: only %d parsable rows", ticker, len(out))
+            return None
+        return out
+    except Exception as e:
+        log.warning("tencent history failed for %s: %s", ticker, e)
+        return None
+
+
+def fetch_a_share_history_sina(
+    ticker: str, lookback_days: int = 120
+) -> list[dict] | None:
+    """Daily OHLCV from Sina's getKLineData endpoint.
+
+    URL shape:
+      https://money.finance.sina.com.cn/quotes_service/api/
+        json_v2.php/CN_MarketData.getKLineData
+        ?symbol=sh600519&scale=240&ma=no&datalen=120
+
+    scale=240 minutes = daily bars. ma=no avoids the moving-average
+    overhead in the response. datalen caps the number of rows.
+
+    Response shape (note Sina returns a JSON array, top-level):
+      [
+        {"day":"2024-08-15","open":"1393.000","high":"1396.500",
+         "low":"1380.000","close":"1392.000","volume":"2068200"},
+        ...
+      ]
+    Sina's volume here is in 股 (shares), already what we want.
+    """
+    try:
+        pfx = _exchange_prefix(ticker)
+    except ValueError:
+        return None
+    n = max(60, min(lookback_days + 30, 500))
+    url = (
+        "https://money.finance.sina.com.cn/quotes_service/api/"
+        "json_v2.php/CN_MarketData.getKLineData"
+        f"?symbol={pfx}{ticker}&scale=240&ma=no&datalen={n}"
+    )
+    try:
+        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as c:
+            r = c.get(url, headers={"Referer": "https://finance.sina.com.cn/"})
+        if r.status_code != 200:
+            return None
+        rows = r.json()
+        if not isinstance(rows, list) or not rows:
+            return None
+        out: list[dict] = []
+        for row in rows:
+            try:
+                out.append({
+                    "date":   str(row["day"]),
+                    "open":   float(row["open"]),
+                    "high":   float(row["high"]),
+                    "low":    float(row["low"]),
+                    "close":  float(row["close"]),
+                    "volume": float(row["volume"]),
+                })
+            except (KeyError, TypeError, ValueError):
+                continue
+        if len(out) < 5:
+            return None
+        return out
+    except Exception as e:
+        log.warning("sina history failed for %s: %s", ticker, e)
+        return None
+
+
+def fetch_a_share_history_multi(
+    ticker: str, lookback_days: int = 120
+) -> list[dict] | None:
+    """Tencent → Sina aggregate. Returns chronological list of OHLCV dicts.
+
+    Each dict: {date, open, high, low, close, volume (in shares)}.
+    Returns None only if BOTH sources fail completely.
+
+    This is the function the /chain pipeline needs to make A-share
+    tickers traversable from Render Singapore — akshare's call to
+    东方财富 history may be geo-blocked, but Tencent + Sina kline
+    endpoints back every broker mobile app and stay reachable from
+    any IP.
+    """
+    for fn, label in (
+        (fetch_a_share_history_tencent, "tencent"),
+        (fetch_a_share_history_sina,    "sina"),
+    ):
+        try:
+            out = fn(ticker, lookback_days=lookback_days)
+            if out and len(out) >= 5:
+                log.info(
+                    "a-share history for %s served by %s (%d bars)",
+                    ticker, label, len(out),
+                )
+                return out
+        except Exception as e:
+            log.warning("%s history threw for %s: %s", label, ticker, e)
+    return None
+
+
 def fetch_a_share_name(ticker: str) -> str | None:
     """Quick: name only. Tries Tencent first (cheapest)."""
     for fn in (fetch_a_share_quote_tencent, fetch_a_share_quote_sina):

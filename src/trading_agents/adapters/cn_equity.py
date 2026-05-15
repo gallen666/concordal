@@ -660,9 +660,49 @@ class CnEquityAdapter(MarketAdapter):
             except Exception as e:
                 log.warning("akshare price history failed for %s: %s — trying multi-source", ticker, e)
 
-        # ---- Fallback: Tencent/Sina/Xueqiu give CURRENT snapshot only --
-        # Better than empty: one real datapoint at `end` so technical
-        # analysts have something concrete to anchor on.
+        # ---- Fallback 1: Tencent/Sina HISTORICAL k-line endpoints -------
+        # akshare hits 东方财富 endpoints that may geo-route to mainland-
+        # only CDNs from Render's Singapore IP. Tencent's fqkline endpoint
+        # and Sina's getKLineData endpoint back every broker mobile app
+        # and stay reachable globally — those give us 60+ days of real
+        # daily OHLCV, which is what Alpha158-lite + the chain backtest
+        # need (a single current-snapshot point isn't enough).
+        try:
+            from .cn_stock_multi_source import fetch_a_share_history_multi
+            lookback_days = max(60, (end - start).days + 10)
+            rows = fetch_a_share_history_multi(ticker, lookback_days=lookback_days)
+        except Exception as e:
+            log.warning("multi-source history fallback failed for %s: %s", ticker, e)
+            rows = None
+        if rows:
+            quotes_hist: list[Quote] = []
+            for row in rows:
+                try:
+                    d = datetime.fromisoformat(row["date"]).date()
+                except Exception:
+                    continue
+                if d < start or d > end:
+                    continue
+                ts = datetime.combine(d, datetime.min.time(), tzinfo=timezone.utc)
+                quotes_hist.append(Quote(
+                    ticker=ticker, asof=ts,
+                    open=float(row["open"]),
+                    high=float(row["high"]),
+                    low=float(row["low"]),
+                    close=float(row["close"]),
+                    volume=float(row.get("volume") or 0),
+                ))
+            if quotes_hist:
+                log.info(
+                    "cn_equity history for %s [%s..%s] served by Tencent/Sina (%d bars)",
+                    ticker, start, end, len(quotes_hist),
+                )
+                return quotes_hist
+
+        # ---- Fallback 2: realtime snapshot — last-resort 1-bar response.
+        # If even the historical endpoints failed, return at least one
+        # datapoint so the realtime UI surfaces don't go blank, while
+        # /chain still correctly errors out via its bars<30 guard.
         try:
             from .cn_stock_multi_source import fetch_a_share_quote_multi
             q = fetch_a_share_quote_multi(ticker)
