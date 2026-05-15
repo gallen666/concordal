@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from ..adapters.base import MarketAdapter
 from ..core.state import DecisionState
 from ..core.types import AnalystReport
+from ..llm.observability import current_span
 from ..llm.router import LLMRouter, Tier, extract_json
 from ..prompts.base import PromptPack
 
@@ -26,34 +27,40 @@ def _make_analyst(
     tier: Tier = Tier.MID,
 ):
     def run(state: DecisionState, *, adapter: MarketAdapter, pack: PromptPack, llm: LLMRouter) -> DecisionState:
-        if state_key not in state:
-            state[state_key] = fetch(adapter, state)  # type: ignore[index]
-        rendered = pack.render_analyst_user(role, state)
-        resp = llm.complete(
-            tier=tier,
-            system=getattr(pack, system_attr),
-            user=rendered,
-        )
-        signals = extract_json(resp.text) or {}
-        # Some models (notably Gemini 2.5) wrap the dict in another
-        # "signals" key, producing {"signals": {...real keys...}}. Unwrap
-        # one layer if we detect that exact shape.
-        if (
-            isinstance(signals, dict)
-            and len(signals) == 1
-            and "signals" in signals
-            and isinstance(signals["signals"], dict)
+        with current_span(
+            f"analyst.{role}",
+            ticker=state.get("ticker"),
+            asof=str(state.get("asof")),
+            tier=tier.value,
         ):
-            signals = signals["signals"]
-        state[state_report_key] = AnalystReport(  # type: ignore[index]
-            analyst=role,
-            ticker=state["ticker"],
-            asof=state["asof"],
-            body=resp.text,
-            signals=signals,
-        )
-        state.setdefault("usage", []).append(resp.usage)  # type: ignore[index]
-        return state
+            if state_key not in state:
+                state[state_key] = fetch(adapter, state)  # type: ignore[index]
+            rendered = pack.render_analyst_user(role, state)
+            resp = llm.complete(
+                tier=tier,
+                system=getattr(pack, system_attr),
+                user=rendered,
+            )
+            signals = extract_json(resp.text) or {}
+            # Some models (notably Gemini 2.5) wrap the dict in another
+            # "signals" key, producing {"signals": {...real keys...}}. Unwrap
+            # one layer if we detect that exact shape.
+            if (
+                isinstance(signals, dict)
+                and len(signals) == 1
+                and "signals" in signals
+                and isinstance(signals["signals"], dict)
+            ):
+                signals = signals["signals"]
+            state[state_report_key] = AnalystReport(  # type: ignore[index]
+                analyst=role,
+                ticker=state["ticker"],
+                asof=state["asof"],
+                body=resp.text,
+                signals=signals,
+            )
+            state.setdefault("usage", []).append(resp.usage)  # type: ignore[index]
+            return state
 
     return run
 
@@ -119,37 +126,42 @@ def macro_node(
     just the four micro-level analysts. We treat macro as enrichment,
     not as a blocker.
     """
-    if "macro" not in state:
-        state["macro"] = _fetch_macro(adapter, state)  # type: ignore[index]
-    if not state.get("macro"):
-        # No macro context available — skip without writing a report.
-        return state
-    if not getattr(pack, "macro_analyst_system", None):
-        # Pack hasn't defined a macro prompt — skip.
-        return state
-    rendered = pack.render_analyst_user("macro", state)
-    resp = llm.complete(
-        tier=Tier.MID,
-        system=pack.macro_analyst_system,  # type: ignore[attr-defined]
-        user=rendered,
-    )
-    signals = extract_json(resp.text) or {}
-    if (
-        isinstance(signals, dict)
-        and len(signals) == 1
-        and "signals" in signals
-        and isinstance(signals["signals"], dict)
+    with current_span(
+        "analyst.macro",
+        ticker=state.get("ticker"),
+        asof=str(state.get("asof")),
     ):
-        signals = signals["signals"]
-    state["macro_report"] = AnalystReport(  # type: ignore[index]
-        analyst="macro",
-        ticker=state["ticker"],
-        asof=state["asof"],
-        body=resp.text,
-        signals=signals,
-    )
-    state.setdefault("usage", []).append(resp.usage)  # type: ignore[index]
-    return state
+        if "macro" not in state:
+            state["macro"] = _fetch_macro(adapter, state)  # type: ignore[index]
+        if not state.get("macro"):
+            # No macro context available — skip without writing a report.
+            return state
+        if not getattr(pack, "macro_analyst_system", None):
+            # Pack hasn't defined a macro prompt — skip.
+            return state
+        rendered = pack.render_analyst_user("macro", state)
+        resp = llm.complete(
+            tier=Tier.MID,
+            system=pack.macro_analyst_system,  # type: ignore[attr-defined]
+            user=rendered,
+        )
+        signals = extract_json(resp.text) or {}
+        if (
+            isinstance(signals, dict)
+            and len(signals) == 1
+            and "signals" in signals
+            and isinstance(signals["signals"], dict)
+        ):
+            signals = signals["signals"]
+        state["macro_report"] = AnalystReport(  # type: ignore[index]
+            analyst="macro",
+            ticker=state["ticker"],
+            asof=state["asof"],
+            body=resp.text,
+            signals=signals,
+        )
+        state.setdefault("usage", []).append(resp.usage)  # type: ignore[index]
+        return state
 
 
 def quote_node(state: DecisionState, *, adapter: MarketAdapter, **_) -> DecisionState:

@@ -26,6 +26,7 @@ from enum import Enum
 from typing import Any
 
 from ..core.types import TokenUsage
+from .observability import current_span
 
 log = logging.getLogger(__name__)
 
@@ -698,43 +699,73 @@ class LLMRouter:
         # Always end with mock so the pipeline NEVER hard-fails.
         chain.append("mock-deep" if tier == Tier.DEEP else "mock-mid")
 
-        last_err: Exception | None = None
-        for m in chain:
-            provider = self._provider_for(m)
-            log.debug("LLM %s -> %s (%s)", tier.value, m, provider.name)
-            try:
-                resp = provider.complete(sys_with_lang, user, m, temperature=temperature)
-                # Honesty: if we silently fell through to mock (because
-                # the configured model had no real provider — e.g. user
-                # set TA_MODEL_DEEP=gemini-3.1-pro-preview but never set
-                # GEMINI_API_KEY), the response's TokenUsage.model would
-                # still say "gemini-3.1-pro-preview" and the cost ledger
-                # would claim we paid Gemini prices for a template
-                # response. Relabel to a mock-* model name so the UI +
-                # billing know what really happened.
-                if provider is self._mock and not m.startswith("mock-"):
-                    fake_model = "mock-deep" if tier == Tier.DEEP else "mock-mid"
-                    resp.usage.model = fake_model
-                    resp.usage.usd_cost = 0.0
-                return resp
-            except Exception as e:
-                last_err = e
-                msg = str(e)
-                # Retry on transient / rate-limit; raise immediately on
-                # config errors (auth, missing key) so we don't pointlessly
-                # cycle through the whole chain.
-                if "401" in msg or "403" in msg or "API key" in msg:
-                    raise
-                log.warning(
-                    "LLM call to %s failed (%s); falling through chain",
-                    m, msg[:200],
-                )
-                continue
-        # Should be unreachable because mock providers always succeed, but
-        # be explicit if somehow not.
-        if last_err:
-            raise last_err
-        raise RuntimeError("LLMRouter chain exhausted without response")
+        # Wrap the whole fallback loop in one observability span so the
+        # Langfuse trace records: configured tier, primary model, model
+        # actually used (after fallback), tokens, cost, latency.
+        with current_span(
+            "llm.complete",
+            tier=tier.value,
+            primary_model=model,
+            chain=",".join(chain[:4]),
+        ) as sp:
+            last_err: Exception | None = None
+            for m in chain:
+                provider = self._provider_for(m)
+                log.debug("LLM %s -> %s (%s)", tier.value, m, provider.name)
+                try:
+                    resp = provider.complete(sys_with_lang, user, m, temperature=temperature)
+                    # Honesty: if we silently fell through to mock (because
+                    # the configured model had no real provider — e.g. user
+                    # set TA_MODEL_DEEP=gemini-3.1-pro-preview but never set
+                    # GEMINI_API_KEY), the response's TokenUsage.model would
+                    # still say "gemini-3.1-pro-preview" and the cost ledger
+                    # would claim we paid Gemini prices for a template
+                    # response. Relabel to a mock-* model name so the UI +
+                    # billing know what really happened.
+                    if provider is self._mock and not m.startswith("mock-"):
+                        fake_model = "mock-deep" if tier == Tier.DEEP else "mock-mid"
+                        resp.usage.model = fake_model
+                        resp.usage.usd_cost = 0.0
+                    # Enrich the trace span with what actually happened —
+                    # this is what makes Langfuse useful when looking at a
+                    # decision two weeks later.
+                    if sp is not None:
+                        try:
+                            sp.update(
+                                input={"system": sys_with_lang[:1500], "user": user[:1500]},
+                                output=resp.text[:2000],
+                                metadata={
+                                    "tier": tier.value,
+                                    "primary_model": model,
+                                    "actual_model": resp.usage.model,
+                                    "tokens_prompt": resp.usage.prompt_tokens,
+                                    "tokens_completion": resp.usage.completion_tokens,
+                                    "tokens_total": resp.usage.prompt_tokens + resp.usage.completion_tokens,
+                                    "usd_cost": resp.usage.usd_cost,
+                                    "fell_through_to_mock": provider is self._mock,
+                                },
+                            )
+                        except Exception:
+                            pass
+                    return resp
+                except Exception as e:
+                    last_err = e
+                    msg = str(e)
+                    # Retry on transient / rate-limit; raise immediately on
+                    # config errors (auth, missing key) so we don't pointlessly
+                    # cycle through the whole chain.
+                    if "401" in msg or "403" in msg or "API key" in msg:
+                        raise
+                    log.warning(
+                        "LLM call to %s failed (%s); falling through chain",
+                        m, msg[:200],
+                    )
+                    continue
+            # Should be unreachable because mock providers always succeed, but
+            # be explicit if somehow not.
+            if last_err:
+                raise last_err
+            raise RuntimeError("LLMRouter chain exhausted without response")
 
     def _with_lang_directive(self, system: str) -> str:
         if self.locale == "zh":

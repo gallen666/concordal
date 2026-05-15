@@ -6,6 +6,7 @@ from __future__ import annotations
 from ..adapters.base import MarketAdapter
 from ..core.state import DecisionState
 from ..core.types import Decision, Side
+from ..llm.observability import current_span
 from ..llm.router import LLMRouter, Tier, extract_json
 from ..prompts.base import PromptPack
 
@@ -55,7 +56,8 @@ def manager_node(
         f"=== RISK DEBATE ===\n{risk_blob}\n\n"
         "Emit your final Decision JSON."
     )
-    resp = llm.complete(tier=Tier.DEEP, system=pack.fund_manager_system, user=user)
+    with current_span("manager", ticker=state.get("ticker"), asof=str(state.get("asof"))):
+        resp = llm.complete(tier=Tier.DEEP, system=pack.fund_manager_system, user=user)
     state.setdefault("usage", []).append(resp.usage)
     payload = extract_json(resp.text) or {}
 

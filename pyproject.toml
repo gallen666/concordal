@@ -30,6 +30,11 @@ api = [
     "PyJWT>=2.8",
     "pydantic[email]>=2.6",
     "sentry-sdk>=2.0",
+    # Langfuse is a hard requirement for the API service so traces start
+    # the moment Render boots — without it the @current_span decorators
+    # silently no-op and the user has no idea why nothing shows up in
+    # the Langfuse dashboard.
+    "langfuse>=2.0",
 ]
 # Optional observability / queue / RL — env-gated, no import unless enabled.
 observability = ["langfuse>=2.0"]

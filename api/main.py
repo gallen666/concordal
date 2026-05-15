@@ -36,6 +36,7 @@ from trading_agents.adapters import get_adapter
 from trading_agents.backtest.engine import Backtester
 from trading_agents.cache.ticker_cache import TickerCache
 from trading_agents.core.graph import run_decision
+from trading_agents.llm import observability as _obs
 from trading_agents.ecosystem.data_bus import bus as data_bus
 from trading_agents.ecosystem.registry import to_json as ecosystem_json, stats as ecosystem_stats
 from trading_agents.memory.reflection import collect_lessons
@@ -526,16 +527,29 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
                     p["current_stage"] = None
                 _jobs[job_id]["progress"] = p
 
-            trace = run_decision(
+            # Wrap the entire 7-agent pipeline in one Langfuse trace so the
+            # observability UI shows: decision → [quote, fundamentals, sentiment,
+            # news, technical, macro, researcher.debate.bull.r1, ...,
+            # trader, risk.debate, manager.complete] as a navigable tree.
+            with _obs.pipeline(
+                "decision",
+                job_id=job_id,
                 ticker=req.ticker.upper(),
-                asof=asof,
+                asof=str(asof),
                 market=req.market,
-                debate_rounds=req.debate_rounds,
-                user_risk_profile=req.user_risk_profile,
-                locale=req.locale,
-                lessons=lessons,
-                progress_cb=_progress_cb,
-            )
+                user=user.id,
+                tier=user.tier,
+            ):
+                trace = run_decision(
+                    ticker=req.ticker.upper(),
+                    asof=asof,
+                    market=req.market,
+                    debate_rounds=req.debate_rounds,
+                    user_risk_profile=req.user_risk_profile,
+                    locale=req.locale,
+                    lessons=lessons,
+                    progress_cb=_progress_cb,
+                )
         finally:
             if prev_mode is None:
                 os.environ.pop("TA_MODE", None)
@@ -663,6 +677,30 @@ def _new_job(user: CurrentUser) -> str:
 
 
 # --- routes -------------------------------------------------------------
+
+
+@app.get("/v1/observability/status")
+def observability_status() -> dict:
+    """Surface whether Langfuse is wired so the user can confirm in one
+    request whether their LLM pipeline is actually being traced.
+
+    Used by `make verify-observability` and the upcoming /admin page.
+    Safe to expose publicly — only reports flag-set booleans and the
+    first 8 chars of the public key (already public by definition).
+    """
+    return _obs.status()
+
+
+@app.on_event("shutdown")
+def _observability_shutdown() -> None:
+    """Flush any queued Langfuse events before the process exits.
+
+    Without this, traces from the last few decisions in a worker's
+    lifetime can be lost on Render's graceful-restart window."""
+    try:
+        _obs.shutdown()
+    except Exception:
+        pass
 
 
 @app.get("/v1/health")
