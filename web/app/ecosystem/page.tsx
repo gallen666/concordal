@@ -200,6 +200,14 @@ export default function EcosystemPage() {
         />
       </div>
 
+      {/* DATA BUS · LIVE — pulled in real time from /v1/databus/status and
+          /v1/databus/telemetry. This is the truth of the spine: which
+          ecosystem projects are actually answering Need.X fetches right
+          now, with last-N requests and their latency. Lands ABOVE the
+          data-flow diagram because it's the live answer the diagram is
+          claiming. */}
+      <DataBusLive />
+
       {/* Data-flow stack diagram (vertical spine) */}
       <section className="mb-12">
         <div className="flex items-baseline gap-3 mb-4">
@@ -487,6 +495,232 @@ function ProjectCard({
           <Zap className="w-3 h-3" />
           {t("eco.wiredToday")}
         </div>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * DataBusLive — real-time view of the UniversalDataBus.
+ *
+ * Polls /v1/databus/status + /v1/databus/telemetry + /v1/observability/status
+ * once on mount and every 20s thereafter. Shows:
+ *
+ *   1. Health strip: spine wired? total sources? Langfuse traced?
+ *   2. Per-Need grid of source chips, ranked by priority
+ *   3. Last-N fetches with source + latency (color-coded)
+ *
+ * Renders cleanly even when telemetry is empty (Render just rebooted)
+ * or when status fetch fails (e.g. CORS / cold start).
+ */
+function DataBusLive() {
+  const [status, setStatus] = useState<{
+    spine_wired?: boolean;
+    total_sources?: number;
+    need_kinds_covered?: number;
+    sources_by_need?: Record<string, string[]>;
+  } | null>(null);
+  const [telemetry, setTelemetry] = useState<Array<{
+    need_kind: string;
+    source: string | null;
+    cache_hit: boolean;
+    elapsed_ms: number;
+    error: string | null;
+  }>>([]);
+  const [obs, setObs] = useState<{
+    langfuse_enabled?: boolean;
+    sdk_installed?: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    const pull = () => {
+      fetch(`${API_BASE}/v1/databus/status`).then((r) => r.json()).then(setStatus).catch(() => {});
+      fetch(`${API_BASE}/v1/databus/telemetry?last_n=10`)
+        .then((r) => r.json())
+        .then((d) => setTelemetry(d.records || []))
+        .catch(() => {});
+      fetch(`${API_BASE}/v1/observability/status`).then((r) => r.json()).then(setObs).catch(() => {});
+    };
+    pull();
+    const id = setInterval(pull, 20000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!status) {
+    return (
+      <section className="mb-12 surface-elev p-6 animate-pulse">
+        <div className="h-5 w-40 bg-bg-hover rounded mb-3" />
+        <div className="h-4 w-72 bg-bg-hover rounded" />
+      </section>
+    );
+  }
+
+  const wired = status.spine_wired ?? false;
+  const total = status.total_sources ?? 0;
+  const covered = status.need_kinds_covered ?? 0;
+  const traced = obs?.langfuse_enabled ?? false;
+  const sdkReady = obs?.sdk_installed ?? false;
+
+  // Per-need card list, ordered by data-flow proximity for the eye.
+  const needOrder = [
+    "macro", "quote", "ohlcv", "fundamentals",
+    "technical", "news", "sentiment", "factor",
+    "crypto_ohlcv",
+  ];
+  const sourceMap = status.sources_by_need || {};
+  const needs = needOrder.filter((k) => sourceMap[k]?.length);
+
+  return (
+    <section className="mb-12">
+      <div className="flex items-baseline gap-3 mb-4 flex-wrap">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Database className="w-4 h-4 text-accent" />
+          DATA BUS · LIVE
+        </h2>
+        <span className="text-2xs uppercase tracking-wider text-ink-tertiary">
+          /v1/databus/status · auto-refresh 20s
+        </span>
+      </div>
+
+      {/* Health strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        <HealthChip
+          ok={wired}
+          label={wired ? "Spine wired" : "Spine empty"}
+          detail={`${total} sources`}
+        />
+        <HealthChip
+          ok={covered > 0}
+          label="Need kinds covered"
+          detail={`${covered} types`}
+        />
+        <HealthChip
+          ok={sdkReady}
+          label={sdkReady ? "Langfuse SDK ready" : "Langfuse SDK missing"}
+          detail={sdkReady ? "import OK" : "pip install langfuse"}
+        />
+        <HealthChip
+          ok={traced}
+          label={traced ? "Traces flowing" : "Traces off"}
+          detail={traced ? "keys set" : "set LANGFUSE_*_KEY"}
+        />
+      </div>
+
+      {/* Per-Need source chips */}
+      <div className="surface-elev p-5 mb-4">
+        <div className="text-2xs uppercase tracking-wider text-ink-tertiary mb-3">
+          Sources by Need · priority order
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {needs.map((k) => (
+            <div key={k} className="flex items-center gap-2 flex-wrap py-1">
+              <span className="font-mono text-xs text-ink-secondary min-w-[6.5rem] uppercase">
+                {k}
+              </span>
+              <span className="text-ink-tertiary">→</span>
+              {(sourceMap[k] || []).map((slug, i) => (
+                <span
+                  key={slug + i}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-2xs font-mono border",
+                    i === 0
+                      ? "bg-accent/10 border-accent/30 text-accent"
+                      : "bg-bg-hover border-border text-ink-secondary"
+                  )}
+                >
+                  {slug}
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Recent traffic */}
+      <div className="surface-elev p-5">
+        <div className="text-2xs uppercase tracking-wider text-ink-tertiary mb-3 flex items-center justify-between">
+          <span>Recent fetches · last 10</span>
+          {telemetry.length === 0 && (
+            <span className="text-ink-tertiary normal-case tracking-normal">
+              No traffic yet — trigger a decision to see this fill up
+            </span>
+          )}
+        </div>
+        {telemetry.length > 0 && (
+          <div className="space-y-1 font-mono text-xs">
+            {telemetry.slice().reverse().map((r, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "flex items-center gap-2 py-1 border-b border-border-subtle last:border-0",
+                  r.error && "opacity-60"
+                )}
+              >
+                <span className="text-ink-tertiary min-w-[6.5rem] uppercase">
+                  {r.need_kind}
+                </span>
+                <span className="text-ink-secondary">→</span>
+                <span className="px-2 py-0.5 rounded bg-bg-hover text-ink-primary">
+                  {r.source ?? "(none)"}
+                </span>
+                {r.cache_hit && (
+                  <span className="text-2xs text-accent">CACHE</span>
+                )}
+                <span
+                  className={cn(
+                    "ml-auto text-2xs",
+                    r.elapsed_ms < 100
+                      ? "text-signal-buy"
+                      : r.elapsed_ms < 1000
+                      ? "text-signal-warn"
+                      : "text-signal-sell"
+                  )}
+                >
+                  {r.elapsed_ms.toFixed(0)} ms
+                </span>
+                {r.error && (
+                  <span className="text-2xs text-signal-sell" title={r.error}>
+                    ERR
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+
+function HealthChip({
+  ok,
+  label,
+  detail,
+}: {
+  ok: boolean;
+  label: string;
+  detail?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "surface p-3 border-l-2",
+        ok ? "border-l-signal-buy" : "border-l-signal-warn"
+      )}
+    >
+      <div className="flex items-center gap-2 text-sm text-ink-primary">
+        <span
+          className={cn(
+            "w-1.5 h-1.5 rounded-full",
+            ok ? "bg-signal-buy" : "bg-signal-warn"
+          )}
+        />
+        {label}
+      </div>
+      {detail && (
+        <div className="text-2xs text-ink-tertiary mt-1 font-mono">{detail}</div>
       )}
     </div>
   );
