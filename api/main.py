@@ -3186,12 +3186,57 @@ def datasource_test(ticker: str = "600519") -> dict:
         out.append({"source": "multi", "ok": False, "name": None, "current": None,
                     "latency_ms": 0, "error": f"import failed: {e}"})
 
+    # 5-7. Historical OHLCV providers — added because /chain needs ≥30 bars
+    # and the current-snapshot tests above don't catch geo-blocking on the
+    # /history/ endpoints (different hostnames, different CDN policies).
+    history_results: list[dict] = []
+    try:
+        from trading_agents.adapters.cn_stock_multi_source import (
+            fetch_a_share_history_tencent,
+            fetch_a_share_history_sina,
+            fetch_a_share_history_yfinance,
+        )
+        for fn, label in [
+            (fetch_a_share_history_tencent,  "history.tencent"),
+            (fetch_a_share_history_sina,     "history.sina"),
+            (fetch_a_share_history_yfinance, "history.yfinance"),
+        ]:
+            t0 = time.time()
+            try:
+                rows = fn(ticker, lookback_days=90)
+                n_rows = len(rows) if rows else 0
+                history_results.append({
+                    "source":     label,
+                    "ok":         n_rows >= 5,
+                    "n_bars":     n_rows,
+                    "first_date": rows[0]["date"] if rows else None,
+                    "last_date":  rows[-1]["date"] if rows else None,
+                    "latency_ms": int((time.time() - t0) * 1000),
+                    "error":      None if n_rows >= 5 else f"only {n_rows} bars",
+                })
+            except Exception as e:
+                history_results.append({
+                    "source": label, "ok": False, "n_bars": 0,
+                    "first_date": None, "last_date": None,
+                    "latency_ms": int((time.time() - t0) * 1000),
+                    "error": str(e)[:200],
+                })
+    except ImportError as e:
+        history_results.append({"source": "history", "ok": False, "n_bars": 0,
+                                "first_date": None, "last_date": None,
+                                "latency_ms": 0, "error": f"import: {e}"})
+
     return {
         "ticker": ticker,
         "sources": out,
+        "history": history_results,
         "summary": {
             "n_ok":     sum(1 for s in out if s.get("ok")),
             "n_failed": sum(1 for s in out if not s.get("ok")),
+            "history_n_ok":  sum(1 for h in history_results if h.get("ok")),
+            "history_winner": next(
+                (h["source"] for h in history_results if h.get("ok")), None,
+            ),
             "names":    list({s["name"] for s in out if s.get("name")}),
         },
         "tested_at": datetime.now(tz=timezone.utc).isoformat(),

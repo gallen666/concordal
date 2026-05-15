@@ -458,23 +458,101 @@ def fetch_a_share_history_sina(
         return None
 
 
+def fetch_a_share_history_yfinance(
+    ticker: str, lookback_days: int = 120
+) -> list[dict] | None:
+    """Daily OHLCV via yfinance with A-share suffix (.SS / .SZ / .BJ).
+
+    Yahoo Finance carries every Shanghai / Shenzhen / Beijing-listed
+    A-share under <code>.SS, <code>.SZ, or <code>.BJ. Their data is
+    sourced through Hong Kong CDNs so they ARE reachable from Render
+    Singapore — that's been validated by /chain working for AAPL.
+
+    This is the last resort if both Tencent and Sina kline endpoints
+    are geo-blocked from the egress IP. yfinance's A-share coverage
+    isn't as fresh as direct mainland feeds (intraday lag, occasional
+    holiday miss), but for /chain's factor compute + mini-backtest
+    we only need ≥30 daily bars within the window, which Yahoo
+    happily provides.
+    """
+    try:
+        import yfinance as yf
+    except Exception as e:
+        log.info("yfinance not available: %s", e)
+        return None
+    try:
+        pfx = _exchange_prefix(ticker)
+    except ValueError:
+        return None
+    # CSRC → Yahoo exchange-suffix mapping. Yahoo uses uppercase suffix.
+    suffix_map = {"sh": "SS", "sz": "SZ", "bj": "BJ"}
+    suffix = suffix_map.get(pfx)
+    if not suffix:
+        return None
+    sym = f"{ticker}.{suffix}"
+    try:
+        from datetime import date as _date, timedelta as _td
+        end = _date.today()
+        start = end - _td(days=max(60, lookback_days + 10))
+        t = yf.Ticker(sym)
+        hist = t.history(
+            start=start.isoformat(),
+            end=(end + _td(days=1)).isoformat(),
+            auto_adjust=False,
+        )
+        if hist is None or hist.empty:
+            log.info("yfinance %s: empty history", sym)
+            return None
+        out: list[dict] = []
+        for ts, row in hist.iterrows():
+            try:
+                # yfinance index is a pandas Timestamp. Normalise to YYYY-MM-DD.
+                d_str = ts.strftime("%Y-%m-%d") if hasattr(ts, "strftime") else str(ts)[:10]
+                out.append({
+                    "date":   d_str,
+                    "open":   float(row["Open"]),
+                    "high":   float(row["High"]),
+                    "low":    float(row["Low"]),
+                    "close":  float(row["Close"]),
+                    "volume": float(row["Volume"]) if row["Volume"] == row["Volume"] else 0.0,
+                })
+            except (KeyError, TypeError, ValueError):
+                continue
+        if len(out) < 5:
+            log.info("yfinance %s: only %d parsable rows", sym, len(out))
+            return None
+        return out
+    except Exception as e:
+        log.warning("yfinance history failed for %s.%s: %s", ticker, suffix, e)
+        return None
+
+
 def fetch_a_share_history_multi(
     ticker: str, lookback_days: int = 120
 ) -> list[dict] | None:
-    """Tencent → Sina aggregate. Returns chronological list of OHLCV dicts.
+    """Tencent → Sina → yfinance(.SS/.SZ/.BJ) aggregate.
 
-    Each dict: {date, open, high, low, close, volume (in shares)}.
-    Returns None only if BOTH sources fail completely.
+    Returns chronological list of OHLCV dicts. Each dict:
+    {date, open, high, low, close, volume (in shares)}.
+    Returns None only if ALL three sources fail completely.
 
     This is the function the /chain pipeline needs to make A-share
-    tickers traversable from Render Singapore — akshare's call to
-    东方财富 history may be geo-blocked, but Tencent + Sina kline
-    endpoints back every broker mobile app and stay reachable from
-    any IP.
+    tickers traversable from Render Singapore. The bus's primary
+    A-share OHLCV source (CnEquityAdapter) calls this when akshare's
+    direct call to 东方财富 returns empty (often geo-blocked from
+    Render's Singapore egress). Tencent + Sina kline endpoints back
+    every broker mobile app; yfinance routes via HK CDN — all three
+    cover different failure modes:
+
+      - tencent web.ifzq.gtimg.cn — fast when reachable, may geo-fail
+      - sina money.finance.sina.com.cn — covers Tencent CDN outages
+      - yfinance with .SS suffix — last-resort, works from anywhere
+        Yahoo's HK distribution reaches
     """
     for fn, label in (
-        (fetch_a_share_history_tencent, "tencent"),
-        (fetch_a_share_history_sina,    "sina"),
+        (fetch_a_share_history_tencent,  "tencent"),
+        (fetch_a_share_history_sina,     "sina"),
+        (fetch_a_share_history_yfinance, "yfinance"),
     ):
         try:
             out = fn(ticker, lookback_days=lookback_days)
