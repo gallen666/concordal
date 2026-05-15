@@ -140,11 +140,22 @@ export function KLineChart({
             cursor={{ fill: "rgba(255,255,255,0.04)" }}
           />
 
-          {/* Wick — thin vertical line between high and low. */}
+          {/* Wick — thin vertical line between high and low.
+              Recharts types the `shape` prop callback parameter as
+              its internal Bar props (broader than our WickShapeProps),
+              so we accept `unknown` here and cast inside. Strict-mode
+              builds reject the narrower annotation due to function
+              parameter contravariance. */}
           <Bar
             yAxisId="price"
             dataKey="hlRange"
-            shape={(p: WickShapeProps) => <WickShape {...p} colorUp={colorUp} colorDown={colorDown} />}
+            shape={(p: unknown) => (
+              <WickShape
+                {...(p as WickShapeProps)}
+                colorUp={colorUp}
+                colorDown={colorDown}
+              />
+            )}
             isAnimationActive={false}
           />
 
@@ -152,7 +163,13 @@ export function KLineChart({
           <Bar
             yAxisId="price"
             dataKey="ocRange"
-            shape={(p: BodyShapeProps) => <BodyShape {...p} colorUp={colorUp} colorDown={colorDown} />}
+            shape={(p: unknown) => (
+              <BodyShape
+                {...(p as BodyShapeProps)}
+                colorUp={colorUp}
+                colorDown={colorDown}
+              />
+            )}
             isAnimationActive={false}
           />
 
