@@ -65,9 +65,13 @@ export function KLineChart({
   }
 
   // Compute moving averages once, attach to each row.
+  // Row values are heterogeneous (scalar prices, MA floats, and two
+  // [number, number] tuples for the candle shape), so use `unknown` —
+  // Recharts only requires the dataKey-pointed values to be readable
+  // from props.payload, not statically typed at the row level.
   const closes = bars.map((b) => b.close);
-  const rows = bars.map((b, i) => {
-    const row: Record<string, number | string | null> = {
+  const rows: Record<string, unknown>[] = bars.map((b, i) => {
+    const row: Record<string, unknown> = {
       date: b.date.slice(5),  // mm-dd suffices for x-axis
       open: b.open,
       high: b.high,
@@ -252,7 +256,7 @@ function WickShape(props: WickShapeProps) {
   );
 }
 
-interface BodyShapeProps extends WickShapeProps {}
+type BodyShapeProps = WickShapeProps;
 
 /**
  * Body: a fatter rectangle from open → close.

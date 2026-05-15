@@ -11,7 +11,7 @@
  * chain picks it up automatically.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Activity,
   AlertTriangle,
