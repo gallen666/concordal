@@ -84,7 +84,14 @@ export default function ReportPage() {
     if (kind === "unsupported") {
       setState({
         kind: "error",
-        message: `Ticker "${ticker}" 暂不支持。当前仅支持 A 股 (6 位数字) 和港股 (4-5 位数字 / .HK)。美股 / 加密即将推出。`,
+        message: `Ticker "${ticker}" 暂不支持。当前仅支持 A 股 6 位代码（如 600519 / 300750 / 601318）。港股 / 美股 / 加密即将推出。`,
+      });
+      return;
+    }
+    if (kind === "hk_equity") {
+      setState({
+        kind: "error",
+        message: `港股专用 adapter 即将推出。当前仅支持 A 股 6 位代码。`,
       });
       return;
     }
@@ -222,7 +229,7 @@ function FetchError({ ticker, message, onRetry }: { ticker: string; message: str
         <Link href="/" className="btn-secondary">返回首页</Link>
       </div>
       <p className="mt-8 text-xs text-ink-tertiary">
-        当前仅支持 A 股 (6 位数字) 和港股 (4-5 位数字 / .HK)。其他市场即将推出。
+        当前仅支持 A 股 6 位代码（如 600519 / 300750）。港股 / 美股 / 加密即将推出。
       </p>
     </div>
   );

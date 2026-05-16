@@ -44,7 +44,12 @@ _HK_RE = re.compile(r"^\d{4,5}(?:\.HK)?$", re.IGNORECASE)
 
 
 def classify_ticker(ticker: str) -> str:
-    """Return one of: 'a_share', 'hk_equity', 'unsupported'."""
+    """Return one of: 'a_share', 'hk_equity', 'unsupported'.
+
+    HK support pends a dedicated adapter — for now /report/00700 falls through
+    to the a_share adapter, which won't work. We still classify so the
+    frontend shows a polite "HK adapter coming soon" rather than a 500.
+    """
     t = (ticker or "").strip().upper()
     if _A_SHARE_RE.match(t):
         return "a_share"
@@ -98,39 +103,42 @@ def fetch_facts(ticker: str, market: str) -> dict:
         "support_level": None, "pressure_level": None,
     }
 
-    # Quote
+    # 1. Adapter (we use it for quotes + fundamentals + technical)
+    adapter = None
     try:
         from trading_agents.adapters import get_adapter
         adapter = get_adapter(market)
-        end = date.today()
-        start = end - timedelta(days=180)
-        hist = adapter.get_price_history(ticker, start, end)
-        if hist:
-            last = hist[-1]
-            prev = hist[-2] if len(hist) >= 2 else last
-            out["current_price"] = float(getattr(last, "close", last.get("close") if isinstance(last, dict) else 0) or 0)
-            out["prev_close"] = float(getattr(prev, "close", prev.get("close") if isinstance(prev, dict) else 0) or 0)
-            if out["prev_close"]:
-                out["change_pct"] = round((out["current_price"] - out["prev_close"]) / out["prev_close"] * 100, 2)
-            # MA5 / MA20 / MA60
-            closes = [float(getattr(b, "close", b.get("close") if isinstance(b, dict) else 0) or 0) for b in hist[-60:]]
-            if len(closes) >= 5:
-                out["ma5"] = round(sum(closes[-5:]) / 5, 2)
-            if len(closes) >= 20:
-                out["ma20"] = round(sum(closes[-20:]) / 20, 2)
-            if len(closes) >= 60:
-                out["ma60"] = round(sum(closes[-60:]) / 60, 2)
-            # Pressure/support estimate: 20-day high/low
-            if len(hist) >= 20:
-                window = hist[-20:]
-                highs = [float(getattr(b, "high", b.get("high") if isinstance(b, dict) else 0) or 0) for b in window]
-                lows = [float(getattr(b, "low", b.get("low") if isinstance(b, dict) else 0) or 0) for b in window]
-                out["pressure_level"] = round(max(highs), 2)
-                out["support_level"] = round(min(lows), 2)
     except Exception as e:
-        log.warning("[report.facts] quote fetch failed for %s: %s", ticker, e)
+        log.warning("[report.facts] adapter init failed for %s/%s: %s", ticker, market, e)
 
-    # Metadata (name / sector)
+    # 2. Quote + MAs + support/pressure
+    if adapter is not None:
+        try:
+            end = date.today()
+            start = end - timedelta(days=180)
+            hist = adapter.get_price_history(ticker, start, end)
+            if hist:
+                last = hist[-1]
+                prev = hist[-2] if len(hist) >= 2 else last
+                out["current_price"] = float(getattr(last, "close", 0) or 0)
+                out["prev_close"] = float(getattr(prev, "close", 0) or 0)
+                if out["prev_close"]:
+                    out["change_pct"] = round((out["current_price"] - out["prev_close"]) / out["prev_close"] * 100, 2)
+                closes = [float(getattr(b, "close", 0) or 0) for b in hist[-60:]]
+                if len(closes) >= 5:
+                    out["ma5"] = round(sum(closes[-5:]) / 5, 2)
+                if len(closes) >= 20:
+                    out["ma20"] = round(sum(closes[-20:]) / 20, 2)
+                if len(closes) >= 60:
+                    out["ma60"] = round(sum(closes[-60:]) / 60, 2)
+                if len(hist) >= 20:
+                    window = hist[-20:]
+                    out["pressure_level"] = round(max(float(getattr(b, "high", 0) or 0) for b in window), 2)
+                    out["support_level"] = round(min(float(getattr(b, "low", 0) or 0) for b in window), 2)
+        except Exception as e:
+            log.warning("[report.facts] quote fetch failed for %s: %s", ticker, e)
+
+    # 3. Metadata (name / sector) from persistence cache
     try:
         from . import persistence
         meta = persistence.get_ticker_meta(ticker) or persistence.get_ticker_meta_stale_ok(ticker)
@@ -142,39 +150,37 @@ def fetch_facts(ticker: str, market: str) -> dict:
     except Exception as e:
         log.warning("[report.facts] meta fetch failed: %s", e)
 
-    # Fundamentals via data bus / adapter
-    try:
-        from trading_agents.ecosystem.data_bus import bus, Need
-        f = bus.fetch(Need.fundamentals(ticker=ticker, market=market)) if hasattr(Need, "fundamentals") else None
-        if f and isinstance(f, dict):
-            payload = f.get("payload") or f
-            out["pe"] = payload.get("pe") or payload.get("pe_ratio")
-            out["pb"] = payload.get("pb") or payload.get("pb_ratio")
-            out["ps"] = payload.get("ps") or payload.get("ps_ratio")
-            out["roe"] = payload.get("roe")
-            out["net_margin"] = payload.get("net_margin")
-            out["revenue_yoy"] = payload.get("revenue_yoy")
-            out["profit_yoy"] = payload.get("profit_yoy")
-            out["dividend_yield"] = payload.get("dividend_yield")
-    except Exception as e:
-        log.warning("[report.facts] fundamentals fetch failed: %s", e)
+    # 4. Fundamentals via adapter.get_fundamentals (Pydantic Fundamentals model)
+    if adapter is not None:
+        try:
+            f = adapter.get_fundamentals(ticker, date.today())
+            if f is not None:
+                out["pe"] = getattr(f, "pe_ratio", None)
+                out["pb"] = getattr(f, "pb_ratio", None)
+                out["net_margin"] = getattr(f, "net_margin", None)
+                out["revenue_yoy"] = getattr(f, "revenue_growth_yoy", None)
+                out["market_cap"] = getattr(f, "market_cap", None) or out["market_cap"]
+                # ROE estimate from net_margin × asset_turnover not available — leave null
+        except Exception as e:
+            log.warning("[report.facts] fundamentals fetch failed: %s", e)
 
-    # Technical indicators via data bus
-    try:
-        from trading_agents.ecosystem.data_bus import bus, Need
-        t = bus.fetch(Need.technical(ticker=ticker, market=market)) if hasattr(Need, "technical") else None
-        if t and isinstance(t, dict):
-            payload = t.get("payload") or t
-            out["rsi14"] = payload.get("rsi14") or payload.get("rsi")
-            out["mfi14"] = payload.get("mfi14") or payload.get("mfi")
-            out["adx14"] = payload.get("adx14") or payload.get("adx")
-            out["macd"] = payload.get("macd")
-            out["kdj_k"] = payload.get("kdj_k") or payload.get("kdj")
-            out["atr14"] = payload.get("atr14") or payload.get("atr")
-            out["hist_vol"] = payload.get("historical_volatility") or payload.get("hist_vol")
-            out["volume_ratio"] = payload.get("volume_ratio")
-    except Exception as e:
-        log.warning("[report.facts] technical fetch failed: %s", e)
+    # 5. Technical indicators via adapter.get_technical (Pydantic TechnicalSnapshot)
+    if adapter is not None:
+        try:
+            t = adapter.get_technical(ticker, date.today())
+            if t is not None:
+                out["rsi14"] = getattr(t, "rsi_14", None)
+                out["macd"] = getattr(t, "macd", None)
+                out["macd_signal"] = getattr(t, "macd_signal", None)
+                out["kdj_k"] = getattr(t, "kdj_k", None)
+                out["kdj_d"] = getattr(t, "kdj_d", None)
+                out["kdj_j"] = getattr(t, "kdj_j", None)
+                out["atr14"] = getattr(t, "atr_14", None)
+                # sma_20 → ma20 if not already set by price history
+                if out["ma20"] is None:
+                    out["ma20"] = getattr(t, "sma_20", None)
+        except Exception as e:
+            log.warning("[report.facts] technical fetch failed: %s", e)
 
     return out
 
@@ -401,24 +407,27 @@ def _exchange_for(market: str, ticker: str) -> str:
 
 
 def _bus_telemetry_snapshot() -> list[dict]:
-    """Take a snapshot of the most recent bus.fetch entries for this request."""
+    """Take a snapshot of the most recent bus.fetch entries for this request.
+
+    bus.telemetry(last_n=N) returns dicts with keys: need_kind, source,
+    cache_hit, elapsed_ms, error. We rename elapsed_ms → latency_ms to match
+    the BusTelemetryRow shape the frontend renders.
+    """
     try:
         from trading_agents.ecosystem.data_bus import bus
-        # bus exposes a `recent()` or similar — guard for absence
-        if hasattr(bus, "recent"):
-            entries = bus.recent(limit=12)
-            return [
-                {
-                    "need_kind": (e.get("need") or {}).get("kind", "unknown"),
-                    "source": e.get("source", "unknown"),
-                    "latency_ms": int(e.get("latency_ms", 0)),
-                    "cache_hit": bool(e.get("cache_hit", False)),
-                }
-                for e in (entries or [])
-            ]
+        entries = bus.telemetry(last_n=12) if hasattr(bus, "telemetry") else []
+        return [
+            {
+                "need_kind": e.get("need_kind", "unknown"),
+                "source": e.get("source", "unknown"),
+                "latency_ms": int(e.get("elapsed_ms", 0) or 0),
+                "cache_hit": bool(e.get("cache_hit", False)),
+            }
+            for e in (entries or [])
+        ]
     except Exception as e:
         log.debug("[report.bus] telemetry snapshot failed: %s", e)
-    return []
+        return []
 
 
 def assemble_report(ticker: str, locale: str = "zh") -> dict:
@@ -426,13 +435,13 @@ def assemble_report(ticker: str, locale: str = "zh") -> dict:
 
     market_kind = classify_ticker(ticker)
     if market_kind == "unsupported":
-        return {"error": "ticker_unsupported", "ticker": ticker, "supported_markets": ["A-share (6 digits)", "HK (5 digits or .HK)"]}
+        return {"error": "ticker_unsupported", "ticker": ticker, "supported_markets": ["A-share (6 digits)"]}
 
-    # Normalise HK ticker
+    # HK adapter doesn't exist yet — report a clean error instead of 500
     if market_kind == "hk_equity":
-        ticker = normalize_hk_ticker(ticker)
+        return {"error": "hk_adapter_pending", "ticker": ticker, "message": "港股专用 adapter 即将推出。当前仅支持 A 股 6 位代码。"}
 
-    market_api_name = "a_share" if market_kind == "a_share" else "hk_equity"
+    market_api_name = "a_share"
 
     # 1. Live facts
     facts = fetch_facts(ticker, market_api_name)

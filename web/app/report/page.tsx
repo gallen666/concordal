@@ -14,12 +14,12 @@ import { useState } from "react";
 import { ArrowRight, BookOpen, FileText, Sparkles } from "lucide-react";
 
 const SAMPLE_TICKERS = [
-  { code: "600418", name: "江淮汽车", market: "A 股" },
   { code: "600519", name: "贵州茅台", market: "A 股" },
   { code: "300750", name: "宁德时代", market: "A 股" },
   { code: "601318", name: "中国平安", market: "A 股" },
-  { code: "00700", name: "腾讯控股", market: "港股" },
-  { code: "09988", name: "阿里巴巴-SW", market: "港股" },
+  { code: "300059", name: "东方财富", market: "A 股" },
+  { code: "002594", name: "比亚迪",   market: "A 股" },
+  { code: "600418", name: "江淮汽车 (样本)", market: "A 股" },
 ];
 
 function classify(raw: string): "a_share" | "hk_equity" | "unsupported" {
@@ -40,7 +40,11 @@ export default function ReportLandingPage() {
     if (!t) return;
     const kind = classify(t);
     if (kind === "unsupported") {
-      setError("仅支持 A 股 (6 位数字) 和港股 (4-5 位数字 / .HK)。如 600519, 00700, 09988.HK");
+      setError("仅支持 A 股 6 位代码。如 600519 / 300750 / 601318。港股 + 美股 + 加密即将推出。");
+      return;
+    }
+    if (kind === "hk_equity") {
+      setError("港股专用 adapter 即将推出。当前仅支持 A 股 6 位代码。");
       return;
     }
     setError(null);
@@ -56,9 +60,9 @@ export default function ReportLandingPage() {
         </div>
         <h1 className="text-4xl sm:text-5xl font-serif text-ink-primary mb-4">深度报告</h1>
         <p className="text-ink-tertiary max-w-2xl mx-auto">
-          输入任意 A 股 / 港股代码，由 Gemini Pro + UniversalDataBus 在 15-40s 内生成
+          输入任意 A 股 6 位代码，由 Gemini Pro + UniversalDataBus 在 15-40s 内生成
           11 节专业研报（三步估值 / 杜邦分解 / 逻辑链 / 三情景 / 多空辩论 / 操作计划 / 跟踪清单），
-          附总线遥测审计 + 校准置信度上下文。
+          附总线遥测审计 + 校准置信度上下文。港股 / 美股 / 加密即将推出。
         </p>
       </div>
 
@@ -68,7 +72,7 @@ export default function ReportLandingPage() {
             type="text"
             value={input}
             onChange={(e) => { setInput(e.target.value); setError(null); }}
-            placeholder="输入 ticker（如 600519 / 00700 / 09988.HK）"
+            placeholder="输入 A 股代码（如 600519 / 300750 / 601318）"
             className="flex-1 px-4 py-3 bg-surface-elev border border-rule-soft rounded-lg text-ink-primary placeholder:text-ink-tertiary focus:outline-none focus:ring-2 focus:ring-accent"
             autoFocus
           />

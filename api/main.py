@@ -3644,12 +3644,15 @@ def get_full_report(ticker: str, force: bool = False, locale: str = "zh") -> dic
     if kind == "unsupported":
         raise HTTPException(
             400,
-            "Only A-share (6 digits) and HK (5 digits / .HK) are supported in "
-            "this release. US/Crypto coming soon.",
+            "Only A-share (6 digits) is supported in this release. "
+            "HK / US / Crypto coming soon.",
         )
 
     if kind == "hk_equity":
-        t = rb.normalize_hk_ticker(t)
+        raise HTTPException(
+            400,
+            "港股专用 adapter 即将推出。当前仅支持 A 股 6 位代码。",
+        )
 
     if not force:
         cached = rb.get_cached(t)
