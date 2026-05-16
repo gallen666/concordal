@@ -11,7 +11,7 @@
  * chain picks it up automatically.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -63,10 +63,15 @@ interface ChainResponse {
 }
 
 export default function ChainPage() {
+  const [mode, setMode] = useState<"single" | "compare">("single");
   const [ticker, setTicker] = useState("AAPL");
   const [data, setData] = useState<ChainResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Compare mode state — multi-ticker parallel run
+  const [compareTickers, setCompareTickers] = useState("AAPL, 600519, BTC");
+  const [compareData, setCompareData] = useState<ChainResponse[] | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
 
   async function run() {
     setLoading(true);
@@ -83,6 +88,23 @@ export default function ChainPage() {
       setError((e as Error).message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Compare-mode: kick off N chains in parallel, collect results.
+  async function runCompare() {
+    setCompareLoading(true);
+    setCompareData(null);
+    const tickers = compareTickers.split(/[,\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean).slice(0, 5);
+    try {
+      const results = await Promise.all(tickers.map(t =>
+        fetch(`${API_BASE}/v1/chain/full-stack?ticker=${encodeURIComponent(t)}`)
+          .then(r => r.json() as Promise<ChainResponse>)
+          .catch(e => ({ ticker: t, error: (e as Error).message } as ChainResponse))
+      ));
+      setCompareData(results);
+    } finally {
+      setCompareLoading(false);
     }
   }
 
@@ -108,6 +130,46 @@ export default function ChainPage() {
       {/* Methodology callout — links theory to this page. New in v3. */}
       <MethodologyCallout />
 
+      {/* Mode tabs — single ticker vs multi-ticker compare. v3 enhancement. */}
+      <div className="flex gap-1 mb-4 border-b border-border-subtle">
+        <button
+          onClick={() => setMode("single")}
+          className={cn(
+            "px-4 py-2 text-sm transition-colors border-b-2 -mb-px",
+            mode === "single"
+              ? "border-accent text-ink-primary font-medium"
+              : "border-transparent text-ink-tertiary hover:text-ink-secondary",
+          )}
+        >
+          <Play className="w-3.5 h-3.5 inline mr-1.5" />
+          单 ticker · 详细
+        </button>
+        <button
+          onClick={() => setMode("compare")}
+          className={cn(
+            "px-4 py-2 text-sm transition-colors border-b-2 -mb-px",
+            mode === "compare"
+              ? "border-accent text-ink-primary font-medium"
+              : "border-transparent text-ink-tertiary hover:text-ink-secondary",
+          )}
+        >
+          <Layers className="w-3.5 h-3.5 inline mr-1.5" />
+          多 ticker · 对比脊柱组合性
+        </button>
+      </div>
+
+      {mode === "compare" && (
+        <CompareMode
+          tickers={compareTickers}
+          setTickers={setCompareTickers}
+          data={compareData}
+          loading={compareLoading}
+          run={runCompare}
+        />
+      )}
+
+      {mode === "single" && (
+      <>
       {/* Input */}
       <div className="surface-elev p-4 mb-6 flex items-center gap-3 flex-wrap">
         <input
@@ -231,11 +293,9 @@ export default function ChainPage() {
               )}
             </DataPanel>
 
-            <DataPanel title="Factors (Alpha158-lite)" icon={<Sparkles />}>
+            <DataPanel title="Factors · Alpha158-lite (bar chart)" icon={<Sparkles />}>
               {data.factors ? (
-                Object.entries(data.factors)
-                  .slice(0, 8)
-                  .map(([k, v]) => <KV key={k} k={k} v={Number(v).toFixed(3)} />)
+                <FactorBarChart factors={data.factors} />
               ) : (
                 <div className="text-2xs text-ink-tertiary">
                   No factors computed
@@ -285,6 +345,11 @@ export default function ChainPage() {
             <code className="mx-1 text-ink-secondary">/decision</code>.
           </p>
         </>
+      )}
+
+      {/* v3: live bus telemetry stream — visible after any successful run */}
+      {data && !data.error && <BusTelemetryStream />}
+      </>
       )}
     </div>
   );
@@ -497,5 +562,216 @@ export function BusCallGraph({ ticker, factorBars }: { ticker: string; factorBar
         </div>
       </div>
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FactorBarChart — visualize the 10 Alpha158-lite factors. v3.
+// Replaces the raw key=value list. Factors are bounded to [-2, 2] in
+// the backend, so we render diverging bars centered on 0.
+// ---------------------------------------------------------------------------
+
+function FactorBarChart({ factors }: { factors: Record<string, number> }) {
+  const entries = Object.entries(factors).slice(0, 10);
+  const maxAbs = Math.max(...entries.map(([, v]) => Math.abs(Number(v))), 0.001);
+  return (
+    <div className="space-y-1.5">
+      {entries.map(([name, val]) => {
+        const v = Number(val);
+        const pct = (Math.abs(v) / maxAbs) * 50;  // half width since bidirectional
+        const isPos = v >= 0;
+        return (
+          <div key={name} className="grid grid-cols-[5rem_1fr_3rem] gap-2 items-center text-xs">
+            <span className="font-mono text-ink-tertiary truncate">{name}</span>
+            <div className="relative h-3 bg-bg-hover rounded">
+              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-border" />
+              <div
+                className={cn(
+                  "absolute top-0 bottom-0",
+                  isPos ? "left-1/2 bg-signal-buy/60" : "right-1/2 bg-signal-sell/60"
+                )}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <span className={cn(
+              "text-right font-mono tabular-nums",
+              isPos ? "text-signal-buy" : "text-signal-sell"
+            )}>
+              {v.toFixed(3)}
+            </span>
+          </div>
+        );
+      })}
+      <div className="text-2xs text-ink-tertiary font-mono mt-3 pt-2 border-t border-border-subtle">
+        发散条形图：左 = 负、右 = 正。因子值在 [-2, +2] 截断防止极端值污染下游 LLM。
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// BusTelemetryStream — live `/v1/databus/telemetry` poll. v3.
+// Surfaces which Source actually answered each Need + latency, including
+// internal recursive calls (Need.FACTOR → Need.OHLCV inside the bus).
+// ---------------------------------------------------------------------------
+
+interface TelemetryRecord {
+  need_kind: string;
+  source: string | null;
+  cache_hit: boolean;
+  elapsed_ms: number;
+  error: string | null;
+}
+
+function BusTelemetryStream() {
+  const [records, setRecords] = useState<TelemetryRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/v1/databus/telemetry?last_n=12`);
+      if (r.ok) {
+        const j = await r.json();
+        setRecords(j.records || []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Load once on mount + after manual click.
+  useEffect(() => { load(); }, []);
+
+  return (
+    <section className="my-8">
+      <div className="flex items-baseline justify-between gap-3 mb-3 flex-wrap">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Activity className="w-4 h-4 text-accent" />
+          Live bus telemetry · 总线遥测流
+        </h2>
+        <button onClick={load} disabled={loading} className="btn-secondary text-xs py-1 px-2">
+          {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "↻ 刷新"}
+        </button>
+      </div>
+      <div className="surface-elev overflow-hidden">
+        {records.length === 0 ? (
+          <div className="p-6 text-xs text-ink-tertiary text-center">无遥测记录</div>
+        ) : (
+          <div className="divide-y divide-border-subtle">
+            {records.map((r, i) => (
+              <div key={i} className="grid grid-cols-[6rem_8rem_1fr_4rem] gap-3 px-4 py-2 items-center text-xs">
+                <span className="font-mono text-2xs text-ink-tertiary uppercase">{r.need_kind}</span>
+                <span className="font-mono text-ink-secondary truncate">{r.source ?? "—"}</span>
+                <span className={cn(
+                  "text-2xs font-mono",
+                  r.cache_hit ? "text-signal-buy" : r.error ? "text-signal-sell" : "text-ink-tertiary"
+                )}>
+                  {r.cache_hit ? "✓ cache hit" : r.error ? `✗ ${r.error.slice(0, 60)}` : "→ fetched"}
+                </span>
+                <span className={cn(
+                  "text-right font-mono tabular-nums",
+                  r.elapsed_ms < 50 ? "text-signal-buy" :
+                  r.elapsed_ms < 500 ? "text-ink-primary" :
+                  r.elapsed_ms < 2000 ? "text-signal-warn" :
+                                        "text-signal-sell"
+                )}>
+                  {r.elapsed_ms.toFixed(0)}ms
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="text-2xs text-ink-tertiary mt-2 font-mono">
+        实时来自 <code className="text-accent">GET /v1/databus/telemetry?last_n=12</code> ·
+        Law 4：每次 bus.fetch 一条记录、含递归内调用
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CompareMode — run 3-5 tickers through the spine in parallel. v3.
+// Most powerful demonstration of bus composability: same pipeline,
+// different markets (US / A-share / crypto), side-by-side outputs.
+// ---------------------------------------------------------------------------
+
+function CompareMode({
+  tickers, setTickers, data, loading, run,
+}: {
+  tickers: string;
+  setTickers: (s: string) => void;
+  data: ChainResponse[] | null;
+  loading: boolean;
+  run: () => void;
+}) {
+  return (
+    <>
+      <div className="surface-elev p-4 mb-6 flex items-center gap-3 flex-wrap">
+        <input
+          type="text"
+          value={tickers}
+          onChange={(e) => setTickers(e.target.value)}
+          className="bg-bg-hover border border-border rounded px-3 py-2 font-mono text-sm flex-1 min-w-[16rem]"
+          placeholder="AAPL, 600519, BTC (逗号或空格分隔，最多 5 个)"
+        />
+        <button onClick={run} disabled={loading || !tickers.trim()} className="btn-primary">
+          {loading ? (<><Loader2 className="w-4 h-4 animate-spin" /> 并行跑脊柱…</>)
+                   : (<><Play className="w-4 h-4" /> 并行运行</>)}
+        </button>
+      </div>
+
+      <div className="surface-elev p-4 mb-6 border-l-4 border-l-gold">
+        <div className="kicker text-2xs mb-1">这个对比证明什么</div>
+        <p className="text-sm text-ink-primary leading-relaxed">
+          同一个 7-agent 流水线 + 同一个 UniversalDataBus，跑美股、A 股、加密币 —
+          底层 Source 完全不同（yfinance / 五层 A 股 / CCXT），输出的 BUY/HOLD/SELL + 因子是<strong>用同一套语义</strong>
+          产生的。这是「跨市场统一覆盖」的存在证明。
+        </p>
+      </div>
+
+      {data && (
+        <div className="overflow-x-auto">
+          <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${data.length}, minmax(16rem, 1fr))` }}>
+            {data.map((d, i) => <CompareCard key={i} data={d} />)}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function CompareCard({ data }: { data: ChainResponse }) {
+  if (data.error) {
+    return (
+      <div className="surface-elev p-4 border-l-4 border-l-signal-sell">
+        <div className="font-mono font-bold text-ink-primary">{data.ticker}</div>
+        <div className="text-2xs text-signal-sell mt-2 leading-relaxed">{data.error}</div>
+      </div>
+    );
+  }
+  const ohlcvStep = data.chain?.find(s => s.step === "ohlcv");
+  const bars = (ohlcvStep?.bars as number) || 0;
+  return (
+    <div className="surface-elev p-4 border-l-4 border-l-accent">
+      <div className="flex items-baseline justify-between gap-2 mb-3">
+        <div className="font-mono font-bold text-lg text-ink-primary">{data.ticker}</div>
+        <SideBadge side={data.signal?.side || "—"} />
+      </div>
+      <div className="space-y-1 text-xs">
+        <KV k="bars (OHLCV)" v={String(bars)} />
+        <KV k="factors" v={String(Object.keys(data.factors || {}).length)} />
+        <KV k="signal score" v={data.signal?.score?.toFixed(3) || "—"} />
+        <KV k="target weight" v={`${((data.signal?.target_weight || 0) * 100).toFixed(2)}%`} />
+        <KV k="confidence" v={`${((data.signal?.confidence || 0) * 100).toFixed(0)}%`} />
+        <KV k="backtest sharpe" v={data.backtest?.sharpe_annualised?.toFixed(2) || "—"} />
+        <KV k="backtest return" v={`${(data.backtest?.return_pct || 0).toFixed(2)}%`}
+            accent={(data.backtest?.return_pct || 0) >= 0 ? "buy" : "sell"} />
+      </div>
+      <div className="mt-3 pt-3 border-t border-border-subtle text-2xs text-ink-tertiary">
+        {data.chain?.length || 0} 步全过 · spine: {data.spine_traversed?.join("→")}
+      </div>
+    </div>
   );
 }
