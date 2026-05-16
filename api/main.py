@@ -3660,12 +3660,20 @@ def get_full_report(ticker: str, force: bool = False, locale: str = "zh") -> dic
             cached.setdefault("_cache_status", "hit")
             return cached
 
-    report = rb.assemble_report(t, locale=locale)
+    try:
+        report = rb.assemble_report(t, locale=locale)
+    except Exception as e:
+        log.exception("/v1/report/full failed for %s", t)
+        raise HTTPException(500, f"Report generation failed: {type(e).__name__}: {e}")
+
     if report.get("error"):
         raise HTTPException(400, report.get("error"))
 
     report["_cache_status"] = "miss"
-    rb.put_cache(t, report)
+    try:
+        rb.put_cache(t, report)
+    except Exception as e:
+        log.warning("[report.cache] put failed for %s: %s", t, e)
     return report
 
 

@@ -376,19 +376,24 @@ def _extract_json(text: str) -> dict | None:
 
 
 def call_llm_for_narrative(facts: dict, locale: str = "zh") -> dict:
-    """Single LLM call → narrative JSON. Returns empty dict on failure."""
+    """Single LLM call → narrative JSON. Returns empty dict on failure.
+
+    Uses Tier.DEEP so the analyst tone matches what the rest of the
+    platform expects (analyst-write, deep-reflection tier — actual tiers
+    are FAST/MID/DEEP, no HIGH).
+    """
     from trading_agents.llm.router import LLMRouter, Tier
     sys_prompt, user_prompt = build_llm_prompt(facts)
     router = LLMRouter(locale=locale)
     try:
-        resp = router.complete(tier=Tier.HIGH, system=sys_prompt, user=user_prompt, temperature=0.35)
+        resp = router.complete(tier=Tier.DEEP, system=sys_prompt, user=user_prompt, temperature=0.35)
         data = _extract_json(resp.text or "")
         if data:
             return data
         log.warning("[report.llm] failed to extract JSON from response (len=%d)", len(resp.text or ""))
         return {}
     except Exception as e:
-        log.warning("[report.llm] generation failed: %s", e)
+        log.warning("[report.llm] generation failed: %s", e, exc_info=True)
         return {}
 
 
