@@ -409,11 +409,12 @@ function InvestmentSummary({ data }: { data: ReportData }) {
     s.rating === "SELL" ? "bg-signal-sell_soft text-signal-sell border-signal-sell/30" :
                           "bg-bg-hover text-ink-secondary border-border";
 
+  const fmt = (v: number | undefined | null, d = 2) => (typeof v === "number" ? v.toFixed(d) : "—");
   const rows: [string, React.ReactNode][] = [
     ["投资评级",   <span key="r" className={cn("px-2.5 py-1 rounded text-sm font-bold font-mono border", ratingColor)}>{s.rating} · {s.rating_label_zh}</span>],
-    ["当前股价",   <span key="p" className="font-mono text-ink-primary">{s.currency === "CNY" ? "¥" : "$"}{s.current_price.toFixed(2)}</span>],
-    ["目标价位",   <span key="t" className="font-mono text-ink-primary">¥{s.target_price_low.toFixed(2)} - ¥{s.target_price_high.toFixed(2)}</span>],
-    ["预期空间",   <span key="e" className="font-mono text-ink-primary">{s.expected_return_sign}{s.expected_return_pct.toFixed(0)}%</span>],
+    ["当前股价",   <span key="p" className="font-mono text-ink-primary">{s.currency === "CNY" ? "¥" : "$"}{fmt(s.current_price)}</span>],
+    ["目标价位",   <span key="t" className="font-mono text-ink-primary">¥{fmt(s.target_price_low)} - ¥{fmt(s.target_price_high)}</span>],
+    ["预期空间",   <span key="e" className="font-mono text-ink-primary">{s.expected_return_sign}{fmt(s.expected_return_pct, 0)}%</span>],
     ["建议持有周期", <span key="h" className="font-mono text-ink-primary">{s.holding_period}</span>],
   ];
 
@@ -515,7 +516,7 @@ function QualitativeAnalysis({ data }: { data: ReportData }) {
                 )}>
                   <div className="text-sm font-semibold text-ink-primary">{sc.label}</div>
                   <div className="text-2xs text-ink-tertiary mt-0.5">{sc.assumption}</div>
-                  <div className="font-mono text-2xl text-ink-primary tabular-nums mt-2">¥{sc.fair_value.toFixed(2)}</div>
+                  <div className="font-mono text-2xl text-ink-primary tabular-nums mt-2">¥{typeof sc.fair_value === "number" ? sc.fair_value.toFixed(2) : "—"}</div>
                   <p className="text-2xs text-ink-secondary leading-relaxed mt-2">{sc.body}</p>
                 </div>
               ))}
@@ -530,7 +531,9 @@ function QualitativeAnalysis({ data }: { data: ReportData }) {
         <FrameworkCard num="框架 2" title={q.framework_2_dupont.title}>
           <div className="text-sm mb-3">
             <span className="text-ink-tertiary">分解 ROE = </span>
-            <span className="font-mono text-signal-sell font-semibold">{q.framework_2_dupont.roe.toFixed(2)}%</span>
+            <span className="font-mono text-signal-sell font-semibold">
+              {q.framework_2_dupont.roe != null ? `${q.framework_2_dupont.roe.toFixed(2)}%` : "数据待补充"}
+            </span>
             <span className="text-ink-tertiary"> 变化来源：</span>
           </div>
           <div className="space-y-2">
@@ -768,7 +771,7 @@ function ProfessionalValuation({ data }: { data: ReportData }) {
               )}>
                 <div className="text-sm font-semibold text-ink-primary">{s.scenario}</div>
                 <div className="text-2xs text-ink-tertiary mt-0.5 leading-relaxed">{s.assumption}</div>
-                <div className="font-mono text-3xl text-ink-primary tabular-nums mt-3">¥{s.fair_value_cny.toFixed(2)}</div>
+                <div className="font-mono text-3xl text-ink-primary tabular-nums mt-3">¥{typeof s.fair_value_cny === "number" ? s.fair_value_cny.toFixed(2) : "—"}</div>
               </div>
             ))}
           </div>
