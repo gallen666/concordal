@@ -38,6 +38,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useT } from "../lib/i18n";
+import { ReflectionMechanism } from "../components/PaperBacked";
 
 export default function HowItWorksPage() {
   const { t } = useT();
@@ -68,6 +69,11 @@ export default function HowItWorksPage() {
 
       {/* TRADER × RISK */}
       <TraderRiskFlow />
+
+      {/* REFLECTION MECHANISM — paper §6.4, added per audit */}
+      <section className="max-w-6xl mx-auto px-6">
+        <ReflectionMechanism />
+      </section>
 
       {/* DATA SOURCES */}
       <DataSources />

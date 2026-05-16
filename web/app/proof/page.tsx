@@ -24,6 +24,11 @@ import {
   Zap,
 } from "lucide-react";
 import { useT } from "../lib/i18n";
+import {
+  CalibrationTable,
+  ConfidenceBinTable,
+  KnownLimitations,
+} from "../components/PaperBacked";
 
 const REPO = "https://github.com/gallen666/trading-agents-platform";
 
@@ -131,6 +136,11 @@ export default function ProofPage() {
         <Stat label={locale === "zh" ? "数据源" : "Real data sources"} value="6" sub={locale === "zh" ? "无需付费 API" : "no paid APIs"} />
         <Stat label={locale === "zh" ? "回测引擎" : "Backtest engines"} value="2" sub={locale === "zh" ? "互相校验" : "cross-validated"} />
       </div>
+
+      {/* Paper-backed calibration tables — added per audit. */}
+      <CalibrationTable />
+      <ConfidenceBinTable />
+      <KnownLimitations />
 
       {/* Sections */}
       <div className="space-y-4">

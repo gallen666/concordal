@@ -16,6 +16,7 @@
 import Link from "next/link";
 import { ArrowRight, Code2, KeyRound, Sparkles } from "lucide-react";
 import { useT } from "../lib/i18n";
+import { BusRegisterExample } from "../components/PaperBacked";
 
 const SAMPLE_PYTHON = `import requests, time
 
@@ -83,6 +84,9 @@ export default function DevelopersPage() {
           </pre>
         </div>
       </section>
+
+      {/* Bus integration story — paper §10.3, added per audit. */}
+      <BusRegisterExample />
 
       {/* Pricing recap */}
       <section className="surface-elev p-6 flex flex-col sm:flex-row gap-4 items-start">

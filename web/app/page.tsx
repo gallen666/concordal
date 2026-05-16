@@ -43,12 +43,16 @@ import {
 } from "lucide-react";
 import { api } from "./lib/api";
 import { useT } from "./lib/i18n";
+import { CrossMarketCallout } from "./components/PaperBacked";
 
 export default function Landing() {
   return (
     <div className="min-h-screen">
       <Hero />
       <FeatureHub />
+      <section className="max-w-6xl mx-auto px-6">
+        <CrossMarketCallout />
+      </section>
       <TodayPulse />
       <TheWay />
       <Architecture />

@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { useT } from "../lib/i18n";
 import { cn } from "../lib/cn";
+import { FiveLayerHeatmap } from "../components/PaperBacked";
 
 const API_BASE = process.env.NEXT_PUBLIC_API || "http://localhost:8000";
 
@@ -207,6 +208,9 @@ export default function EcosystemPage() {
           data-flow diagram because it's the live answer the diagram is
           claiming. */}
       <DataBusLive />
+
+      {/* 5-layer A-share geo-resilience heatmap — paper §8, added per audit. */}
+      <FiveLayerHeatmap />
 
       {/* Data-flow stack diagram (vertical spine) */}
       <section className="mb-12">

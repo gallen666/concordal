@@ -35,6 +35,7 @@ import {
 } from "recharts";
 import { cn } from "../lib/cn";
 import { useT } from "../lib/i18n";
+import { DatasetBanner } from "../components/PaperBacked";
 
 const REPORT_URL =
   "https://raw.githubusercontent.com/gallen666/trading-agents-platform/main/reports/latest.json";
@@ -132,6 +133,9 @@ export default function TrackRecordPage() {
           {t("track.subheading")}
         </p>
       </header>
+
+      {/* Paper-backed dataset banner — added per audit. */}
+      <DatasetBanner />
 
       {loading && (
         <div className="surface p-12 flex items-center justify-center gap-3 text-ink-secondary">
