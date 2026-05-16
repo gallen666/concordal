@@ -288,6 +288,16 @@ function buildGroups(isZh: boolean): NavGroup[] {
         heading: lbl("证据", "Evidence"),
         items: [
           {
+            href: "/report/600418",
+            label: lbl("深度报告样本 · 江淮 600418", "Sample deep report · JAC 600418"),
+            desc: lbl(
+              "StockAlpha 风格 11 节专业研报 + 4 个 TradingAgents 专属拓展",
+              "11-section StockAlpha-style report + 4 TradingAgents extensions",
+            ),
+            icon: <FileText className="w-4 h-4" />,
+            badge: lbl("新", "New"),
+          },
+          {
             href: "/research",
             label: lbl("学术论文 · 方法论", "Research paper · methodology"),
             desc: lbl(
@@ -295,7 +305,6 @@ function buildGroups(isZh: boolean): NavGroup[] {
               "Role-separation theorem · 10 Need types · 78-week study · full PDF",
             ),
             icon: <BookOpen className="w-4 h-4" />,
-            badge: lbl("新", "New"),
           },
           {
             href: "/track-record",
