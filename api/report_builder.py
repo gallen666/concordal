@@ -471,26 +471,195 @@ def assemble_report(ticker: str, locale: str = "zh") -> dict:
     op = narrative.get("operation_plan") or {}
     follow = narrative.get("follow_up") or []
 
-    # Inject factual current_price/currency into summary
-    summary.setdefault("rating", "HOLD")
-    summary.setdefault("rating_label_zh", {"BUY": "买入", "HOLD": "持有", "SELL": "卖出"}.get(summary["rating"], "持有"))
-    summary["current_price"] = facts.get("current_price") or summary.get("current_price") or 0
-    summary["currency"] = facts.get("currency") or "CNY"
+    # ---------- Defensive defaults ----------
+    # Every required field gets a placeholder so the frontend never crashes
+    # on missing data. If the LLM returned a partial response, what's there
+    # is kept; what's missing falls back to "数据待补充" / 0 / [].
 
-    # Inject factual ADX into technical
+    current_price = facts.get("current_price") or 0
+    target_low = float(summary.get("target_price_low") or current_price * 0.95)
+    target_high = float(summary.get("target_price_high") or current_price * 1.05)
+
+    summary_defaults = {
+        "rating": "HOLD",
+        "rating_label_zh": "持有",
+        "current_price": current_price,
+        "currency": facts.get("currency") or "CNY",
+        "target_price_low": round(target_low, 2),
+        "target_price_high": round(target_high, 2),
+        "expected_return_pct": 0.0,
+        "expected_return_sign": "±",
+        "holding_period": "3-6 个月",
+        "investor_type": "平衡型投资者",
+        "position_size_range": "5-15%",
+        "entry_timing": "等待更好买点",
+        "key_observations": ["公司基本面表现", "股价趋势研判", "估值合理区间"],
+        "bull_oneliner": "数据待补充 — 请重新生成或等待 LLM 服务恢复。",
+        "bear_oneliner": "数据待补充 — 请重新生成或等待 LLM 服务恢复。",
+    }
+    for k, v in summary_defaults.items():
+        if summary.get(k) in (None, "", []):
+            summary[k] = v
+    summary["rating_label_zh"] = {"BUY": "买入", "HOLD": "持有", "SELL": "卖出"}.get(summary["rating"], summary.get("rating_label_zh", "持有"))
+
+    # Re-compute expected_return_sign from %
     try:
-        if facts.get("adx14") is not None:
-            technical.setdefault("framework_1_trend", {}).setdefault("layer_1_macro", {})["adx"] = facts["adx14"]
+        er = float(summary.get("expected_return_pct") or 0)
+        summary["expected_return_sign"] = "+" if er > 0.5 else ("-" if er < -0.5 else "±")
     except Exception:
-        pass
+        summary["expected_return_sign"] = "±"
 
-    # Default `expected_return_sign` if LLM left blank
-    if "expected_return_sign" not in summary or not summary["expected_return_sign"]:
-        try:
-            er = float(summary.get("expected_return_pct", 0))
-            summary["expected_return_sign"] = "+" if er > 0.5 else ("-" if er < -0.5 else "±")
-        except Exception:
-            summary["expected_return_sign"] = "±"
+    # Qualitative defaults — full nested shape so React doesn't crash
+    qualitative.setdefault("research_topic", "标准股票分析")
+    qualitative.setdefault("core_question", "当前股价是否合理反映基本面状况？")
+    qualitative.setdefault("research_background", "估值 vs 基本面")
+    qualitative.setdefault("opening_conclusion", "数据待补充 — LLM 叙事生成失败。可点击「重新生成」重试，或运行「7-agent 决策」获取完整分析。")
+
+    def _f1_default():
+        return {
+            "title": "三步估值定位",
+            "step_1_comparison": {"title": "步骤 1：对比定位", "items": [
+                {"label": "与自身历史对比", "body": "数据待补充"},
+                {"label": "与同业对比", "body": "数据待补充"},
+                {"label": "与绝对估值对比", "body": "数据待补充"},
+            ]},
+            "step_2_attribution": {
+                "title": "步骤 2：归因分析",
+                "market_concerns": [{"label": "市场担忧", "body": "数据待补充"}],
+                "are_concerns_reasonable": "数据待补充",
+                "catalysts_to_change_concerns": [{"label": "潜在催化剂", "body": "数据待补充"}],
+            },
+            "step_3_scenarios": {
+                "title": "步骤 3：情景测算",
+                "scenarios": [
+                    {"label": "悲观情景", "assumption": "基本面持续走弱", "body": "数据待补充",
+                     "fair_value": round(current_price * 0.80, 2)},
+                    {"label": "中性情景", "assumption": "当前趋势延续", "body": "数据待补充",
+                     "fair_value": round(current_price, 2)},
+                    {"label": "乐观情景", "assumption": "基本面显著改善", "body": "数据待补充",
+                     "fair_value": round(current_price * 1.20, 2)},
+                ],
+                "conclusion": "数据待补充",
+            },
+        }
+    qualitative.setdefault("framework_1_three_step_valuation", _f1_default())
+
+    qualitative.setdefault("framework_2_dupont", {
+        "title": "杜邦分解",
+        "roe": None,
+        "decomposition": [
+            {"name": "净利率", "value": facts.get("net_margin"), "unit": "%", "note": "数据待补充"},
+            {"name": "资产周转率", "value": None, "unit": "次", "note": "数据待补充"},
+            {"name": "杠杆率", "value": None, "unit": "", "note": "数据待补充"},
+        ],
+        "nature_of_change": [
+            {"label": "结构 vs 周期", "body": "数据待补充"},
+            {"label": "可持续性", "body": "数据待补充"},
+        ],
+        "key_observation_indicator": "下季度毛利率与扣非净利润",
+        "change_signal": "数据待补充",
+    })
+
+    qualitative.setdefault("framework_3_logic_chain", {
+        "title": "逻辑链构建",
+        "chain": ["待补充逻辑环节 1", "待补充逻辑环节 2", "待补充逻辑环节 3", "股价表现"],
+        "weakest_link": {"link": "待补充", "fragility": ["数据待补充"]},
+        "validation_signals": {"leading": "数据待补充", "coincident": "数据待补充", "lagging": "数据待补充"},
+    })
+
+    qualitative.setdefault("six_questions", [{"q": "核心研究问题", "a": "数据待补充 — 请等待 LLM 服务恢复"}])
+    qualitative.setdefault("validation_signals_and_window", {
+        "validation": "数据待补充", "time_window": "未来 6-12 个月", "falsification": "数据待补充",
+    })
+    qualitative.setdefault("actionable", {"type_match": "平衡型投资者", "operating_advice": "数据待补充"})
+
+    # Quantitative defaults
+    quantitative.setdefault("growth", {"title": "① 营收增长", "body": "数据待补充", "data_status": "missing"})
+    quantitative.setdefault("profitability", {"title": "② 盈利质量", "body": "数据待补充", "data_status": "missing"})
+    quantitative.setdefault("cash_health", {"title": "③ 现金流", "body": "数据待补充", "data_status": "missing"})
+    quantitative.setdefault("shareholder_return", {
+        "title": "④ 股东回报",
+        "body": "数据待补充",
+        "rows": [{"year": 2024, "dividend_ratio": "—", "dividend_yield": "—"}],
+    })
+    quantitative.setdefault("summary", "本层数据待 LLM 叙事生成完成后补充。")
+
+    # Valuation defaults — use actual PE/PB/PS from facts
+    valuation.setdefault("rows", [
+        {"metric": "PE", "current": f"{facts.get('pe'):.2f}" if facts.get("pe") is not None else "—",
+         "historical_median": "—", "industry_average": "—", "assessment": "待评估"},
+        {"metric": "PB", "current": f"{facts.get('pb'):.2f}" if facts.get("pb") is not None else "—",
+         "historical_median": "—", "industry_average": "—", "assessment": "待评估"},
+        {"metric": "PS", "current": f"{facts.get('ps'):.2f}" if facts.get("ps") is not None else "—",
+         "historical_median": "—", "industry_average": "—", "assessment": "待评估"},
+    ])
+    valuation.setdefault("relative_conclusion", "数据待补充")
+    valuation.setdefault("fair_value_ranges", [
+        {"scenario": "悲观情景", "assumption": "基本面持续走弱", "fair_value_cny": round(current_price * 0.80, 2)},
+        {"scenario": "中性情景", "assumption": "当前趋势延续",   "fair_value_cny": round(current_price, 2)},
+        {"scenario": "乐观情景", "assumption": "基本面显著改善", "fair_value_cny": round(current_price * 1.20, 2)},
+    ])
+    valuation.setdefault("final_conclusion", "数据待补充")
+
+    # Sentiment defaults
+    sentiment.setdefault("capital_flow_status", "待分析")
+    sentiment.setdefault("capital_flow_note", "数据待补充")
+    sentiment.setdefault("sentiment_zone", "中性")
+    sentiment.setdefault("sentiment_note", "数据待补充")
+    sentiment.setdefault("sector_effect", "同步于大盘")
+    sentiment.setdefault("sector_note", "数据待补充")
+
+    # Technical defaults — fold in real RSI / MFI / KDJ / ATR if we have them
+    technical.setdefault("opening_conclusion", "数据待补充")
+    technical.setdefault("framework_1_trend", {
+        "title": "趋势定位",
+        "layer_1_macro": {"title": "层次 1：主趋势判断", "adx": facts.get("adx14"), "body": "数据待补充"},
+        "layer_2_logic": {"title": "层次 2：趋势逻辑", "why_oscillating": "数据待补充"},
+        "layer_3_signal": {"title": "层次 3：趋势预期", "breakout_signals": "数据待补充", "reversal_signals": "数据待补充"},
+    })
+    technical.setdefault("framework_2_momentum", {
+        "title": "动能分析",
+        "indicators": [
+            {"name": "RSI(14)", "value": facts.get("rsi14"), "note": "中性区间" if facts.get("rsi14") else "数据待补充"},
+            {"name": "MFI(14)", "value": facts.get("mfi14"), "note": "数据待补充"},
+            {"name": "MACD",    "value": facts.get("macd"),  "note": "数据待补充"},
+            {"name": "KDJ",     "value": facts.get("kdj_k"), "note": "数据待补充"},
+        ],
+        "dynamic_interpretation": {"driver": "数据待补充", "sustainability": "数据待补充"},
+    })
+    technical.setdefault("framework_3_key_levels", {
+        "title": "关键位与策略",
+        "pressure": {"level": f"{facts.get('pressure_level') or '—'}", "body": "数据待补充"},
+        "support":  {"level": f"{facts.get('support_level') or '—'}",  "body": "数据待补充"},
+        "breakout_logic": {"up": "数据待补充", "down": "数据待补充", "false_breakout": "数据待补充"},
+    })
+    technical.setdefault("answers_to_questions", [{"q": "技术面研判", "a": "数据待补充"}])
+    technical.setdefault("answers_to_situational", [{"q": "震荡市操作", "a": "数据待补充"}])
+    technical.setdefault("validation_and_falsification", [{"label": "看涨验证", "body": "数据待补充"}])
+
+    # Debate / risks / op / follow defaults
+    debate.setdefault("bull_case", ["数据待补充 — 请重新生成或运行 7-agent 决策"])
+    debate.setdefault("bear_case", ["数据待补充 — 请重新生成或运行 7-agent 决策"])
+    debate.setdefault("our_judgment", "数据待补充")
+    if not risks:
+        risks = [
+            {"label": "行业风险", "body": "所属行业受宏观经济和政策影响较大。"},
+            {"label": "公司经营风险", "body": "公司经营存在不确定性。"},
+            {"label": "市场风险", "body": "市场情绪和风格切换可能影响股价短期表现。"},
+        ]
+    op.setdefault("action", summary.get("rating", "HOLD"))
+    op.setdefault("portfolio_advice", "观望或小幅配置")
+    op.setdefault("position_management", "建议维持当前仓位或小幅调整，单次变动不超过 5%。")
+    op.setdefault("key_info", "数据待补充")
+    op.setdefault("trade_decision", summary.get("rating", "HOLD"))
+    op.setdefault("position_advice", ["遵守纪律", "分批操作", "设置止损"])
+    if not follow:
+        follow = [
+            {"item": "核心验证", "indicator": "下季报关键指标", "expected_time": "下季报披露日", "impact": "若低于预期，估值面临下修"},
+            {"item": "风险监测", "indicator": "市场整体走势", "expected_time": "持续",        "impact": "若出现重大变化需重新评估"},
+            {"item": "技术面验证", "indicator": "关键支撑 / 压力位", "expected_time": "每周",  "impact": "若跌破支撑需考虑止损"},
+            {"item": "催化剂",   "indicator": "行业政策 / 公司事件", "expected_time": "不确定", "impact": "若落地可能加速价值发现"},
+        ]
 
     report = {
         # Meta
