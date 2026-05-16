@@ -3624,38 +3624,52 @@ def cn_hot_rankings(limit: int = 20) -> dict:
 def get_full_report(ticker: str, force: bool = False, locale: str = "zh") -> dict:
     """Build a full 11-section investment research report for `ticker`.
 
-    Supports A-share (6-digit) and HK (5-digit or .HK) tickers in this
-    first cut. Result is the ReportData shape the /report/[ticker] page
-    consumes. 24h SQLite cache — set `force=true` to bypass.
+    Supports A-share (6-digit) tickers. Result is the ReportData shape
+    the /report/[ticker] page consumes. 24h SQLite cache — set `force=true`
+    to bypass.
 
     Tradeoff vs /decision: we do NOT run the full 7-agent debate (60-90s).
     Instead we fetch facts (quote / fundamentals / technical) and ask a
-    single high-tier LLM call to fill in narrative-heavy sections. End-to-
-    end ~8-15s. Users wanting full debate depth click "跑 7-agent 决策"
-    on the report.
-    """
-    from . import report_builder as rb
+    single LLM call to fill in narrative-heavy sections. End-to-end
+    ~8-15s. Users wanting full debate depth click "跑 7-agent 决策" on
+    the report.
 
+    All exceptions are caught and converted to clean JSON error responses
+    so the frontend never sees an opaque "Internal Server Error" page.
+    """
+    # Wrap EVERYTHING in try/except — even the import — so any failure
+    # returns a clean JSON detail instead of bubbling to Starlette which
+    # would emit a plain-text 500.
     t = (ticker or "").strip().upper()
     if not t:
         raise HTTPException(400, "ticker required")
 
-    kind = rb.classify_ticker(t)
+    try:
+        from . import report_builder as rb
+    except Exception as e:
+        log.exception("/v1/report/full: report_builder import failed")
+        raise HTTPException(500, f"report_builder import failed: {type(e).__name__}: {e}")
+
+    try:
+        kind = rb.classify_ticker(t)
+    except Exception as e:
+        log.exception("/v1/report/full: classify_ticker failed")
+        raise HTTPException(500, f"classify_ticker failed: {type(e).__name__}: {e}")
+
     if kind == "unsupported":
         raise HTTPException(
             400,
-            "Only A-share (6 digits) is supported in this release. "
-            "HK / US / Crypto coming soon.",
+            "Only A-share (6 digits) is supported in this release. HK / US / Crypto coming soon.",
         )
-
     if kind == "hk_equity":
-        raise HTTPException(
-            400,
-            "港股专用 adapter 即将推出。当前仅支持 A 股 6 位代码。",
-        )
+        raise HTTPException(400, "港股专用 adapter 即将推出。当前仅支持 A 股 6 位代码。")
 
     if not force:
-        cached = rb.get_cached(t)
+        try:
+            cached = rb.get_cached(t)
+        except Exception as e:
+            log.warning("[report.cache] get failed for %s: %s", t, e)
+            cached = None
         if cached:
             cached.setdefault("_cache_status", "hit")
             return cached
@@ -3663,11 +3677,14 @@ def get_full_report(ticker: str, force: bool = False, locale: str = "zh") -> dic
     try:
         report = rb.assemble_report(t, locale=locale)
     except Exception as e:
-        log.exception("/v1/report/full failed for %s", t)
-        raise HTTPException(500, f"Report generation failed: {type(e).__name__}: {e}")
+        log.exception("/v1/report/full: assemble_report failed for %s", t)
+        raise HTTPException(500, f"assemble_report failed: {type(e).__name__}: {e}")
+
+    if not isinstance(report, dict):
+        raise HTTPException(500, f"assemble_report returned non-dict ({type(report).__name__})")
 
     if report.get("error"):
-        raise HTTPException(400, report.get("error"))
+        raise HTTPException(400, str(report.get("error")))
 
     report["_cache_status"] = "miss"
     try:
