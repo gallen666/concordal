@@ -308,7 +308,7 @@ _SCHEMA = {
             "indicators": [
                 {"name": "RSI(14)", "value": "<float|null>", "note": "<>"},
                 {"name": "MFI(14)", "value": "<float|null>", "note": "<>"},
-                {"name": "MACD", "value": null, "note": "<>"},
+                {"name": "MACD", "value": None, "note": "<>"},
                 {"name": "KDJ", "value": "<float|null>", "note": "<>"},
             ],
             "dynamic_interpretation": {"driver": "<驱动力>", "sustainability": "<可持续性>"},
