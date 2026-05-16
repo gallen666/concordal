@@ -288,11 +288,11 @@ function buildGroups(isZh: boolean): NavGroup[] {
         heading: lbl("证据", "Evidence"),
         items: [
           {
-            href: "/report/600418",
-            label: lbl("深度报告样本 · 江淮 600418", "Sample deep report · JAC 600418"),
+            href: "/report",
+            label: lbl("深度报告 · 任意股票", "Deep report · any ticker"),
             desc: lbl(
-              "StockAlpha 风格 11 节专业研报 + 4 个 TradingAgents 专属拓展",
-              "11-section StockAlpha-style report + 4 TradingAgents extensions",
+              "StockAlpha 风格 11 节研报 + 4 拓展 — 输入 A 股 / 港股代码即时生成",
+              "11-section report + 4 extensions — type any A-share / HK ticker",
             ),
             icon: <FileText className="w-4 h-4" />,
             badge: lbl("新", "New"),

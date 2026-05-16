@@ -3620,6 +3620,52 @@ def cn_hot_rankings(limit: int = 20) -> dict:
     }
 
 
+@app.get("/v1/report/full", tags=["report"])
+def get_full_report(ticker: str, force: bool = False, locale: str = "zh") -> dict:
+    """Build a full 11-section investment research report for `ticker`.
+
+    Supports A-share (6-digit) and HK (5-digit or .HK) tickers in this
+    first cut. Result is the ReportData shape the /report/[ticker] page
+    consumes. 24h SQLite cache — set `force=true` to bypass.
+
+    Tradeoff vs /decision: we do NOT run the full 7-agent debate (60-90s).
+    Instead we fetch facts (quote / fundamentals / technical) and ask a
+    single high-tier LLM call to fill in narrative-heavy sections. End-to-
+    end ~8-15s. Users wanting full debate depth click "跑 7-agent 决策"
+    on the report.
+    """
+    from . import report_builder as rb
+
+    t = (ticker or "").strip().upper()
+    if not t:
+        raise HTTPException(400, "ticker required")
+
+    kind = rb.classify_ticker(t)
+    if kind == "unsupported":
+        raise HTTPException(
+            400,
+            "Only A-share (6 digits) and HK (5 digits / .HK) are supported in "
+            "this release. US/Crypto coming soon.",
+        )
+
+    if kind == "hk_equity":
+        t = rb.normalize_hk_ticker(t)
+
+    if not force:
+        cached = rb.get_cached(t)
+        if cached:
+            cached.setdefault("_cache_status", "hit")
+            return cached
+
+    report = rb.assemble_report(t, locale=locale)
+    if report.get("error"):
+        raise HTTPException(400, report.get("error"))
+
+    report["_cache_status"] = "miss"
+    rb.put_cache(t, report)
+    return report
+
+
 # Minimal landing page redirect for visitors hitting the API root
 @app.get("/", include_in_schema=False)
 def root() -> dict:

@@ -19,34 +19,130 @@
  * planned future data source; the page just needs to swap the import.
  */
 
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
-  BookOpen, ChevronRight, Database, Download,
-  FileText, Link2, Network,
+  AlertCircle, BookOpen, ChevronRight, Database, Download,
+  FileText, Link2, Loader2, Network, RefreshCw,
   Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Users,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { SAMPLE_600418 } from "../_data/sample-600418";
 import type { ReportData } from "../_types";
 
+const API_BASE = process.env.NEXT_PUBLIC_API || "https://trading-agents-platform.onrender.com";
+
+/** Classify a ticker into a market the backend supports. */
+function classifyTicker(ticker: string): "a_share" | "hk_equity" | "unsupported" {
+  const t = (ticker || "").trim().toUpperCase();
+  if (/^(60|68|00|30|83|87|88)\d{4}$/.test(t)) return "a_share";
+  if (/^\d{4,5}(\.HK)?$/.test(t)) return "hk_equity";
+  return "unsupported";
+}
+
+/** Fetch with timeout (Render free tier cold-start can take 30-60s). */
+async function fetchWithTimeout(url: string, ms = 120_000): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Entry — for now seeds with sample data when ticker is 600418, otherwise
 // shows a placeholder. Backend integration deferred to v2.
 // ---------------------------------------------------------------------------
 
+type LoadState =
+  | { kind: "idle" }
+  | { kind: "loading"; startedAt: number }
+  | { kind: "ready"; data: ReportData }
+  | { kind: "error"; message: string };
+
 export default function ReportPage() {
   const params = useParams();
   const ticker = String(params?.ticker || "600418").toUpperCase();
-  const data: ReportData | null = ticker === "600418" ? SAMPLE_600418 : null;
+  const kind = classifyTicker(ticker);
 
+  // The 600418 sample stays bundled so it renders instantly without a
+  // round-trip — great for share links and SEO indexing. Every other
+  // ticker fetches /v1/report/full from the backend.
+  const seededSample: ReportData | null = ticker === "600418" ? SAMPLE_600418 : null;
+
+  const [state, setState] = useState<LoadState>(
+    seededSample ? { kind: "ready", data: seededSample } : { kind: "idle" }
+  );
+  const [elapsed, setElapsed] = useState(0);
+
+  const data: ReportData | null = state.kind === "ready" ? state.data : null;
+
+  async function runFetch(force = false) {
+    if (kind === "unsupported") {
+      setState({
+        kind: "error",
+        message: `Ticker "${ticker}" 暂不支持。当前仅支持 A 股 (6 位数字) 和港股 (4-5 位数字 / .HK)。美股 / 加密即将推出。`,
+      });
+      return;
+    }
+    const started = Date.now();
+    setState({ kind: "loading", startedAt: started });
+    try {
+      const url = `${API_BASE}/v1/report/full?ticker=${encodeURIComponent(ticker)}${force ? "&force=true" : ""}`;
+      const res = await fetchWithTimeout(url, 120_000);
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const j = await res.json();
+          detail = j?.detail || detail;
+        } catch { /* ignore */ }
+        throw new Error(detail);
+      }
+      const payload: ReportData = await res.json();
+      setState({ kind: "ready", data: payload });
+    } catch (e: any) {
+      const msg = e?.name === "AbortError"
+        ? "120 秒超时 — 后端可能正在冷启动 (Render free tier)。点击重试一次。"
+        : e?.message || "请求失败";
+      setState({ kind: "error", message: msg });
+    }
+  }
+
+  // Auto-fetch on mount if there is no seeded sample.
+  useEffect(() => {
+    if (!seededSample && state.kind === "idle") {
+      runFetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker]);
+
+  // Tick a stopwatch while loading so the UI can show progress.
+  useEffect(() => {
+    if (state.kind !== "loading") return;
+    setElapsed(0);
+    const id = setInterval(
+      () => setElapsed(Math.floor((Date.now() - state.startedAt) / 1000)),
+      500
+    );
+    return () => clearInterval(id);
+  }, [state]);
+
+  if (state.kind === "loading") {
+    return <Generating ticker={ticker} elapsed={elapsed} />;
+  }
+  if (state.kind === "error") {
+    return <FetchError ticker={ticker} message={state.message} onRetry={() => runFetch(true)} />;
+  }
   if (!data) {
     return <NotYetGenerated ticker={ticker} />;
   }
 
   return (
     <article className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
-      <ReportTopBar data={data} />
+      <ReportTopBar data={data} onRegenerate={() => runFetch(true)} />
       <ReportHeader data={data} />
       <ExtensionStrip data={data} />
 
@@ -80,10 +176,63 @@ export default function ReportPage() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Loading / generating state
+// ─────────────────────────────────────────────────────────────────────────
+
+function Generating({ ticker, elapsed }: { ticker: string; elapsed: number }) {
+  const phases = [
+    { at: 0,  label: "唤醒后端 · 拉取行情数据" },
+    { at: 5,  label: "调取基本面 + 技术面指标" },
+    { at: 12, label: "Gemini Pro 生成 11 节专业研报" },
+    { at: 30, label: "后端冷启动较慢，请稍候…" },
+  ];
+  const current = [...phases].reverse().find((p) => elapsed >= p.at) || phases[0];
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-24 text-center">
+      <Loader2 className="w-12 h-12 mx-auto animate-spin text-accent mb-6" />
+      <h1 className="text-2xl font-serif text-ink-primary mb-2">
+        正在为 <span className="font-mono">{ticker}</span> 生成深度报告
+      </h1>
+      <p className="text-sm text-ink-tertiary mb-8">{current.label} · {elapsed}s</p>
+      <div className="text-xs text-ink-tertiary space-y-1.5 text-left max-w-md mx-auto bg-surface-elev p-4 rounded-lg">
+        <div className="flex items-center justify-between"><span>· 拉行情 (OHLCV / 价格 / MA)</span><span className={elapsed >= 2 ? "text-signal-buy" : ""}>{elapsed >= 2 ? "✓" : "…"}</span></div>
+        <div className="flex items-center justify-between"><span>· 拉基本面 (PE / PB / ROE / 营收)</span><span className={elapsed >= 5 ? "text-signal-buy" : ""}>{elapsed >= 5 ? "✓" : "…"}</span></div>
+        <div className="flex items-center justify-between"><span>· 拉技术面 (RSI / MACD / KDJ / ADX)</span><span className={elapsed >= 8 ? "text-signal-buy" : ""}>{elapsed >= 8 ? "✓" : "…"}</span></div>
+        <div className="flex items-center justify-between"><span>· LLM 生成 11 节叙事</span><span className={elapsed >= 25 ? "text-signal-buy" : ""}>{elapsed >= 25 ? "✓" : "…"}</span></div>
+      </div>
+      <p className="mt-6 text-xs text-ink-tertiary">
+        首次约 15-40s；命中缓存秒返。
+      </p>
+    </div>
+  );
+}
+
+function FetchError({ ticker, message, onRetry }: { ticker: string; message: string; onRetry: () => void }) {
+  return (
+    <div className="max-w-2xl mx-auto px-4 py-24 text-center">
+      <AlertCircle className="w-12 h-12 mx-auto text-signal-sell mb-6" />
+      <h1 className="text-2xl font-serif text-ink-primary mb-2">
+        <span className="font-mono">{ticker}</span> 报告生成失败
+      </h1>
+      <p className="text-sm text-ink-tertiary mb-8 max-w-md mx-auto">{message}</p>
+      <div className="flex justify-center gap-3">
+        <button onClick={onRetry} className="btn-primary">
+          <RefreshCw className="w-4 h-4" /> 重试
+        </button>
+        <Link href="/" className="btn-secondary">返回首页</Link>
+      </div>
+      <p className="mt-8 text-xs text-ink-tertiary">
+        当前仅支持 A 股 (6 位数字) 和港股 (4-5 位数字 / .HK)。其他市场即将推出。
+      </p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Top bar — breadcrumb + export actions
 // ─────────────────────────────────────────────────────────────────────────
 
-function ReportTopBar({ data }: { data: ReportData }) {
+function ReportTopBar({ data, onRegenerate }: { data: ReportData; onRegenerate?: () => void }) {
   const shareUrl = typeof window !== "undefined" ? window.location.href : "";
 
   function copyShareLink() {
@@ -105,6 +254,11 @@ function ReportTopBar({ data }: { data: ReportData }) {
         <span className="text-ink-primary font-mono">{data.ticker}</span>
       </div>
       <div className="flex items-center gap-2">
+        {onRegenerate && (
+          <button onClick={onRegenerate} className="btn-secondary text-xs py-1.5" title="重新生成 (绕过缓存)">
+            <RefreshCw className="w-3.5 h-3.5" /> 重新生成
+          </button>
+        )}
         <button onClick={copyShareLink} className="btn-secondary text-xs py-1.5">
           <Share2 className="w-3.5 h-3.5" /> 复制链接
         </button>

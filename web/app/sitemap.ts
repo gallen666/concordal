@@ -52,7 +52,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE}/hk-markets`,             lastModified: now, changeFrequency: "daily",   priority: 0.6 },
     { url: `${SITE}/calendar`,               lastModified: now, changeFrequency: "daily",   priority: 0.6 },
     { url: `${SITE}/chain`,                  lastModified: now, changeFrequency: "weekly",  priority: 0.6 },
+    { url: `${SITE}/report`,                 lastModified: now, changeFrequency: "weekly",  priority: 0.9 },
     { url: `${SITE}/report/600418`,          lastModified: now, changeFrequency: "weekly",  priority: 0.8 },
+    { url: `${SITE}/report/600519`,          lastModified: now, changeFrequency: "weekly",  priority: 0.8 },
+    { url: `${SITE}/report/300750`,          lastModified: now, changeFrequency: "weekly",  priority: 0.8 },
+    { url: `${SITE}/report/601318`,          lastModified: now, changeFrequency: "weekly",  priority: 0.8 },
+    { url: `${SITE}/report/00700`,           lastModified: now, changeFrequency: "weekly",  priority: 0.8 },
+    { url: `${SITE}/report/09988`,           lastModified: now, changeFrequency: "weekly",  priority: 0.8 },
     { url: `${SITE}/backtest`,     lastModified: now, changeFrequency: "monthly", priority: 0.6 },
     { url: `${SITE}/blog`,         lastModified: now, changeFrequency: "weekly",  priority: 0.8 },
     // /redeem is disallowed in robots.txt — keep it out of the sitemap
