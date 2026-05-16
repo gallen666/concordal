@@ -62,30 +62,86 @@ interface ChainResponse {
   error?: string;
 }
 
+// Helper — fetch with timeout via AbortController. Render free tier
+// has 30-60s cold starts; we set 90s ceiling and surface progress.
+async function fetchWithTimeout(url: string, timeoutMs = 90000): Promise<Response> {
+  const ctl = new AbortController();
+  const tm = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: ctl.signal });
+  } finally {
+    clearTimeout(tm);
+  }
+}
+
 export default function ChainPage() {
   const [mode, setMode] = useState<"single" | "compare">("single");
   const [ticker, setTicker] = useState("AAPL");
   const [data, setData] = useState<ChainResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Timer state — shows "backend waking up" if loading exceeds 5s
+  const [loadSeconds, setLoadSeconds] = useState(0);
   // Compare mode state — multi-ticker parallel run
   const [compareTickers, setCompareTickers] = useState("AAPL, 600519, BTC");
   const [compareData, setCompareData] = useState<ChainResponse[] | null>(null);
   const [compareLoading, setCompareLoading] = useState(false);
+  // Backend wake-up state — true once /v1/health responds
+  const [backendAwake, setBackendAwake] = useState<"unknown" | "waking" | "awake" | "down">("unknown");
+
+  // On page mount: ping /v1/health to pre-warm Render. Without this,
+  // the first user click on "Run" hits a cold start and waits 30-60s.
+  useEffect(() => {
+    let cancelled = false;
+    const t0 = Date.now();
+    setBackendAwake("waking");
+    fetchWithTimeout(`${API_BASE}/v1/health`, 60000)
+      .then(r => r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`))
+      .then(() => {
+        if (!cancelled) {
+          const ms = Date.now() - t0;
+          // Log to help users understand cold-start vs warm.
+          console.log(`[chain] backend ping ${ms}ms — ${ms > 5000 ? "cold start" : "warm"}`);
+          setBackendAwake("awake");
+        }
+      })
+      .catch(() => { if (!cancelled) setBackendAwake("down"); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Track loading time so we can show "backend waking up" after 5s.
+  useEffect(() => {
+    if (!loading && !compareLoading) {
+      setLoadSeconds(0);
+      return;
+    }
+    const t0 = Date.now();
+    const itv = setInterval(() => setLoadSeconds(Math.floor((Date.now() - t0) / 1000)), 1000);
+    return () => clearInterval(itv);
+  }, [loading, compareLoading]);
 
   async function run() {
     setLoading(true);
     setError(null);
     setData(null);
     try {
-      const r = await fetch(
+      const r = await fetchWithTimeout(
         `${API_BASE}/v1/chain/full-stack?ticker=${encodeURIComponent(ticker)}`,
+        90000,
       );
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status} — 后端响应错误`);
       const j: ChainResponse = await r.json();
       setData(j);
     } catch (e) {
-      setError((e as Error).message);
+      const err = e as Error;
+      // Friendly Chinese error messages keyed off well-known signatures
+      if (err.name === "AbortError") {
+        setError("90 秒超时 — 后端可能正在冷启动，请稍等 10 秒再点「重试」。");
+      } else if (err.message.includes("Failed to fetch")) {
+        setError("无法连接后端。可能 Render 服务正在冷启动（首次访问 30-60 秒），或网络中断。");
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -98,9 +154,9 @@ export default function ChainPage() {
     const tickers = compareTickers.split(/[,\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean).slice(0, 5);
     try {
       const results = await Promise.all(tickers.map(t =>
-        fetch(`${API_BASE}/v1/chain/full-stack?ticker=${encodeURIComponent(t)}`)
-          .then(r => r.json() as Promise<ChainResponse>)
-          .catch(e => ({ ticker: t, error: (e as Error).message } as ChainResponse))
+        fetchWithTimeout(`${API_BASE}/v1/chain/full-stack?ticker=${encodeURIComponent(t)}`, 90000)
+          .then(r => r.ok ? r.json() as Promise<ChainResponse> : Promise.reject(`HTTP ${r.status}`))
+          .catch(e => ({ ticker: t, error: (e instanceof Error ? e.message : String(e)) } as ChainResponse))
       ));
       setCompareData(results);
     } finally {
@@ -129,6 +185,11 @@ export default function ChainPage() {
 
       {/* Methodology callout — links theory to this page. New in v3. */}
       <MethodologyCallout />
+
+      {/* Backend status banner — added v4 per "经常打不开" feedback.
+          Render free tier sleeps after 15 min idle; cold start is 30-60s.
+          We probe /v1/health on mount and surface state clearly. */}
+      <BackendBanner state={backendAwake} loadSeconds={loadSeconds} loading={loading || compareLoading} />
 
       {/* Mode tabs — single ticker vs multi-ticker compare. v3 enhancement. */}
       <div className="flex gap-1 mb-4 border-b border-border-subtle">
@@ -187,7 +248,10 @@ export default function ChainPage() {
         >
           {loading ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Traversing spine…
+              <Loader2 className="w-4 h-4 animate-spin" />
+              {loadSeconds < 5 ? "Traversing spine…" :
+               loadSeconds < 30 ? `等待后端响应… (${loadSeconds}s)` :
+                                  `后端冷启动中… (${loadSeconds}s)`}
             </>
           ) : (
             <>
@@ -201,11 +265,20 @@ export default function ChainPage() {
       </div>
 
       {error && (
-        <div className="surface border-signal-sell/30 p-4 text-sm text-signal-sell flex gap-2 items-start mb-6">
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>
-            <div className="font-semibold">Chain failed</div>
-            <div className="font-mono text-2xs mt-1">{error}</div>
+        <div className="surface border-signal-sell/30 p-4 text-sm flex gap-3 items-start mb-6">
+          <AlertTriangle className="w-5 h-5 text-signal-sell shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <div className="font-semibold text-signal-sell">Chain 调用失败</div>
+            <div className="text-ink-secondary mt-1 leading-relaxed">{error}</div>
+            <div className="mt-3 flex items-center gap-3 flex-wrap">
+              <button onClick={run} className="btn-primary text-xs py-1.5">
+                <Play className="w-3 h-3" />
+                重试
+              </button>
+              <span className="text-2xs text-ink-tertiary">
+                提示：Render 免费版闲置 15 分钟会休眠，首次访问需 30-60s 冷启动。
+              </span>
+            </div>
           </div>
         </div>
       )}
@@ -566,6 +639,58 @@ export function BusCallGraph({ ticker, factorBars }: { ticker: string; factorBar
 }
 
 // ---------------------------------------------------------------------------
+// BackendBanner — v4. Surfaces Render free-tier cold-start state.
+// On mount the page pings /v1/health; this component renders the result.
+// ---------------------------------------------------------------------------
+
+function BackendBanner({
+  state, loadSeconds, loading,
+}: {
+  state: "unknown" | "waking" | "awake" | "down";
+  loadSeconds: number;
+  loading: boolean;
+}) {
+  if (state === "awake" && !loading) {
+    // Healthy + idle — show small green confirmation only
+    return (
+      <div className="text-2xs text-ink-tertiary mb-3 flex items-center gap-1.5">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-signal-buy animate-pulse" />
+        Render 后端已就绪 · trading-agents-platform.onrender.com
+      </div>
+    );
+  }
+  if (state === "waking") {
+    return (
+      <div className="surface border-signal-warn/30 p-3 text-xs flex items-center gap-2 mb-4">
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-signal-warn" />
+        <span className="text-ink-secondary">正在唤醒后端 · Render free tier 闲置 15 分钟后会休眠 · 冷启动需 30-60 秒…</span>
+      </div>
+    );
+  }
+  if (state === "down") {
+    return (
+      <div className="surface border-signal-sell/30 p-3 text-xs flex items-center gap-2 mb-4">
+        <AlertTriangle className="w-3.5 h-3.5 text-signal-sell" />
+        <span className="text-ink-secondary">后端无响应 · 可能仍在冷启动 · 你仍可以点 Run 试试，或稍等再刷新</span>
+      </div>
+    );
+  }
+  if (loading && loadSeconds >= 5) {
+    return (
+      <div className="surface border-signal-warn/30 p-3 text-xs flex items-center gap-2 mb-4">
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-signal-warn" />
+        <span className="text-ink-secondary">
+          {loadSeconds < 30
+            ? `等待后端响应 ${loadSeconds} 秒…`
+            : `后端可能正在冷启动 (${loadSeconds}s) · 最多 90s 超时 · 请稍等`}
+        </span>
+      </div>
+    );
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // FactorBarChart — visualize the 10 Alpha158-lite factors. v3.
 // Replaces the raw key=value list. Factors are bounded to [-2, 2] in
 // the backend, so we render diverging bars centered on 0.
@@ -626,15 +751,22 @@ interface TelemetryRecord {
 function BusTelemetryStream() {
   const [records, setRecords] = useState<TelemetryRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
+    setErr(null);
     try {
-      const r = await fetch(`${API_BASE}/v1/databus/telemetry?last_n=12`);
+      const r = await fetchWithTimeout(`${API_BASE}/v1/databus/telemetry?last_n=12`, 30000);
       if (r.ok) {
         const j = await r.json();
         setRecords(j.records || []);
+      } else {
+        setErr(`HTTP ${r.status}`);
       }
+    } catch (e) {
+      const ee = e as Error;
+      setErr(ee.name === "AbortError" ? "30s timeout (后端可能在冷启动)" : ee.message);
     } finally {
       setLoading(false);
     }
@@ -655,8 +787,14 @@ function BusTelemetryStream() {
         </button>
       </div>
       <div className="surface-elev overflow-hidden">
-        {records.length === 0 ? (
-          <div className="p-6 text-xs text-ink-tertiary text-center">无遥测记录</div>
+        {err ? (
+          <div className="p-6 text-xs text-signal-sell text-center">
+            遥测获取失败: {err} · <button onClick={load} className="underline ml-1">重试</button>
+          </div>
+        ) : records.length === 0 ? (
+          <div className="p-6 text-xs text-ink-tertiary text-center">
+            {loading ? "加载中…" : "无遥测记录 · 先跑一次 chain"}
+          </div>
         ) : (
           <div className="divide-y divide-border-subtle">
             {records.map((r, i) => (
