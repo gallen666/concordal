@@ -288,6 +288,16 @@ function buildGroups(isZh: boolean): NavGroup[] {
         heading: lbl("证据", "Evidence"),
         items: [
           {
+            href: "/research",
+            label: lbl("学术论文 · 方法论", "Research paper · methodology"),
+            desc: lbl(
+              "角色分离定理 · 10 个 Need 类型 · 78 周回测 · 完整 PDF",
+              "Role-separation theorem · 10 Need types · 78-week study · full PDF",
+            ),
+            icon: <BookOpen className="w-4 h-4" />,
+            badge: lbl("新", "New"),
+          },
+          {
             href: "/track-record",
             label: lbl("回测战绩", "Track record"),
             desc: lbl(

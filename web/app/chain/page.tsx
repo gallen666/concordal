@@ -12,11 +12,15 @@
  */
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
+  BookOpen,
   Database,
   GitBranch,
+  Layers,
   Loader2,
   Play,
   Sparkles,
@@ -100,6 +104,9 @@ export default function ChainPage() {
           line of <code>bus.register()</code> — every layer picks it up.
         </p>
       </div>
+
+      {/* Methodology callout — links theory to this page. New in v3. */}
+      <MethodologyCallout />
 
       {/* Input */}
       <div className="surface-elev p-4 mb-6 flex items-center gap-3 flex-wrap">
@@ -265,6 +272,12 @@ export default function ChainPage() {
             </pre>
           </section>
 
+          {/* Bus call graph — surfaces the composition pattern. */}
+          <BusCallGraph
+            ticker={data.ticker}
+            factorBars={(data.chain.find(s => s.step === "ohlcv")?.bars as number) || null}
+          />
+
           <p className="text-2xs text-ink-tertiary mt-2">
             Disclaimer · this is a demo of the data-bus architecture. The
             deterministic signal ensembler is intentionally simple so each
@@ -378,5 +391,111 @@ function KV({
       <span className="text-ink-tertiary truncate">{k}</span>
       <span className={cn("ml-auto", accentClass)}>{v}</span>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Methodology callout — explains WHY this page exists. Links to /research.
+// New in v3 per user feedback: the page demonstrates the bus, but didn't
+// explain to first-time visitors what claim it was demonstrating.
+// ---------------------------------------------------------------------------
+
+function MethodologyCallout() {
+  return (
+    <div className="surface-elev p-5 mb-6 border-l-4 border-l-gold">
+      <div className="flex items-start gap-3">
+        <BookOpen className="w-5 h-5 text-gold shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <div className="kicker text-2xs mb-2">
+            What this page proves · 本页证明
+          </div>
+          <p className="text-sm text-ink-primary leading-relaxed">
+            This is the <strong>data bus self-demonstration</strong>: a single user
+            request fans out to <strong>six bus.fetch calls</strong> across five
+            registered Source types. Step 3 (FACTOR) internally calls Step 2 (OHLCV)
+            again — the same OHLCV — and the bus cache returns it in zero ms.
+            This is the &quot;bus as composer&quot; property formally characterized in
+            <em> The Role-Separation Theorem</em>.
+          </p>
+          <p className="text-2xs text-ink-tertiary mt-2 leading-relaxed">
+            数据脊柱自演示：单次用户请求触发 <strong>6 次 bus.fetch</strong>。第 3 步
+            FACTOR 内部再次调用 OHLCV — bus 缓存返回 0ms。这就是「总线即可组合层」
+            的存在证明，论文 §7 形式化刻画。
+          </p>
+          <Link
+            href="/research"
+            className="inline-flex items-center gap-1.5 text-xs text-gold hover:underline mt-3"
+          >
+            <ArrowRight className="w-3 h-3" />
+            Read the paper · 看完整论文
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bus call graph — visualizes the composition. New in v3.
+// Renders after the successful chain to make the "Need.FACTOR internally
+// calls Need.OHLCV" pattern visible at a glance.
+// ---------------------------------------------------------------------------
+
+export function BusCallGraph({ ticker, factorBars }: { ticker: string; factorBars: number | null }) {
+  return (
+    <section className="my-8">
+      <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+        <Layers className="w-4 h-4 text-accent" />
+        Bus call graph · 总线调用图
+      </h2>
+      <div className="surface-elev p-6">
+        <div className="text-xs text-ink-tertiary mb-4 leading-relaxed">
+          This is what happened beneath the chain. The bus is not just a router —
+          a registered Source can call <code className="text-accent">bus.fetch</code> itself,
+          producing a composable graph. Step 3&apos;s factor handler invokes Step 2&apos;s OHLCV
+          handler. Bus cache (Law 1) returns it free.
+        </div>
+        <div className="font-mono text-xs space-y-1 leading-relaxed">
+          <div>
+            <span className="text-ink-tertiary">user → </span>
+            <span className="text-accent">bus.fetch(Need.MACRO)</span>
+            <span className="text-ink-tertiary"> → OpenBB → FRED</span>
+          </div>
+          <div>
+            <span className="text-ink-tertiary">user → </span>
+            <span className="text-accent">bus.fetch(Need.OHLCV, ticker={ticker})</span>
+            <span className="text-ink-tertiary"> → yfinance / cn_equity_multi_source → {factorBars ?? "?"} bars</span>
+          </div>
+          <div>
+            <span className="text-ink-tertiary">user → </span>
+            <span className="text-accent">bus.fetch(Need.FACTOR, name=&quot;alpha158&quot;)</span>
+          </div>
+          <div className="ml-12">
+            <span className="text-ink-tertiary">└─ alpha158_lite handler → </span>
+            <span className="text-accent">bus.fetch(Need.OHLCV, ...)</span>
+            <span className="text-signal-buy"> [cache hit, 0ms]</span>
+          </div>
+          <div className="ml-12">
+            <span className="text-ink-tertiary">└─ compute 10 factors (ROC_5, BIAS_20, KMID, ...)</span>
+          </div>
+          <div>
+            <span className="text-ink-tertiary">deterministic ensembler → signal direction</span>
+          </div>
+          <div>
+            <span className="text-ink-tertiary">Backtrader mini-backtest → Sharpe, drawdown</span>
+          </div>
+          <div>
+            <span className="text-ink-tertiary">lean_bridge.decision_to_insight → Lean JSON</span>
+          </div>
+        </div>
+        <div className="mt-4 pt-4 border-t border-border-subtle text-2xs text-ink-tertiary leading-relaxed">
+          <strong className="text-ink-secondary">Law 4 (Telemetry composition):</strong>{" "}
+          one telemetry record per layer. Inspect them at{" "}
+          <code className="text-accent">/v1/databus/telemetry</code>.
+          {" "}<strong className="text-ink-secondary">Adding a new factor library</strong>{" "}
+          (Alpha360, WorldQuant style) is one line of bus.register() — the chain picks it up automatically.
+        </div>
+      </div>
+    </section>
   );
 }
