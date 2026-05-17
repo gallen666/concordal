@@ -138,6 +138,41 @@ def fetch_facts(ticker: str, market: str) -> dict:
         except Exception as e:
             log.warning("[report.facts] quote fetch failed for %s: %s", ticker, e)
 
+    # 2b. SAFETY — cross-validate current_price against an independent
+    # real-time source. A 301666 user reported the system recommended
+    # shorting at ¥94 when the real price was ¥680 (cached/stale adapter
+    # result that never refreshed). If the two sources disagree by >15%,
+    # we mark the price as stale and the LLM is instructed NOT to emit
+    # entry / exit / target prices on that basis.
+    if market == "a_share" and out.get("current_price"):
+        try:
+            from trading_agents.adapters.cn_stock_multi_source import fetch_a_share_quote_multi
+            live = fetch_a_share_quote_multi(ticker)
+            live_px = (live or {}).get("current")
+            if live_px and out["current_price"]:
+                diff_pct = abs(live_px - out["current_price"]) / out["current_price"] * 100
+                if diff_pct > 15:
+                    log.warning(
+                        "[report.safety] PRICE STALE: adapter=%s live=%s diff=%.1f%% — refusing trade-decision narrative",
+                        out["current_price"], live_px, diff_pct,
+                    )
+                    out["stale_price"] = True
+                    out["stale_price_diff_pct"] = round(diff_pct, 1)
+                    out["live_price"] = live_px
+                    # Trust the live source — replace adapter price so down-
+                    # stream sections (scenarios, technical levels) at least
+                    # use the right magnitude.
+                    out["current_price"] = live_px
+                    # Recompute support/pressure relative to live price
+                    if out.get("pressure_level") and out["pressure_level"] < live_px * 0.5:
+                        out["pressure_level"] = None  # adapter range is also stale
+                        out["support_level"] = None
+                else:
+                    out["stale_price"] = False
+                    out["live_price"] = live_px
+        except Exception as e:
+            log.warning("[report.safety] live-price cross-check failed: %s", e)
+
     # 3. Metadata (name / sector). Try in order:
     #    a) persistence cache (24h fresh)
     #    b) stale cache (any age, marked stale)
@@ -189,6 +224,34 @@ def fetch_facts(ticker: str, market: str) -> dict:
                 # ROE estimate from net_margin × asset_turnover not available — leave null
         except Exception as e:
             log.warning("[report.facts] fundamentals fetch failed: %s", e)
+
+    # 4b. Multi-source fundamentals fallback (Xueqiu → EastMoney push2).
+    # Render's Singapore IP frequently can't reach akshare's individual-stock
+    # detail endpoints, so adapter.get_fundamentals returns nulls. The
+    # multi-source fetcher hits APIs that ARE globally reachable (Xueqiu
+    # API and EastMoney push2 are used by their mobile apps).
+    if market == "a_share" and (out["pe"] is None or out["pb"] is None):
+        try:
+            from trading_agents.adapters.cn_stock_multi_source import (
+                fetch_a_share_fundamentals_multi,
+            )
+            fm = fetch_a_share_fundamentals_multi(ticker)
+            if fm:
+                out["pe"] = out["pe"] or fm.get("pe")
+                out["pb"] = out["pb"] or fm.get("pb")
+                out["ps"] = out["ps"] or fm.get("ps")
+                out["dividend_yield"] = out["dividend_yield"] or fm.get("dividend_yield")
+                out["market_cap"] = out["market_cap"] or fm.get("market_cap")
+                out["roe"] = out["roe"] if out["roe"] is not None else fm.get("roe_ttm")
+                # Name fill-in if we still don't have it
+                if not out["name"] and fm.get("name"):
+                    out["name"] = fm["name"]
+                # Record provenance so the report can audit which source served
+                out["fundamentals_source"] = fm.get("source", "multi")
+                log.info("[report.facts] fundamentals filled via %s: pe=%s pb=%s mcap=%s",
+                         fm.get("source"), out["pe"], out["pb"], out["market_cap"])
+        except Exception as e:
+            log.warning("[report.facts] multi-source fundamentals fallback failed: %s", e)
 
     # 5. Technical indicators via adapter.get_technical (Pydantic TechnicalSnapshot)
     if adapter is not None:
@@ -382,11 +445,31 @@ def build_llm_prompt(facts: dict) -> tuple[str, str]:
 
     The data block is labelled '实时市场数据' (not 'FACTS') so the LLM
     won't pick up the technical term and echo it verbatim in narrative.
+
+    SAFETY: If facts.stale_price=True, we tell the LLM to refuse trading
+    advice and surface a prominent warning instead. This is the system's
+    last line of defence against the catastrophic failure mode where a
+    stale price (e.g. ¥94 cached) drives a short recommendation while
+    the real price is wildly higher (¥680) — would scalp the user.
     """
     name = facts.get("name") or facts["ticker"]
     sys = _SYSTEM_PROMPT_ZH.format(name=name, ticker=facts["ticker"])
+
+    stale_warning = ""
+    if facts.get("stale_price"):
+        stale_warning = (
+            f"\n\n⚠️ 关键安全警告：行情数据可能陈旧。\n"
+            f"   - adapter 报价与实时多源报价相差 {facts.get('stale_price_diff_pct', '?')}%\n"
+            f"   - 不要在 narrative 里给出任何 entry / exit / target 价格\n"
+            f"   - core_view 必须以 '行情数据陈旧，请刷新页面或稍后再试' 开头\n"
+            f"   - summary.bull_oneliner / bear_oneliner 写 '数据陈旧，暂不可作判断'\n"
+            f"   - operation_plan.action 必须设为 HOLD，position_advice 写 '建议刷新数据后再决策'\n"
+            f"   - debate.our_judgment 必须说明数据陈旧、不可下注\n"
+            f"   - 三个估值情景 fair_value 必须设为 current_price 本身（不假设涨跌）\n"
+        )
+
     user = (
-        f"以下是 {name}（{facts['ticker']}）的实时市场数据（来自交易所行情 + akshare 财务接口）：\n"
+        f"以下是 {name}（{facts['ticker']}）的实时市场数据（来自交易所行情 + akshare 财务接口 + 雪球/东方财富多源 fallback）：\n"
         f"```json\n"
         f"{json.dumps(facts, ensure_ascii=False, indent=2)}\n```\n\n"
         f"请基于这些数据生成完整投研报告 JSON，结构如下：\n```json\n"
@@ -394,6 +477,7 @@ def build_llm_prompt(facts: dict) -> tuple[str, str]:
         f"再次提醒：narrative 文本里不要出现 'FACTS' / 'null' / 'JSON' / 'schema' 等技术术语；\n"
         f"指标暂缺时用「该指标暂缺，需待最新财报披露」之类的业务化中文；\n"
         f"已有数据（价格 / 均线 / 支撑压力位 / 近期涨跌幅）必须充分利用。"
+        f"{stale_warning}"
     )
     return sys, user
 
@@ -1005,7 +1089,35 @@ def assemble_report(ticker: str, locale: str = "zh") -> dict:
         # Extensions
         "bus_telemetry": _bus_telemetry_snapshot(facts),
         "calibration_context": _calibration_for(float(narrative.get("decision_confidence") or 0.55)),
+
+        # Safety flags propagated to frontend
+        "stale_price": bool(facts.get("stale_price")),
+        "stale_price_diff_pct": facts.get("stale_price_diff_pct"),
+        "live_price": facts.get("live_price"),
     }
+
+    # If the price is stale, force the operation_plan to be safe even if
+    # the LLM didn't follow our prompt instructions perfectly.
+    if facts.get("stale_price"):
+        report["operation_plan"]["action"] = "HOLD"
+        report["operation_plan"]["trade_decision"] = (
+            f"⚠️ 行情数据陈旧（与实时报价相差 {facts.get('stale_price_diff_pct')}%），"
+            f"暂不可下注。请刷新页面或点「重新生成」获取最新数据后再判断。"
+        )
+        report["operation_plan"]["position_advice"] = [
+            "数据陈旧，禁止据此交易",
+            "刷新页面 / 点重新生成获取最新报价",
+            "若仍异常请联系管理员",
+        ]
+        report["summary"]["bull_oneliner"] = "数据陈旧，暂不可作判断。请刷新后再看。"
+        report["summary"]["bear_oneliner"] = "数据陈旧，暂不可作判断。请刷新后再看。"
+        # Force confidence down so the 'high confidence' band doesn't mislead
+        report["decision_confidence"] = 0.0
+        report["confidence_level"] = "极低（数据陈旧）"
+        report["calibration_context"] = _calibration_for(0.0)
+        report["calibration_context"]["note"] = (
+            "数据陈旧时本系统不展示历史命中率，避免误导。"
+        )
 
     return report
 

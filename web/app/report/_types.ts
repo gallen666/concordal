@@ -214,4 +214,11 @@ export interface ReportData {
   // TradingAgents exclusive extensions
   bus_telemetry: BusTelemetryRow[];
   calibration_context: CalibrationContext;
+
+  // Safety flags — when stale_price is true, the page MUST show a
+  // prominent banner and operation_plan is forced to HOLD with a
+  // "refresh" message. See api/report_builder.assemble_report.
+  stale_price?: boolean;
+  stale_price_diff_pct?: number;
+  live_price?: number;
 }

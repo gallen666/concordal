@@ -587,3 +587,190 @@ def _safe_float(v: Any) -> float | None:
         return float(s)
     except (TypeError, ValueError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Fundamentals — multi-source PE / PB / 市值 / 股息率 / 行业
+# ---------------------------------------------------------------------------
+#
+# Render's Singapore IP frequently can't reach akshare's individual stock
+# detail endpoints (geo-blocked or rate-limited). This block adds two paths
+# that work globally:
+#
+#   1. Xueqiu /v5/stock/quote.json?extend=detail
+#        Returns pe_ttm, pb, dividend, eps, navps, market_capital,
+#        float_market_capital, dividend_yield, etc.
+#
+#   2. EastMoney push2 /api/qt/stock/get
+#        Returns pe_ttm, pb, market_cap, turnover_rate, etc.
+#        Note: 东方财富 push2 IS reachable from Singapore (used by mobile apps).
+#
+# Both are tried in order; first non-empty wins. Whatever the chosen source
+# returns gets merged into a single canonical dict the report builder can
+# spread into ReportData.
+
+
+def fetch_a_share_fundamentals_xueqiu(ticker: str) -> dict | None:
+    """Xueqiu /v5/stock/quote.json — same endpoint as the quote helper but
+    we extract the richer fundamentals fields here.
+
+    Fields returned: pe_ttm, pb, eps, dividend, dividend_yield (last 12mo),
+    navps, market_cap_yi (亿), float_market_cap_yi (亿), industry, source.
+    """
+    try:
+        pfx = _exchange_prefix(ticker)
+    except ValueError:
+        return None
+    sym = f"{pfx.upper()}{ticker}"
+    url = f"https://stock.xueqiu.com/v5/stock/quote.json?symbol={sym}&extend=detail"
+    try:
+        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as c:
+            r = c.get(url, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Referer": f"https://xueqiu.com/S/{sym}",
+            })
+        if r.status_code != 200:
+            return None
+        body = r.json().get("data") or {}
+        quote = body.get("quote") or {}
+        if not quote:
+            return None
+        mc = quote.get("market_capital")
+        fmc = quote.get("float_market_capital")
+        return {
+            "ticker": ticker,
+            "name": quote.get("name"),
+            "pe": quote.get("pe_ttm"),
+            "pb": quote.get("pb"),
+            "ps": quote.get("psr"),  # P/S ratio
+            "eps": quote.get("eps"),
+            "navps": quote.get("navps"),  # 每股净资产
+            "dividend": quote.get("dividend"),
+            "dividend_yield": quote.get("dividend_yield"),
+            "market_cap": mc,                       # 元
+            "market_cap_yi": (mc / 1e8) if mc else None,
+            "float_market_cap_yi": (fmc / 1e8) if fmc else None,
+            "current_year_pct": quote.get("current_year_percent"),
+            "turnover_rate": quote.get("turnover_rate"),
+            "lot_size": quote.get("lot_size"),
+            "issue_date_ts": quote.get("issue_date"),
+            "source": "xueqiu",
+        }
+    except Exception as e:
+        log.warning("xueqiu fundamentals failed for %s: %s", ticker, e)
+        return None
+
+
+def fetch_a_share_fundamentals_eastmoney(ticker: str) -> dict | None:
+    """EastMoney push2 — globally CDN-distributed, used by all of EM's
+    mobile apps. Returns rich realtime + fundamentals.
+
+    Key fields (EM uses opaque fNNN codes):
+      f43 = current price (×100 — divide by 100 in some cases)
+      f44 = high  f45 = low  f46 = open  f60 = prev close
+      f57 = code  f58 = name
+      f116 = 总市值  f117 = 流通市值
+      f161 = 市净率 PB  f162 = 市盈率(动态) PE
+      f164 = 总股本  f165 = 流通股本
+      f167 = 净资产  f168 = 换手率
+      f173 = ROE (TTM, %)
+      f191 = 振幅
+    All fNNN values are usually scaled — divide by 100 for percentages,
+    by 1e4 for 元 → 万元 conversions etc. We normalise to clean units.
+    """
+    try:
+        pfx = _exchange_prefix(ticker)
+    except ValueError:
+        return None
+    # secid: 1 = SH, 0 = SZ
+    secid_prefix = "1" if pfx == "sh" else "0"
+    secid = f"{secid_prefix}.{ticker}"
+    fields = ",".join([
+        "f43", "f44", "f45", "f46", "f60",         # price family
+        "f57", "f58",                                # id / name
+        "f116", "f117",                              # market caps
+        "f161", "f162",                              # PB / PE
+        "f164", "f165",                              # 总股本/流通股本
+        "f167", "f168",                              # 净资产 / 换手率
+        "f169",                                       # 涨跌幅
+        "f173",                                       # ROE TTM
+    ])
+    url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields={fields}"
+    try:
+        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as c:
+            r = c.get(url, headers={
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+                "Referer": "https://quote.eastmoney.com/",
+            })
+        if r.status_code != 200:
+            return None
+        data = (r.json() or {}).get("data") or {}
+        if not data:
+            return None
+
+        def _f(key, scale=1.0):
+            v = data.get(key)
+            try:
+                if v in (None, "-", "", "--"):
+                    return None
+                return float(v) / scale
+            except (TypeError, ValueError):
+                return None
+
+        # f43/f44/f45/f46/f60 are scaled ×100 (so 1332.95 → 133295)
+        # f161/f162 (PB/PE) are also ×100, so 30.5 PE → 3050
+        # f168 (换手率) and f169 (涨跌幅) are ×100 (percentages)
+        # f173 (ROE TTM) is ×100 as well
+        # f116/f117 (市值) are raw 元 (1e8 → 亿)
+        # f164/f165 (股本) are raw 股
+        pe = _f("f162", 100.0)
+        pb = _f("f161", 100.0)
+        market_cap = _f("f116", 1.0)
+        return {
+            "ticker": ticker,
+            "name": data.get("f58") or None,
+            "current": _f("f43", 100.0),
+            "prev": _f("f60", 100.0),
+            "pe": pe,
+            "pb": pb,
+            "market_cap": market_cap,
+            "market_cap_yi": (market_cap / 1e8) if market_cap else None,
+            "float_market_cap_yi": (_f("f117", 1.0) or 0) / 1e8 if _f("f117", 1.0) else None,
+            "net_assets": _f("f167", 1.0),
+            "turnover_rate": _f("f168", 100.0),
+            "change_pct": _f("f169", 100.0),
+            "roe_ttm": _f("f173", 100.0),
+            "source": "eastmoney",
+        }
+    except Exception as e:
+        log.warning("eastmoney fundamentals failed for %s: %s", ticker, e)
+        return None
+
+
+def fetch_a_share_fundamentals_multi(ticker: str) -> dict | None:
+    """Try Xueqiu → EastMoney push2 in order. Merge their outputs into a
+    single dict — later sources fill fields the earlier one left None.
+
+    Returns None only if EVERY source failed.
+    """
+    out: dict | None = None
+    for fetcher in (fetch_a_share_fundamentals_xueqiu, fetch_a_share_fundamentals_eastmoney):
+        try:
+            res = fetcher(ticker)
+        except Exception as e:
+            log.warning("fundamentals fetcher %s threw for %s: %s",
+                        fetcher.__name__, ticker, e)
+            res = None
+        if not res:
+            continue
+        if out is None:
+            out = res
+            continue
+        # Merge: keep existing non-None values, fill None ones from this source.
+        for k, v in res.items():
+            if v is not None and out.get(k) in (None, ""):
+                out[k] = v
+        # Record fallback chain in source
+        if res.get("source") and res["source"] != out.get("source"):
+            out["source"] = f"{out['source']}+{res['source']}"
+    return out

@@ -153,6 +153,7 @@ export default function ReportPage() {
   return (
     <article className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
       <ReportTopBar data={data} onRegenerate={() => runFetch(true)} />
+      <StalePriceBanner data={data} onRegenerate={() => runFetch(true)} />
       <ReportHeader data={data} />
       <ExtensionStrip data={data} />
 
@@ -234,6 +235,42 @@ function FetchError({ ticker, message, onRetry }: { ticker: string; message: str
       <p className="mt-8 text-xs text-ink-tertiary">
         当前仅支持 A 股 6 位代码（如 600519 / 300750）。港股 / 美股 / 加密即将推出。
       </p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// SAFETY: stale-price banner — shows above EVERYTHING when the backend
+// detected the cached/adapter price disagrees with real-time multi-source
+// quote by >15%. Forces user to click "重新生成" before trusting numbers.
+// ─────────────────────────────────────────────────────────────────────────
+
+function StalePriceBanner({ data, onRegenerate }: { data: ReportData; onRegenerate?: () => void }) {
+  if (!data.stale_price) return null;
+  const diff = data.stale_price_diff_pct ?? 0;
+  const live = data.live_price;
+  return (
+    <div className="mb-6 border-2 border-signal-sell bg-signal-sell_soft p-4 rounded-lg print:hidden">
+      <div className="flex items-start gap-3">
+        <AlertCircle className="w-6 h-6 text-signal-sell flex-shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <div className="text-sm font-bold text-signal-sell mb-1">
+            ⚠️ 行情数据陈旧 · 本报告中的价格 / 入场点 / 止盈止损 不可信
+          </div>
+          <div className="text-xs text-ink-secondary leading-relaxed">
+            后端 adapter 报价与雪球/东方财富多源实时报价相差 <b>{diff}%</b>
+            {typeof live === "number" && <> （实时约 ¥{live.toFixed(2)}）</>}。
+            这通常是数据源缓存陈旧导致的。系统已自动把建议改为 HOLD 并隐藏所有具体交易价位 —
+            请点「重新生成」获取最新数据，或刷新本页面。
+            <b className="text-signal-sell"> 切勿据此报告下单。</b>
+          </div>
+          {onRegenerate && (
+            <button onClick={onRegenerate} className="mt-3 btn-primary text-xs py-1.5">
+              <RefreshCw className="w-3.5 h-3.5" /> 立即重新生成
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
