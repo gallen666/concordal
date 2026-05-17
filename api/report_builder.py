@@ -69,9 +69,13 @@ def normalize_hk_ticker(ticker: str) -> str:
 # --- Data fetch -----------------------------------------------------------
 
 def fetch_facts(ticker: str, market: str) -> dict:
-    """Pull live factual data from existing adapters. Returns a flat dict
-    with keys consumed by the LLM prompt below. All fields fail-safe to
-    None if the upstream is down."""
+    """Pull live factual data through the unified DataFetcher.
+
+    Every field carries provenance: out["_provenance"][field_name] tells
+    you which source served and when (unix ts). Safety-critical price
+    cross-validation runs at the end — if sources disagree wildly, we
+    flag stale_price and downstream refuses trade-decision narrative.
+    """
 
     out: dict[str, Any] = {
         "ticker": ticker,
@@ -101,6 +105,10 @@ def fetch_facts(ticker: str, market: str) -> dict:
         "ma5": None, "ma20": None, "ma60": None,
         "volume_ratio": None,
         "support_level": None, "pressure_level": None,
+
+        # Provenance — which source served each field. Populated by the
+        # data_fetcher layer below.
+        "_provenance": {},
     }
 
     # 1. Adapter (we use it for quotes + fundamentals + technical)

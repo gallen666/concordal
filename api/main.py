@@ -3620,6 +3620,52 @@ def cn_hot_rankings(limit: int = 20) -> dict:
     }
 
 
+@app.get("/v1/datasource/health", tags=["report"])
+def datasource_health() -> dict:
+    """Live probe of every data source. Returns latency_ms + ok flag for
+    each, plus an overall health_status (ok / degraded / down). Used by
+    the /v1/datasource/health page + scheduled cron canary."""
+    try:
+        from . import data_fetcher
+        return data_fetcher.probe_all_sources()
+    except Exception as e:
+        log.exception("/v1/datasource/health failed")
+        raise HTTPException(500, f"health probe failed: {type(e).__name__}: {e}")
+
+
+@app.get("/v1/datasource/cross-validate", tags=["report"])
+def datasource_cross_validate(ticker: str) -> dict:
+    """For a given ticker, hit 3 quote sources and report:
+      - each source's price + diff_pct vs median
+      - consensus (>=2 sources within 5%)
+      - flag if any one disagrees by > 15% (likely stale)
+
+    Designed so a user (or a debug script) can quickly verify whether a
+    ticker's price is reliable across upstreams. The report builder uses
+    the same primitive internally on every report generation.
+    """
+    try:
+        from . import data_fetcher
+        t = (ticker or "").strip().upper()
+        if not data_fetcher.fetch_quote_a_share:  # sanity
+            raise HTTPException(500, "data_fetcher not loaded")
+        cv = data_fetcher.cross_validate_price(t)
+        return {
+            "ticker": t,
+            "median": cv.median,
+            "sources_total": cv.sources_total,
+            "sources_agreed": cv.sources_agreed,
+            "consensus": cv.consensus,
+            "reliable": cv.is_reliable,
+            "details": cv.details,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("/v1/datasource/cross-validate failed")
+        raise HTTPException(500, f"cross-validate failed: {type(e).__name__}: {e}")
+
+
 @app.get("/v1/report/full", tags=["report"])
 def get_full_report(ticker: str, force: bool = False, locale: str = "zh", debug: bool = False) -> dict:
     """Build a full 11-section investment research report for `ticker`.
