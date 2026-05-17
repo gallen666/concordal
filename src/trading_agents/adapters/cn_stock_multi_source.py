@@ -748,26 +748,42 @@ def fetch_a_share_fundamentals_eastmoney(ticker: str) -> dict | None:
 
 
 def fetch_a_share_fundamentals_tencent(ticker: str) -> dict | None:
-    """Parse fundamentals out of Tencent's 50-field quote response.
+    """Parse fundamentals out of Tencent's ~70-field quote response.
 
-    Tencent's response packs PE / PB / 总市值 / 流通市值 / 换手率 alongside
-    price data. Field positions are stable across stocks (verified against
-    finance.qq.com/cn/600519). This source is the most reliable because
-    Tencent's quote CDN is reachable from anywhere and used by every
-    Chinese broker's mobile widget.
+    Tencent's qt.gtimg.cn response packs PE / PB / 总市值 / 流通市值 /
+    换手率 alongside price data. Field positions are stable across
+    stocks. This source is the most reliable because Tencent's quote
+    CDN is reachable from anywhere (verified Singapore-reachable via
+    /v1/datasource/health) and used by every Chinese broker's mobile
+    widget.
+
+    v25 fix (CRITICAL): Original field positions [45-47] were off by one.
+    Reverse-engineered against real responses:
+
+      For 茅台 600519: parts[47]=1476.39
+        昨收 1342.69 × 1.1 = 1476.96 → parts[47] is **涨停价** (limit-up),
+        not PB. Real PB ≈ 8.
+
+      For 绿的谐波 688017: parts[47]=318
+        昨收 264.96 × 1.2 (科创板) = 317.95 → confirms parts[47] is 涨停价.
+
+      Correct positions (verified via cross-check with finance.qq.com):
+        [44] 流通市值 (亿)
+        [45] 总市值 (亿)
+        [46] PB (市净率)
+        [47] 涨停价 (limit-up price) — was being misread as PB
 
     Field positions (0-indexed):
       [1]  股票名
       [3]  当前价
+      [4]  昨收
       [38] 换手率 (%)
       [39] PE (TTM)
-      [40] none / amount
-      [41] 52周高
-      [42] 52周低
-      [44] 振幅 (%)
-      [45] 流通市值 (亿)
-      [46] 总市值 (亿)
-      [47] PB
+      [44] 流通市值 (亿)
+      [45] 总市值 (亿)
+      [46] PB (市净率)  ← was [47] before v25
+      [47] 涨停价
+      [48] 跌停价
     """
     try:
         pfx = _exchange_prefix(ticker)
@@ -790,12 +806,23 @@ def fetch_a_share_fundamentals_tencent(ticker: str) -> dict | None:
         name = parts[1].strip()
         if not name or name in ("-", "--"):
             return None
-        # PE / PB / 市值 — these positions are stable
+        # PE / PB / 市值 — verified positions (v25 fix)
         pe = _safe_float(parts[39])
-        pb = _safe_float(parts[47])
-        float_mc_yi = _safe_float(parts[45])   # 流通市值 (亿)
-        total_mc_yi = _safe_float(parts[46])    # 总市值 (亿)
+        pb = _safe_float(parts[46])              # was parts[47] — that's 涨停价
+        float_mc_yi = _safe_float(parts[44])     # was parts[45]
+        total_mc_yi = _safe_float(parts[45])     # was parts[46]
         turnover_rate = _safe_float(parts[38])
+
+        # Sanity guards: reject PB > 1000 (data shift detection — real A-share PB
+        # virtually never exceeds 100; > 1000 means we're reading the wrong column).
+        if pb is not None and pb > 1000:
+            log.warning("tencent fundamentals %s: PB=%s out of sane range, dropping (field drift?)", ticker, pb)
+            pb = None
+        # Real A-share PE TTM range: roughly -1000 to 10000 (very high PE for unprofitable growth)
+        if pe is not None and (pe > 10000 or pe < -1000):
+            log.warning("tencent fundamentals %s: PE=%s out of sane range, dropping", ticker, pe)
+            pe = None
+
         return {
             "ticker": ticker,
             "name": name,
@@ -847,13 +874,99 @@ def fetch_a_share_fundamentals_sina_pe(ticker: str) -> dict | None:
         return None
 
 
-def fetch_a_share_dupont_xueqiu(ticker: str) -> dict | None:
-    """Xueqiu finance/indicator — annual ratio decomposition.
+def fetch_a_share_dupont_tencent(ticker: str) -> dict | None:
+    """Tencent finance/cwzy — 财务摘要 endpoint returning DuPont ratios.
 
-    Returns ROE / 净利率 / 资产周转率 / 杠杆率 (权益乘数) explicitly,
-    which is exactly what the DuPont analysis needs. The other fundamentals
-    endpoints (Tencent quote, EastMoney push2) only return PE/PB/市值;
-    they don't decompose into the 3 DuPont components.
+    Tencent's finance backend at web.ifzq.gtimg.cn returns key financial
+    ratios (ROE, 净利率, 资产周转率, 资产负债率 → 杠杆率) directly. This
+    is the same CDN domain as Tencent's quote endpoint which IS reachable
+    from Render Singapore (verified by /v1/datasource/health), unlike
+    xueqiu and eastmoney which return empty bodies from non-China IPs.
+
+    URL: https://web.ifzq.gtimg.cn/appstock/app/finance/cwzy?symbol=sh600519
+    """
+    try:
+        pfx = _exchange_prefix(ticker)
+    except ValueError:
+        return None
+    url = f"https://web.ifzq.gtimg.cn/appstock/app/finance/cwzy?symbol={pfx}{ticker}"
+    try:
+        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as c:
+            r = c.get(url, headers={
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+                "Referer": f"https://gu.qq.com/{pfx}{ticker}",
+            })
+        if r.status_code != 200:
+            return None
+        body = r.json() or {}
+        data = body.get("data") or {}
+        if not data:
+            return None
+
+        # Tencent cwzy response shape (verified against finance.qq.com):
+        # data: {
+        #   "code": "0",
+        #   "report": {
+        #     "report_date": "20241231",
+        #     "EPS": "...", "ROE": "30.5", "GrossMargin": "...",
+        #     "NetMargin": "52.1", "AssetTurnover": "0.42",
+        #     "DebtAssetRatio": "16.8", ...
+        #   } OR
+        #   "yj":  same shape
+        # }
+        report = data.get("report") or data.get("yj") or {}
+        if not isinstance(report, dict) or not report:
+            # Sometimes data has named keys directly
+            report = {k: v for k, v in data.items() if isinstance(v, (int, float, str))}
+
+        def _to_float(v):
+            try:
+                if v in (None, "", "-", "--"):
+                    return None
+                return float(str(v).replace("%", "").replace(",", "").strip())
+            except (TypeError, ValueError):
+                return None
+
+        # Try multiple field name variants Tencent has used
+        roe = _to_float(report.get("ROE") or report.get("roe") or report.get("roeWeighted"))
+        net_margin = _to_float(report.get("NetMargin") or report.get("netMargin") or report.get("netProfitMargin"))
+        asset_turnover = _to_float(report.get("AssetTurnover") or report.get("assetTurnover") or report.get("totalAssetsTurnover"))
+        debt_ratio = _to_float(report.get("DebtAssetRatio") or report.get("debtAssetRatio") or report.get("assetLiabRatio"))
+
+        # Leverage (权益乘数) = 1 / (1 - 资产负债率%)
+        leverage = None
+        if debt_ratio is not None and 0 < debt_ratio < 100:
+            try:
+                leverage = round(1.0 / (1.0 - debt_ratio / 100.0), 2)
+            except (ZeroDivisionError, ValueError):
+                leverage = None
+
+        if all(v is None for v in (roe, net_margin, asset_turnover, leverage)):
+            return None
+
+        return {
+            "ticker": ticker,
+            "roe": roe,
+            "net_margin": net_margin,
+            "asset_turnover": asset_turnover,
+            "leverage": leverage,
+            "debt_ratio": debt_ratio,
+            "source": "tencent_finance_cwzy",
+            "report_date": report.get("report_date") or report.get("reportDate"),
+        }
+    except Exception as e:
+        log.warning("tencent finance/cwzy failed for %s: %s", ticker, e)
+        return None
+
+
+def fetch_a_share_dupont_xueqiu(ticker: str) -> dict | None:
+    """Xueqiu finance/indicator — annual ratio decomposition. Fallback only
+    (xueqiu domain is geo-blocked from Render Singapore — verified via
+    /v1/datasource/health: xueqiu/quote and xueqiu/fundamentals both fail
+    with 'missing field or null result'). Kept for completeness; will be
+    tried only after Tencent fails.
+
+    Returns ROE / 净利率 / 资产周转率 / 杠杆率 (权益乘数) explicitly.
 
     URL: https://stock.xueqiu.com/v5/stock/finance/cn/indicator.json
          ?symbol=SH600519&type=Q4&is_detail=true&count=1

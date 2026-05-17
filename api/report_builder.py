@@ -261,17 +261,23 @@ def fetch_facts(ticker: str, market: str) -> dict:
     # without RSI/MACD numbers. If you want them, compute inline from
     # closes here (TODO: add lightweight inline RSI calculation).
 
-    # 7a. DuPont real data from Xueqiu finance/indicator ----------------
-    # Xueqiu's finance/indicator endpoint returns the actual DuPont
-    # decomposition (净利率, 资产周转率, 杠杆率) — exactly what PE/PB-derived
-    # ROE alone cannot provide. Try this BEFORE the math fallback so real
-    # values take precedence.
+    # 7a. DuPont real data — Tencent finance/cwzy primary, Xueqiu fallback.
+    # Render Singapore IP gets empty body from xueqiu/eastmoney endpoints
+    # (verified via /v1/datasource/health — both xueqiu/quote and xueqiu/
+    # fundamentals fail). Tencent's web.ifzq.gtimg.cn backend is reachable
+    # (tencent/quote and tencent/fundamentals work fine), so we try its
+    # cwzy (财务摘要) endpoint first for the DuPont ratios.
     if market == "a_share":
         try:
             from trading_agents.adapters.cn_stock_multi_source import (
+                fetch_a_share_dupont_tencent,
                 fetch_a_share_dupont_xueqiu,
             )
-            dupont = fetch_a_share_dupont_xueqiu(ticker)
+            dupont = fetch_a_share_dupont_tencent(ticker)
+            if not dupont:
+                # Xueqiu fallback (low success rate from Singapore but kept
+                # for resilience — if China-side proxy ever gets added)
+                dupont = fetch_a_share_dupont_xueqiu(ticker)
             if dupont:
                 if out.get("roe") is None and dupont.get("roe") is not None:
                     out["roe"] = dupont["roe"]
@@ -285,11 +291,12 @@ def fetch_facts(ticker: str, market: str) -> dict:
                 if dupont.get("leverage") is not None:
                     out["leverage"] = dupont["leverage"]
                     out["_provenance"]["leverage"] = dupont["source"]
-                log.info("[report.facts] dupont via xueqiu: roe=%s nm=%s at=%s lev=%s",
+                log.info("[report.facts] dupont via %s: roe=%s nm=%s at=%s lev=%s",
+                         dupont.get("source"),
                          out.get("roe"), out.get("net_margin"),
                          out.get("asset_turnover"), out.get("leverage"))
         except Exception as e:
-            log.warning("[report.facts] xueqiu dupont fetch failed: %s", e)
+            log.warning("[report.facts] dupont fetch failed: %s", e)
 
     # 7. DuPont decomposition fallbacks ----------------------------------
     # Most sources (Tencent) don't give us ROE / 净利率 / 资产周转率 / 杠杆率
@@ -1146,20 +1153,23 @@ def assemble_report(ticker: str, locale: str = "zh") -> dict:
                 row["value"] = round(float(v_from_facts), 2)
                 # Update note to reflect real data presence
                 prov = (facts.get("_provenance") or {}).get(facts_key, "")
-                if "xueqiu" in str(prov).lower():
+                prov_label = "腾讯财务摘要" if "tencent" in str(prov).lower() else (
+                    "雪球财务指标" if "xueqiu" in str(prov).lower() else "财务接口"
+                )
+                if str(prov).lower() not in ("", "derived_from_pe_pb"):
                     if row["name"] == "净利率":
                         row["note"] = (
-                            f"净利率 {row['value']:.2f}%（雪球财务指标，最新财年）。"
+                            f"净利率 {row['value']:.2f}%（来源：{prov_label}，最新财年）。"
                             f"反映公司销售收入转化为净利润的效率，是衡量产品定价权和成本控制能力的核心盈利指标。"
                         )
                     elif row["name"] == "资产周转率":
                         row["note"] = (
-                            f"总资产周转率 {row['value']:.2f} 次（雪球财务指标）。"
+                            f"总资产周转率 {row['value']:.2f} 次（来源：{prov_label}）。"
                             f"衡量资产运营效率：营业收入÷总资产，数值越高代表用更少资产产生更多收入。"
                         )
                     elif row["name"] == "杠杆率":
                         row["note"] = (
-                            f"权益乘数 {row['value']:.2f}（雪球财务指标）。"
+                            f"权益乘数 {row['value']:.2f}（来源：{prov_label}）。"
                             f"反映财务杠杆使用程度：总资产÷净资产。该指标越高代表资产中负债占比越高。"
                         )
             except (TypeError, ValueError):
