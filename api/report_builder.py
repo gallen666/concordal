@@ -622,6 +622,78 @@ def assemble_report(ticker: str, locale: str = "zh") -> dict:
     op = narrative.get("operation_plan") or {}
     follow = narrative.get("follow_up") or []
 
+    # ---------- Shape normalization ----------
+    # LLM sometimes returns a single object where the schema asked for an
+    # array (e.g. nature_of_change as {label, body} instead of [{label,
+    # body}]). Walk known array fields and wrap dicts as single-item lists.
+    def _arr(v: Any) -> list:
+        if isinstance(v, list):
+            return v
+        if isinstance(v, dict):
+            return [v]
+        return []
+
+    # Qualitative: framework_2 nature_of_change should be array
+    f2 = qualitative.get("framework_2_dupont")
+    if isinstance(f2, dict):
+        f2["nature_of_change"] = _arr(f2.get("nature_of_change"))
+        f2["decomposition"] = _arr(f2.get("decomposition"))
+        # Sometimes the LLM puts "sustainability" as a sibling key — fold it in
+        sus = f2.pop("sustainability", None)
+        if isinstance(sus, dict):
+            f2["nature_of_change"].append(sus)
+    # Qualitative: framework_3 weakest_link.fragility should be array
+    f3 = qualitative.get("framework_3_logic_chain")
+    if isinstance(f3, dict):
+        wl = f3.get("weakest_link")
+        if isinstance(wl, dict):
+            wl["fragility"] = _arr(wl.get("fragility"))
+        f3["chain"] = _arr(f3.get("chain"))
+    # Qualitative: framework_1 step_1.items, step_2.market_concerns,
+    # step_2.catalysts_to_change_concerns, step_3.scenarios all arrays
+    f1 = qualitative.get("framework_1_three_step_valuation")
+    if isinstance(f1, dict):
+        s1 = f1.get("step_1_comparison");      s1 and (s1.update(items=_arr(s1.get("items"))))
+        s2 = f1.get("step_2_attribution")
+        if isinstance(s2, dict):
+            s2["market_concerns"] = _arr(s2.get("market_concerns"))
+            s2["catalysts_to_change_concerns"] = _arr(s2.get("catalysts_to_change_concerns"))
+        s3 = f1.get("step_3_scenarios");       s3 and (s3.update(scenarios=_arr(s3.get("scenarios"))))
+    # six_questions
+    qualitative["six_questions"] = _arr(qualitative.get("six_questions"))
+
+    # Technical
+    tf2 = technical.get("framework_2_momentum")
+    if isinstance(tf2, dict):
+        tf2["indicators"] = _arr(tf2.get("indicators"))
+    technical["answers_to_questions"]      = _arr(technical.get("answers_to_questions"))
+    technical["answers_to_situational"]    = _arr(technical.get("answers_to_situational"))
+    technical["validation_and_falsification"] = _arr(technical.get("validation_and_falsification"))
+
+    # Valuation
+    valuation["rows"] = _arr(valuation.get("rows"))
+    valuation["fair_value_ranges"] = _arr(valuation.get("fair_value_ranges"))
+
+    # Quantitative shareholder_return.rows
+    sr = quantitative.get("shareholder_return")
+    if isinstance(sr, dict):
+        sr["rows"] = _arr(sr.get("rows"))
+
+    # Debate bull/bear case as array of strings
+    debate["bull_case"] = _arr(debate.get("bull_case"))
+    debate["bear_case"] = _arr(debate.get("bear_case"))
+
+    # Operation plan position_advice
+    op["position_advice"] = _arr(op.get("position_advice"))
+
+    # Risks / follow_up / summary.key_observations
+    if not isinstance(risks, list):
+        risks = _arr(risks)
+    if not isinstance(follow, list):
+        follow = _arr(follow)
+    if isinstance(summary, dict):
+        summary["key_observations"] = _arr(summary.get("key_observations"))
+
     # ---------- Defensive defaults ----------
     # Every required field gets a placeholder so the frontend never crashes
     # on missing data. If the LLM returned a partial response, what's there
