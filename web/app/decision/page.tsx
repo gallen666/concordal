@@ -185,7 +185,10 @@ export default function DecisionPage() {
         elapsed += intervalMs / 1000;
         const j = await api.getDecision(job.job_id);
         if (j.progress) setProgress(j.progress);
-        if (j.status === "done") {
+        // v42 defensive: only finalize when status=done AND result is present.
+        // Catches race where backend sets status before result, and avoids
+        // stopping polling on a half-written job dict.
+        if (j.status === "done" && j.result) {
           setResult(j.result);
           setMode(j.mode || null);
           setLessonsInjected(!!j.lessons_injected);
@@ -198,6 +201,12 @@ export default function DecisionPage() {
           setStage(null);
           break;
         }
+      }
+      // v42: if loop exits without done/error (timeout), surface explicit
+      // message instead of leaving the page in silent limbo.
+      if (elapsed >= MAX_WAIT_SEC) {
+        setError(t("decision.timeout") || `Decision still running after ${MAX_WAIT_SEC}s. Refresh in a moment or try /decision/${job.job_id}/trace to check progress.`);
+        setStage(null);
       }
     } catch (e: unknown) {
       if (e instanceof PaywallError) {

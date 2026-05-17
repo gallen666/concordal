@@ -595,9 +595,14 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
             decision_close=decision_close,
             market=effective_market,
         )
-        _jobs[job_id]["status"] = "done"
+        # v42: CRITICAL race fix — set result + mode BEFORE status="done".
+        # Frontend polls /v1/decisions/job/{id} every 1-3s. If poll hits
+        # between status="done" and result=..., user sees status=done but
+        # result=undefined → frontend stops polling, renders blank page.
+        # Order matters: result first, then status.
         _jobs[job_id]["result"] = trace.model_dump(mode="json")
         _jobs[job_id]["mode"] = "real_llm" if user.real_llm else "mock"
+        _jobs[job_id]["status"] = "done"
     except Exception as e:
         log.exception("decision job failed")
         _jobs[job_id]["status"] = "error"
