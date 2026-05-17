@@ -603,10 +603,12 @@ def _run_decision_job(job_id: str, req: DecisionRequest, user: CurrentUser) -> N
         _jobs[job_id]["result"] = trace.model_dump(mode="json")
         _jobs[job_id]["mode"] = "real_llm" if user.real_llm else "mock"
         _jobs[job_id]["status"] = "done"
+        _persist_job(job_id)  # v43: snapshot final result to SQLite
     except Exception as e:
         log.exception("decision job failed")
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(e)
+        _persist_job(job_id)  # v43: snapshot error too so frontend sees it
 
 
 def _run_backtest_job(job_id: str, req: BacktestRequest, user: CurrentUser) -> None:
@@ -696,7 +698,25 @@ def _new_job(user: CurrentUser) -> str:
         "error": None,
         "user": user.id,
     }
+    # v43: persist immediately so Render redeploys mid-pipeline don't lose the job
+    _persist_job(jid)
     return jid
+
+
+def _persist_job(job_id: str) -> None:
+    """v43: snapshot _jobs[job_id] to SQLite. Called on creation + each
+    status change so polls survive Render restarts. Fail-silent — never
+    breaks the pipeline if the disk write fails."""
+    import json as _json
+    j = _jobs.get(job_id)
+    if not j:
+        return
+    try:
+        # Pydantic models in result are already model_dump'd to JSON-safe dicts
+        payload = _json.dumps(j, default=str)
+        persistence.put_decision_job(job_id, j.get("user", "anonymous"), payload)
+    except Exception as e:
+        log.warning("[persist_job] %s failed: %s", job_id, e)
 
 
 # --- routes -------------------------------------------------------------
@@ -1430,9 +1450,24 @@ def get_decision(
     job_id: str,
     user: CurrentUser = Depends(get_optional_user),
 ) -> dict:
-    if job_id not in _jobs:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown job")
-    j = _jobs[job_id]
+    # v43: try in-memory _jobs first (fast path), then SQLite (survives
+    # Render redeploys). Previously a Render restart would drop the
+    # in-memory dict and any in-flight poll returned 404 "Unknown job",
+    # confusing the user. Persistence stays warm across restarts.
+    if job_id in _jobs:
+        j = _jobs[job_id]
+    else:
+        import json as _json
+        row = persistence.get_decision_job(job_id)
+        if not row:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown job")
+        user_id, payload_json = row
+        try:
+            j = _json.loads(payload_json)
+        except Exception:
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Job payload corrupted")
+        j["user"] = user_id  # ensure user field present
+        _jobs[job_id] = j  # warm cache so subsequent polls are fast
     # Anonymous visitors can only read decisions they themselves created
     # (we identify them by job's `user` field). Non-anon users follow
     # the original "your jobs only" rule.

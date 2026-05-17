@@ -177,7 +177,11 @@ export default function DecisionPage() {
       // responsive without hammering the backend with 90+ polls per
       // 90-second decision (which on Render free tier can saturate one
       // worker).
-      const MAX_WAIT_SEC = 240;
+      // v44: bumped from 240s → 420s. 7-agent pipeline (especially manager
+      // + risk_debate with DEEP tier LLM and triple-stage debate) often
+      // takes 4-6 minutes on free-tier Render. 240s was cutting off real
+      // jobs at the manager stage — user saw 'decision.timeout' i18n key.
+      const MAX_WAIT_SEC = 420;
       let elapsed = 0;
       while (elapsed < MAX_WAIT_SEC) {
         const intervalMs = elapsed < 5 ? 1000 : 3000;
@@ -202,10 +206,13 @@ export default function DecisionPage() {
           break;
         }
       }
-      // v42: if loop exits without done/error (timeout), surface explicit
-      // message instead of leaving the page in silent limbo.
+      // v44: hard-coded Chinese fallback. Previously used t("decision.timeout")
+      // which returns the KEY literal "decision.timeout" when no translation
+      // exists — user saw raw "decision.timeout" string. Skip i18n here.
       if (elapsed >= MAX_WAIT_SEC) {
-        setError(t("decision.timeout") || `Decision still running after ${MAX_WAIT_SEC}s. Refresh in a moment or try /decision/${job.job_id}/trace to check progress.`);
+        setError(
+          `决策已运行 ${MAX_WAIT_SEC} 秒仍未完成 (manager 阶段 LLM 可能慢). 流水线大概率还在后台跑, 点这里查看追溯: /decision/${job.job_id}/trace`
+        );
         setStage(null);
       }
     } catch (e: unknown) {
@@ -213,7 +220,20 @@ export default function DecisionPage() {
         // Free-tier daily cap exceeded — switch to paywall modal flow.
         setPaywall(e.detail);
       } else {
-        setError((e as Error).message);
+        const msg = (e as Error).message || "";
+        // v43: "Unknown job" 404 happens when the user's previous jobId
+        // is stale (e.g. Render restarted and cleared the in-memory _jobs
+        // dict). Show friendly Chinese message + auto-clear stale state
+        // so the user can simply click 开始辩论 again.
+        if (msg.includes("Unknown job") || msg.includes("404")) {
+          setJobId(null);
+          setResult(null);
+          setProgress(null);
+          setStage(null);
+          setError("上次会话因服务更新已重置, 请重新点击 “开始辩论”.");
+        } else {
+          setError(msg);
+        }
       }
     } finally {
       setLoading(false);

@@ -96,6 +96,16 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             shared_at REAL NOT NULL
         );
 
+        -- v43: persist decision jobs so they survive Render redeploys.
+        -- Previously the in-memory _jobs dict was lost on every restart,
+        -- causing frontend polling to hit "Unknown job" 404.
+        CREATE TABLE IF NOT EXISTS decision_jobs (
+            job_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            updated_at REAL NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS user_tiers (
             email TEXT PRIMARY KEY,
             tier TEXT NOT NULL,
@@ -282,6 +292,29 @@ def get_shared_decision(share_id: str) -> str | None:
     cur = c.execute("SELECT payload FROM shared_decisions WHERE share_id = ?", (share_id,))
     row = cur.fetchone()
     return row[0] if row else None
+
+
+# ---------------------------------------------------------------------------
+# v43: Decision jobs (survive Render redeploys)
+# ---------------------------------------------------------------------------
+
+
+def put_decision_job(job_id: str, user_id: str, payload_json: str) -> None:
+    """Upsert a job's current state to SQLite. Called whenever _jobs[id]
+    changes — status, progress, result. Idempotent."""
+    c = _get_conn()
+    c.execute(
+        "INSERT OR REPLACE INTO decision_jobs (job_id, user_id, payload, updated_at) VALUES (?, ?, ?, ?)",
+        (job_id, user_id, payload_json, time.time()),
+    )
+
+
+def get_decision_job(job_id: str) -> tuple[str, str] | None:
+    """Returns (user_id, payload_json) or None if not found."""
+    c = _get_conn()
+    cur = c.execute("SELECT user_id, payload FROM decision_jobs WHERE job_id = ?", (job_id,))
+    row = cur.fetchone()
+    return (row[0], row[1]) if row else None
 
 
 # ---------------------------------------------------------------------------
