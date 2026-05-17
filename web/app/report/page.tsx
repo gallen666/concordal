@@ -60,9 +60,9 @@ export default function ReportLandingPage() {
         </div>
         <h1 className="text-4xl sm:text-5xl font-serif text-ink-primary mb-4">深度报告</h1>
         <p className="text-ink-tertiary max-w-2xl mx-auto">
-          输入任意 A 股 6 位代码，由 Gemini Pro + UniversalDataBus 在 15-40s 内生成
-          11 节专业研报（三步估值 / 杜邦分解 / 逻辑链 / 三情景 / 多空辩论 / 操作计划 / 跟踪清单），
-          附总线遥测审计 + 校准置信度上下文。港股 / 美股 / 加密即将推出。
+          输入任意 A 股 6 位代码，30-90s 内生成 11 节专业研报：三步估值定位 · 杜邦分解 ·
+          逻辑链构建 · 三情景测算 · 多空辩论 · 操作计划 · 跟踪清单，附校准置信度上下文。
+          数据来自交易所行情 + akshare 财务接口，由 Gemini 2.5 Flash 撰写。港股 / 美股 / 加密即将推出。
         </p>
       </div>
 
