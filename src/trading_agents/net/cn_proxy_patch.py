@@ -72,11 +72,46 @@ def _should_proxy(host: str) -> bool:
     return False
 
 
+import re as _re
+
+# akshare uses random-numbered CDN subdomains like 1.push2.eastmoney.com,
+# 17.push2.eastmoney.com, 78.push2his.eastmoney.com to load-balance. These
+# numbered subdomains are harder to reach from Vercel HK than the canonical
+# domain (different CDN edges with different ACLs). Strip the numeric
+# prefix to normalize to push2.eastmoney.com / push2his.eastmoney.com /
+# etc. — the canonical entry routes the same way internally.
+_NUMERIC_PREFIX_RE = _re.compile(r"^https?://(\d+)\.([a-z0-9-]+(?:\.[a-z0-9-]+)+)(?:/|$|\?)")
+
+
+def _normalize_cn_url(url: str) -> str:
+    """Strip numeric subdomain prefixes from CN data CDN URLs."""
+    try:
+        m = _NUMERIC_PREFIX_RE.match(url)
+        if not m:
+            return url
+        scheme = url.split("://", 1)[0]
+        rest = url.split("://", 1)[1]
+        # rest like '17.push2.eastmoney.com/api/...'
+        host_path = rest.split("/", 1)
+        host = host_path[0]
+        path = "/" + host_path[1] if len(host_path) > 1 else "/"
+        # Drop leading numeric label if present
+        labels = host.split(".")
+        if labels and labels[0].isdigit():
+            new_host = ".".join(labels[1:])
+            return f"{scheme}://{new_host}{path}"
+        return url
+    except Exception:
+        return url
+
+
 def _proxy_url(original_url: str) -> str:
     proxy_base = os.environ.get(
         "TA_CN_PROXY_BASE", "https://trading-agents-platform.vercel.app"
     ).rstrip("/")
-    return f"{proxy_base}/api/cn-proxy?upstream={urllib.parse.quote(original_url, safe='')}"
+    # Normalize numeric subdomain (akshare CDN load-balancing prefix)
+    normalized = _normalize_cn_url(original_url)
+    return f"{proxy_base}/api/cn-proxy?upstream={urllib.parse.quote(normalized, safe='')}"
 
 
 _patched = False
