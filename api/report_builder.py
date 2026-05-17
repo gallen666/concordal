@@ -265,32 +265,20 @@ def fetch_facts(ticker: str, market: str) -> dict:
 
 # --- LLM narrative generation ---------------------------------------------
 
-_SYSTEM_PROMPT_ZH = """你是「投资指挥官」TradingAgents 资深首席分析师，输出风格严谨、专业、克制，
-面向中国 A 股个人投资者撰写专业投研报告。
+_SYSTEM_PROMPT_ZH = """你是 TradingAgents 资深首席分析师，给中国 A 股散户写投研报告。
 
-【写作规则 · 极其重要】
-1. 你的输出最终会直接呈现给散户阅读。**绝对不要**在 narrative 文本里出现以下技术术语：
-   "FACTS"、"FACTS 数据"、"FACTS 数据集"、"null"、"JSON"、"schema"、"prompt"、
-   "数据集"、"FACTS 中"、"未提供该字段"、"FACTS.xxx"。
-   这些是系统内部黑话，散户看到会困惑。
-2. 当某个具体数字（如 PE、ROE、营收）暂时拿不到时，请用业务化中文：
-   "公开数据中暂未披露"、"需待最新财报披露"、"该指标暂缺，建议跟踪季度报告"，
-   而不是"FACTS 数据缺失"。
-3. 不要在 6-7 个连续段落里反复说"数据缺失"。要把你**已有**的真实信息（当前价、
-   MA5/MA20/MA60、压力位、支撑位、近期涨跌幅）作为分析主线，缺失字段只在
-   1-2 处提一下即可。
-4. 仅输出合法 JSON，键名和结构必须与下方 SCHEMA 一致，不要任何额外说明、
-   不要 markdown 围栏、不要在 JSON 前后加散文。
-5. 数值字段（current_price / target_price_*  / fair_value）必须基于真实价格推导，
-   不得编造。三个估值情景的价格必须落在当前价 ±25% 区间内。
-6. 所有文本字段使用简体中文，专业、有判断力，避免笼统词。
-7. 三个框架（三步估值 / 杜邦分解 / 逻辑链）必须有真实推理深度，每个字段至少 40 字。
-   即便缺失财务数据，也要基于价格行为 + 技术指标 + 行业常识展开分析。
+规则：
+1. 不要写"FACTS"/"null"/"JSON"/"schema"等技术黑话；数据缺失就说"公开数据中暂未披露"。
+2. 已知数据（价格/均线/支撑压力位/涨跌幅）必须作为分析主线，缺失字段最多提 1 处。
+3. 只输出合法 JSON，结构与 SCHEMA 一致；不要 markdown 围栏。
+4. 估值/目标价/fair_value 基于真实价格推导，落在 ±25% 区间。
+5. 简体中文，专业、克制、有判断力。
+6. 框架字段每条至少 40 字，要有推理深度。
 
 公司：{name}（{ticker}）。
 """
 
-_SCHEMA = {
+_SCHEMA_A = {
     "summary": {
         "rating": "BUY|HOLD|SELL", "rating_label_zh": "持有/买入/卖出",
         "current_price": "<float>", "currency": "<str>",
@@ -378,6 +366,9 @@ _SCHEMA = {
         ],
         "final_conclusion": "<最终估值结论>",
     },
+}
+
+_SCHEMA_B = {
     "market_sentiment": {
         "capital_flow_status": "<净流入/净流出/中性>",
         "capital_flow_note": "<解读>",
@@ -429,11 +420,32 @@ _SCHEMA = {
 }
 
 
-def build_llm_prompt(facts: dict) -> tuple[str, str]:
-    """Compose (system, user) prompts for the report-generation LLM call.
+def _facts_for_llm(facts: dict) -> dict:
+    """Slim the facts dict for LLM consumption.
 
-    The data block is labelled '实时市场数据' (not 'FACTS') so the LLM
-    won't pick up the technical term and echo it verbatim in narrative.
+    Strips internal/diagnostic fields the LLM doesn't need to write
+    narrative. Cuts the JSON dump from ~3.5k chars to ~1.2k chars,
+    which directly reduces input tokens (and TTFT).
+    """
+    KEEP = {
+        "ticker", "name", "market", "exchange", "currency",
+        "current_price", "prev_close", "change_pct", "asof",
+        "pe", "pb", "ps", "roe", "net_margin",
+        "revenue_yoy", "profit_yoy", "dividend_yield",
+        "market_cap", "sector", "industry",
+        "ma5", "ma20", "ma60",
+        "support_level", "pressure_level",
+        "high_52w", "low_52w",
+        "rsi14", "macd", "kdj_k", "mfi14", "adx14",
+        "stale_price", "stale_price_diff_pct", "live_price",
+    }
+    return {k: v for k, v in facts.items() if k in KEEP and v not in (None, "")}
+
+
+def build_llm_prompt(facts: dict, schema: dict, half_label: str) -> tuple[str, str]:
+    """Compose (system, user) prompts for ONE half of the parallel report
+    generation. `schema` is _SCHEMA_A or _SCHEMA_B; `half_label` is shown
+    in the user prompt so each call knows which subset to produce.
 
     SAFETY: If facts.stale_price=True, we tell the LLM to refuse trading
     advice and surface a prominent warning instead. This is the system's
@@ -447,25 +459,19 @@ def build_llm_prompt(facts: dict) -> tuple[str, str]:
     stale_warning = ""
     if facts.get("stale_price"):
         stale_warning = (
-            f"\n\n⚠️ 关键安全警告：行情数据可能陈旧。\n"
-            f"   - adapter 报价与实时多源报价相差 {facts.get('stale_price_diff_pct', '?')}%\n"
-            f"   - 不要在 narrative 里给出任何 entry / exit / target 价格\n"
-            f"   - core_view 必须以 '行情数据陈旧，请刷新页面或稍后再试' 开头\n"
-            f"   - summary.bull_oneliner / bear_oneliner 写 '数据陈旧，暂不可作判断'\n"
-            f"   - operation_plan.action 必须设为 HOLD，position_advice 写 '建议刷新数据后再决策'\n"
-            f"   - debate.our_judgment 必须说明数据陈旧、不可下注\n"
-            f"   - 三个估值情景 fair_value 必须设为 current_price 本身（不假设涨跌）\n"
+            f"\n\n⚠️ 安全警告：行情陈旧（差 {facts.get('stale_price_diff_pct', '?')}%）\n"
+            f"   不要给 entry/exit/target 价；core_view 以 '行情数据陈旧' 开头；\n"
+            f"   operation_plan.action 写 HOLD；估值 fair_value 全设为 current_price。\n"
         )
 
+    slim_facts = _facts_for_llm(facts)
     user = (
-        f"以下是 {name}（{facts['ticker']}）的实时市场数据（来自交易所行情 + akshare 财务接口 + 雪球/东方财富多源 fallback）：\n"
-        f"```json\n"
-        f"{json.dumps(facts, ensure_ascii=False, indent=2)}\n```\n\n"
-        f"请基于这些数据生成完整投研报告 JSON，结构如下：\n```json\n"
-        f"{json.dumps(_SCHEMA, ensure_ascii=False, indent=2)}\n```\n\n"
-        f"再次提醒：narrative 文本里不要出现 'FACTS' / 'null' / 'JSON' / 'schema' 等技术术语；\n"
-        f"指标暂缺时用「该指标暂缺，需待最新财报披露」之类的业务化中文；\n"
-        f"已有数据（价格 / 均线 / 支撑压力位 / 近期涨跌幅）必须充分利用。"
+        f"为 {name}（{facts['ticker']}）撰写【{half_label}】部分的投研报告。\n\n"
+        f"市场数据：\n```json\n{json.dumps(slim_facts, ensure_ascii=False, indent=1)}\n```\n\n"
+        f"输出 JSON，仅包含以下结构里的键：\n```json\n"
+        f"{json.dumps(schema, ensure_ascii=False, indent=1)}\n```\n\n"
+        f"要点：充分利用价格/均线/支撑压力数据；数据缺失用业务化中文；\n"
+        f"不要 markdown 围栏。"
         f"{stale_warning}"
     )
     return sys, user
@@ -595,82 +601,111 @@ def _repair_truncated_json(text: str) -> str | None:
 _LAST_LLM_DIAG: dict[str, Any] = {}
 
 
-def call_llm_for_narrative(facts: dict, locale: str = "zh") -> dict:
-    """Single LLM call → narrative JSON. Returns empty dict on failure.
+def _one_llm_call(half_key: str, half_label: str, schema: dict, facts: dict, locale: str) -> dict:
+    """Run one half of the parallel narrative generation.
 
-    Uses Tier.MID (gemini-2.5-flash) deliberately over Tier.DEEP because:
-      - DEEP maps to gemini-3.1-pro-preview which is a thinking model.
-        Even with max_tokens=16384 the response routinely truncates,
-        AND the call can take 60-120s before falling through to flash.
-        That blows past the frontend's timeout.
-      - MID maps to gemini-2.5-flash which is non-thinking, ~5-15s per
-        call, returns clean JSON, and is 1/4 the cost. The narrative
-        quality is plenty good for a single-call report — when the user
-        wants 7-agent depth they click the dedicated button.
+    Returns the parsed JSON (or {} on failure). Per-half diagnostics
+    are accumulated under _LAST_LLM_DIAG['halves'][half_key].
     """
     global _LAST_LLM_DIAG
     from trading_agents.llm.router import LLMRouter, Tier
-    sys_prompt, user_prompt = build_llm_prompt(facts)
+    sys_prompt, user_prompt = build_llm_prompt(facts, schema, half_label)
     router = LLMRouter(locale=locale)
 
-    _LAST_LLM_DIAG = {
+    half_diag: dict[str, Any] = {
         "sys_prompt_len": len(sys_prompt),
         "user_prompt_len": len(user_prompt),
         "tier": "FAST",
         "phase": "starting",
     }
+    t0 = time.time()
 
     try:
-        # Tier.FAST → gemini-2.5-flash-lite. Why FAST, not MID:
-        #
-        # MID on this Render deployment maps via TA_MODEL_MID env var to
-        # gemini-3.1-pro-preview, which is a thinking model. The Vercel
-        # gemini-proxy function (which all our Gemini calls go through
-        # because Render Singapore is geo-blocked from Google) has a
-        # 60s maxDuration ceiling. Pro thinking on a 9k-char prompt
-        # reliably exceeds 60s → Vercel 504 FUNCTION_INVOCATION_TIMEOUT
-        # → router fallback to flash-lite. Net: 60s wasted on the failed
-        # Pro attempt before flash-lite generates the actual report in
-        # 8s. Total: 68-121s.
-        #
-        # FAST tier maps directly to flash-lite — skip the failing Pro
-        # attempt entirely. Quality is plenty for narrative writing
-        # (verified on 600519 + 688017: 14k-char rich reports).
         resp = router.complete(
-            tier=Tier.FAST,
+            tier=Tier.FAST,                # flash-lite, no Vercel 60s ceiling issue
             system=sys_prompt,
             user=user_prompt,
             temperature=0.35,
-            max_tokens=16384,
+            max_tokens=8192,               # half schema → ~7k chars max; was 16384
         )
         raw = resp.text or ""
-        _LAST_LLM_DIAG.update({
+        half_diag.update({
             "phase": "got_response",
+            "elapsed_ms": int((time.time() - t0) * 1000),
             "raw_len": len(raw),
-            "raw_head_200": raw[:200],
-            "raw_tail_200": raw[-200:] if len(raw) > 200 else "",
-            "model_used": getattr(resp, "model", None) or getattr(resp.usage, "model", None) if hasattr(resp, "usage") else None,
+            "raw_head_120": raw[:120],
+            "raw_tail_120": raw[-120:] if len(raw) > 120 else "",
+            "model_used": getattr(resp, "model", None) or (getattr(resp.usage, "model", None) if hasattr(resp, "usage") else None),
             "cost_usd": float(getattr(resp.usage, "usd_cost", 0.0) or 0.0) if hasattr(resp, "usage") else 0.0,
         })
 
         data = _extract_json(raw)
         if data:
-            _LAST_LLM_DIAG.update({"phase": "json_extracted", "json_keys": list(data.keys())})
+            half_diag.update({"phase": "json_extracted", "json_keys": list(data.keys())})
+            _LAST_LLM_DIAG.setdefault("halves", {})[half_key] = half_diag
             return data
 
-        _LAST_LLM_DIAG.update({"phase": "json_extract_failed", "error": "no parseable JSON in response"})
-        log.warning("[report.llm] failed to extract JSON from response (len=%d) — head: %r", len(raw), raw[:300])
+        half_diag.update({"phase": "json_extract_failed", "error": "no parseable JSON"})
+        _LAST_LLM_DIAG.setdefault("halves", {})[half_key] = half_diag
+        log.warning("[report.llm.%s] failed to extract JSON (len=%d) — head: %r", half_key, len(raw), raw[:300])
         return {}
     except Exception as e:
         import traceback
-        _LAST_LLM_DIAG.update({
+        half_diag.update({
             "phase": "exception",
+            "elapsed_ms": int((time.time() - t0) * 1000),
             "error_type": type(e).__name__,
             "error_msg": str(e),
-            "traceback": traceback.format_exc()[:1000],
+            "traceback": traceback.format_exc()[:600],
         })
-        log.warning("[report.llm] generation failed: %s", e, exc_info=True)
+        _LAST_LLM_DIAG.setdefault("halves", {})[half_key] = half_diag
+        log.warning("[report.llm.%s] generation failed: %s", half_key, e, exc_info=True)
         return {}
+
+
+def call_llm_for_narrative(facts: dict, locale: str = "zh") -> dict:
+    """Two parallel LLM calls → narrative JSON. Returns merged dict.
+
+    Why two parallel calls (v19, was one call in v18):
+      - v18 single call: flash-lite generates 14k chars sequentially via
+        Vercel proxy in ~215s. JSON valid but UX bad.
+      - v19 two parallel calls: each half ~7k chars in ~80-100s. They run
+        concurrently through the proxy on separate sockets, so total
+        wall-clock is max(t_a, t_b) ≈ 100s. ~2x speedup.
+
+    Schema split:
+      - A: summary, core_view, decision_confidence, confidence_level,
+           qualitative (3 frameworks + 6 questions), quantitative, valuation
+      - B: market_sentiment, technical (3 frameworks), debate, risks,
+           operation_plan, follow_up
+
+    If one half fails the other is still useful — the assemble_report
+    defaults will fill the missing half with placeholders.
+    """
+    global _LAST_LLM_DIAG
+    from concurrent.futures import ThreadPoolExecutor
+
+    _LAST_LLM_DIAG = {
+        "version": "v19_parallel_halves",
+        "tier": "FAST",
+        "halves": {},
+    }
+
+    t_start = time.time()
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fut_a = ex.submit(_one_llm_call, "A", "前半（summary+qualitative+valuation+quantitative）", _SCHEMA_A, facts, locale)
+        fut_b = ex.submit(_one_llm_call, "B", "后半（market_sentiment+technical+debate+risks+operation_plan+follow_up）", _SCHEMA_B, facts, locale)
+        data_a = fut_a.result()
+        data_b = fut_b.result()
+
+    _LAST_LLM_DIAG["parallel_total_ms"] = int((time.time() - t_start) * 1000)
+
+    # Merge — keys are disjoint by construction, so straightforward.
+    merged: dict[str, Any] = {}
+    merged.update(data_a)
+    merged.update(data_b)
+    _LAST_LLM_DIAG["merged_keys"] = list(merged.keys())
+    return merged
 
 
 def get_last_llm_diagnostics() -> dict:
