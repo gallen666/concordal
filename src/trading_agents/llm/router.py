@@ -671,6 +671,7 @@ class LLMRouter:
         user: str,
         temperature: float = 0.3,
         force_model: str | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         # When the caller passes force_model (used by the manager
         # consensus-check), bypass the tier→model map and use that model
@@ -719,7 +720,10 @@ class LLMRouter:
                 provider = self._provider_for(m)
                 log.debug("LLM %s -> %s (%s)", tier.value, m, provider.name)
                 try:
-                    resp = provider.complete(sys_with_lang, user, m, temperature=temperature)
+                    extra_kw: dict = {"temperature": temperature}
+                    if max_tokens is not None:
+                        extra_kw["max_tokens"] = max_tokens
+                    resp = provider.complete(sys_with_lang, user, m, **extra_kw)
                     # Honesty: if we silently fell through to mock (because
                     # the configured model had no real provider — e.g. user
                     # set TA_MODEL_DEEP=gemini-3.1-pro-preview but never set

@@ -353,26 +353,122 @@ def build_llm_prompt(facts: dict) -> tuple[str, str]:
 
 
 def _extract_json(text: str) -> dict | None:
-    """Extract the first JSON object from LLM output. LLMs sometimes wrap
-    it in ```json ... ``` fences or add prose around it."""
+    """Extract the first JSON object from LLM output. Handles three cases:
+
+    1. ```json ... ``` fenced block (LLM common pattern)
+    2. Bare JSON object — find first { to last }
+    3. Truncated JSON (LLM hit max_tokens mid-output) — repair by closing
+       open braces and trailing strings, then re-parse
+
+    Returns the parsed dict, or None if nothing parseable found.
+    """
     if not text:
         return None
-    # Try ```json fence
-    m = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
-    if m:
+
+    # Strip leading code fence if present
+    fenced = re.search(r"```(?:json)?\s*(\{[\s\S]*?)\s*```", text)
+    candidate = fenced.group(1) if fenced else text
+
+    # Trim to the first { and however much we have
+    start = candidate.find("{")
+    if start < 0:
+        return None
+    body = candidate[start:]
+
+    # Try as-is first
+    try:
+        return json.loads(body)
+    except Exception:
+        pass
+
+    # Try the longest balanced prefix
+    end = body.rfind("}")
+    while end > 0:
         try:
-            return json.loads(m.group(1))
+            return json.loads(body[:end + 1])
         except Exception:
-            pass
-    # Try raw JSON (find first { to last })
-    start = text.find("{")
-    end = text.rfind("}")
-    if start >= 0 and end > start:
+            end = body.rfind("}", 0, end)
+
+    # Last-ditch repair: close any open string, then close all open braces.
+    repaired = _repair_truncated_json(body)
+    if repaired is not None:
         try:
-            return json.loads(text[start:end + 1])
+            return json.loads(repaired)
         except Exception:
+            log.debug("[report.llm] repair attempted but parse still failed")
             return None
     return None
+
+
+def _repair_truncated_json(text: str) -> str | None:
+    """Best-effort close of a truncated JSON object.
+
+    Walks the text tracking open braces/brackets and string state.
+    Strategy: chop the tail back to the last position where the JSON
+    is in a "between siblings" state (after a comma or after a value),
+    then close all open structures. This gracefully handles the common
+    failure mode where the truncation falls mid-key or mid-value.
+
+    Returns None if the text isn't recoverable.
+    """
+    if not text or not text.strip().startswith("{"):
+        return None
+
+    # First pass: find the last index where we're either (a) just after a
+    # complete value (the char is `,` `}` `]` or whitespace following one
+    # of those) AND not inside a string. This is the safe truncation point.
+    stack: list[str] = []
+    in_string = False
+    escape = False
+    last_safe = -1  # index right after a complete key-value pair
+    last_safe_stack: list[str] = []
+    for i, ch in enumerate(text):
+        if escape:
+            escape = False
+            continue
+        if in_string:
+            if ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+                # Mark safe AFTER closing a string that's a value:
+                # we'll learn it's a value only when we hit the next
+                # comma/}/]. So defer the mark to those tokens.
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            stack.append("}")
+        elif ch == "[":
+            stack.append("]")
+        elif ch == "}" or ch == "]":
+            if stack and stack[-1] == ch:
+                stack.pop()
+            last_safe = i
+            last_safe_stack = list(stack)
+        elif ch == ",":
+            last_safe = i - 1  # truncate at this comma; we'll strip it
+            last_safe_stack = list(stack)
+        elif ch in (" ", "\t", "\n", "\r"):
+            # whitespace doesn't change safety
+            pass
+        # Other chars (digits, letters, :) — we're mid-token, not safe.
+
+    if last_safe < 0:
+        # Couldn't find a clean truncation point — fall back to brute-force
+        out = text
+        if in_string:
+            out += '"'
+        out = re.sub(r",\s*$", "", out)
+        while stack:
+            out += stack.pop()
+        return out
+
+    out = text[:last_safe + 1].rstrip().rstrip(",")
+    # Close every still-open structure
+    while last_safe_stack:
+        out += last_safe_stack.pop()
+    return out
 
 
 # Module-level diagnostics, exposed via the `_debug` field when caller
@@ -399,7 +495,19 @@ def call_llm_for_narrative(facts: dict, locale: str = "zh") -> dict:
     }
 
     try:
-        resp = router.complete(tier=Tier.DEEP, system=sys_prompt, user=user_prompt, temperature=0.35)
+        # gemini-3.1-pro-preview is a thinking model — the default
+        # maxOutputTokens=4096 budget gets spent mostly on internal
+        # reasoning, leaving only ~150 tokens of visible output (the
+        # JSON gets truncated mid-key). Bump to 16384 so the output
+        # half of the budget can comfortably hold the 5-8k char JSON
+        # for an 11-section report.
+        resp = router.complete(
+            tier=Tier.DEEP,
+            system=sys_prompt,
+            user=user_prompt,
+            temperature=0.35,
+            max_tokens=16384,
+        )
         raw = resp.text or ""
         _LAST_LLM_DIAG.update({
             "phase": "got_response",
