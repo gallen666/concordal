@@ -236,7 +236,31 @@ def fetch_a_share_quote_sina(ticker: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
+def _xueqiu_bootstrap_cookie() -> dict[str, str]:
+    """v40: Xueqiu API requires xq_a_token cookie. Bootstrap by hitting
+    https://xueqiu.com first — this sets the cookie. Returns cookie dict
+    for downstream API calls. Cached for the process lifetime.
+
+    Uses requests (which is monkey-patched to route via cn-proxy → HK).
+    """
+    import requests as _rq
+    if not hasattr(_xueqiu_bootstrap_cookie, "_cached"):
+        try:
+            r = _rq.get("https://xueqiu.com/hq", timeout=8, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            })
+            _xueqiu_bootstrap_cookie._cached = dict(r.cookies)  # type: ignore[attr-defined]
+        except Exception as e:
+            log.info("xueqiu cookie bootstrap failed: %s", e)
+            _xueqiu_bootstrap_cookie._cached = {}  # type: ignore[attr-defined]
+    return _xueqiu_bootstrap_cookie._cached  # type: ignore[attr-defined]
+
+
 def fetch_a_share_quote_xueqiu(ticker: str) -> dict | None:
+    """v40: Switched httpx → requests so cn-proxy monkey-patch routes through
+    Vercel HK (Render Singapore is blocked from Xueqiu). Also bootstraps
+    xq_a_token cookie first which the API requires."""
+    import requests as _rq
     try:
         pfx = _exchange_prefix(ticker)
     except ValueError:
@@ -244,12 +268,11 @@ def fetch_a_share_quote_xueqiu(ticker: str) -> dict | None:
     sym = f"{pfx.upper()}{ticker}"
     url = f"https://stock.xueqiu.com/v5/stock/quote.json?symbol={sym}&extend=detail"
     try:
-        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as c:
-            # Xueqiu requires a normal UA; default httpx UA gets 403
-            r = c.get(url, headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-                "Referer": f"https://xueqiu.com/S/{sym}",
-            })
+        cookies = _xueqiu_bootstrap_cookie()
+        r = _rq.get(url, timeout=10, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Referer": f"https://xueqiu.com/S/{sym}",
+        }, cookies=cookies)
         if r.status_code != 200:
             return None
         data = r.json().get("data", {}).get("quote") or {}
@@ -623,12 +646,14 @@ def fetch_a_share_fundamentals_xueqiu(ticker: str) -> dict | None:
         return None
     sym = f"{pfx.upper()}{ticker}"
     url = f"https://stock.xueqiu.com/v5/stock/quote.json?symbol={sym}&extend=detail"
+    # v40: requests (not httpx) so cn-proxy monkey-patch routes via Vercel HK
+    import requests as _rq
     try:
-        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as c:
-            r = c.get(url, headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-                "Referer": f"https://xueqiu.com/S/{sym}",
-            })
+        cookies = _xueqiu_bootstrap_cookie()
+        r = _rq.get(url, timeout=10, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Referer": f"https://xueqiu.com/S/{sym}",
+        }, cookies=cookies)
         if r.status_code != 200:
             return None
         body = r.json().get("data") or {}
