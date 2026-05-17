@@ -582,8 +582,8 @@ function QualitativeAnalysis({ data }: { data: ReportData }) {
             {q.framework_2_dupont.decomposition.map((d) => (
               <div key={d.name} className="grid grid-cols-[8rem_5rem_1fr] gap-3 items-baseline text-xs">
                 <span className="font-medium text-ink-primary">· {d.name}</span>
-                <span className="font-mono tabular-nums text-signal-sell">
-                  {d.value !== null ? `${d.value}${d.unit.startsWith("(") ? " " : ""}${d.unit}` : "数据缺失"}
+                <span className={`font-mono tabular-nums ${d.value !== null ? "text-signal-sell" : "text-ink-tertiary"}`}>
+                  {d.value !== null ? `${d.value}${d.unit.startsWith("(") ? " " : ""}${d.unit}` : "—"}
                 </span>
                 <span className="text-ink-secondary leading-relaxed">{d.note}</span>
               </div>
