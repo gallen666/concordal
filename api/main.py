@@ -2523,40 +2523,75 @@ def _eastmoney_fund_flow_rank_via_proxy() -> list[dict]:
 def cn_fund_flow_individual(market: str = "沪深A股", top: int = 50) -> dict:
     """Top individual-stock 主力净流入 ranking — fetches directly from
     EastMoney push2 via our Vercel HK proxy to bypass Render Singapore
-    geo-block. Falls back to akshare if proxy fails.
+    geo-block.
 
-    `market` ∈ {"沪深A股", "沪市A股", "深市A股", "创业板", "科创板",
-    "沪市B股", "深市B股"}; default covers the whole A-share universe.
+    v37: Switched to single-market fs (m:0+t:6) instead of multi-market
+    comma-joined fs. The multi-market form returned empty; single-market
+    via _eastmoney_clist_via_proxy is the same pattern as fund-flow/sectors
+    which is proven working. We do multiple single-market calls and merge.
     """
-    # Primary: Vercel HK proxy → EastMoney push2 (real data, no geo-block)
-    rows = _eastmoney_fund_flow_rank_via_proxy()
-    if rows:
+    # Each (fs_code, market_label) covers one Chinese market segment
+    # m:0+t:6 = 沪市A股, m:0+t:80 = 创业板, m:0+t:13 = 深市A股, etc.
+    market_fs = [
+        ("m:0+t:6", "沪市A股"),
+        ("m:0+t:80", "深市A股"),
+        ("m:1+t:2", "沪市A股"),
+        ("m:1+t:23", "创业板"),
+        ("m:0+t:7", "科创板"),
+    ]
+    fields = "f12,f14,f2,f3,f62,f184,f66,f72,f78,f84"
+
+    combined: list[dict] = []
+    for fs, _ in market_fs[:2]:  # Just try first 2 markets to keep URL count low
+        try:
+            diff = _eastmoney_clist_via_proxy(
+                fs=fs, fields=fields, fid="f62", po=1, pz=50,
+            )
+            for d in diff:
+                combined.append({
+                    "代码": d.get("f12"),
+                    "名称": d.get("f14"),
+                    "最新价": d.get("f2"),
+                    "涨跌幅": d.get("f3"),
+                    "主力净流入-净额": d.get("f62"),
+                    "主力净流入-净占比": d.get("f184"),
+                    "超大单净流入-净额": d.get("f66"),
+                    "大单净流入-净额": d.get("f72"),
+                    "中单净流入-净额": d.get("f78"),
+                    "小单净流入-净额": d.get("f84"),
+                })
+        except Exception as e:
+            log.info("fund-flow market %s failed: %s", fs, e)
+
+    if combined:
+        # Sort by 主力净流入-净额 desc, take top N
+        combined.sort(
+            key=lambda r: r.get("主力净流入-净额") or 0,
+            reverse=True,
+        )
         return {
             "status": "ok",
             "market": market,
-            "rows": rows[: max(10, min(top, 200))],
-            "source": "eastmoney via vercel-hk-proxy",
+            "rows": combined[: max(10, min(top, 200))],
+            "source": "eastmoney via cn-proxy (short-url multi-market)",
         }
 
-    # Fallback: try akshare directly (will fail on Singapore but works locally)
+    # Fallback: try akshare directly (will likely fail with long URL too)
     try:
         import akshare as ak
-    except ImportError:
-        return {"status": "unavailable", "message": "akshare not installed and proxy returned empty", "rows": []}
-    try:
         df = ak.stock_individual_fund_flow_rank(indicator="今日")
-        if df is None or df.empty:
-            return {"status": "unavailable", "message": "akshare returned empty", "rows": []}
-        df = df.head(max(10, min(top, 200)))
-        return {
-            "status": "ok",
-            "market": market,
-            "rows": _rows_to_jsonable(df),
-            "source": "akshare/eastmoney (direct fallback)",
-        }
+        if df is not None and not df.empty:
+            df = df.head(max(10, min(top, 200)))
+            return {
+                "status": "ok",
+                "market": market,
+                "rows": _rows_to_jsonable(df),
+                "source": "akshare/eastmoney (fallback)",
+            }
     except Exception as e:
-        log.warning("fund-flow-individual fetch failed: %s", e)
-        return {"status": "unavailable", "message": str(e), "rows": []}
+        log.info("fund-flow akshare fallback failed: %s", e)
+
+    return {"status": "unavailable", "message": "no data source", "rows": []}
 
 
 @app.get("/v1/cn/fund-flow/sectors", tags=["markets"])
@@ -2754,8 +2789,43 @@ def _tencent_sectors_industry() -> list[dict]:
 @app.get("/v1/cn/sectors/industry", tags=["markets"])
 def cn_sectors_industry() -> dict:
     """申万行业 list with current-day metrics (涨跌幅, 换手率, etc.).
-    Shape per row: {板块名称, 涨跌幅, 总市值, 换手率, ...}."""
-    # Try akshare/EastMoney first (long URL, currently may 502 via cn-proxy)
+
+    v37: Same proven path as cn_fund_flow_sectors — short URL via
+    _eastmoney_clist_via_proxy → cn-proxy GET → push2.eastmoney.com.
+    Avoids akshare's stock_board_industry_name_em which builds a 1.7K
+    URL that hits Vercel edge nginx URL ceiling (silent 502).
+    """
+    # Primary: short-URL clist via cn-proxy (proven working pattern)
+    # fs="m:90+t:2" = 行业板块. Essential fields only — keeps URL under 800 chars.
+    diff = _eastmoney_clist_via_proxy(
+        fs="m:90+t:2",
+        fields="f12,f14,f2,f3,f4,f8,f20,f62,f184,f104,f105,f128",
+        fid="f3",  # sort by 涨跌幅
+        po=1,
+        pz=100,
+    )
+    if diff:
+        rows = [{
+            "代码": d.get("f12"),
+            "名称": d.get("f14"),
+            "最新价": d.get("f2"),
+            "涨跌幅": d.get("f3"),
+            "涨跌额": d.get("f4"),
+            "换手率": d.get("f8"),
+            "总市值": d.get("f20"),
+            "主力净流入": d.get("f62"),
+            "主力净流入占比": d.get("f184"),
+            "上涨家数": d.get("f104"),
+            "下跌家数": d.get("f105"),
+            "领涨股": d.get("f128"),
+        } for d in diff]
+        return {
+            "status": "ok",
+            "rows": rows,
+            "source": "eastmoney via cn-proxy (short-url path)",
+        }
+
+    # Fallback: akshare (may 502 on long URLs but try in case it ever works)
     try:
         import akshare as ak
         df = ak.stock_board_industry_name_em()
@@ -2763,23 +2833,14 @@ def cn_sectors_industry() -> dict:
             return {
                 "status": "ok",
                 "rows": _rows_to_jsonable(df),
-                "source": "akshare/eastmoney",
+                "source": "akshare/eastmoney (fallback)",
             }
     except Exception as e:
-        log.info("[sectors] akshare path failed: %s — falling to tencent", e)
-
-    # v36 fallback: Tencent qt 行业指数 batch
-    tencent_rows = _tencent_sectors_industry()
-    if tencent_rows:
-        return {
-            "status": "ok",
-            "rows": tencent_rows,
-            "source": "tencent/qt (申万 fallback when EM push2 unreachable)",
-        }
+        log.info("[sectors] akshare fallback failed: %s", e)
 
     return {
         "status": "unavailable",
-        "message": "akshare+tencent both failed",
+        "message": "cn-proxy clist + akshare both empty",
         "rows": [],
     }
 
