@@ -278,7 +278,7 @@ _SYSTEM_PROMPT_ZH = """你是 TradingAgents 资深首席分析师，给中国 A 
 公司：{name}（{ticker}）。
 """
 
-_SCHEMA_A = {
+_SCHEMA_A1 = {
     "summary": {
         "rating": "BUY|HOLD|SELL", "rating_label_zh": "持有/买入/卖出",
         "current_price": "<float>", "currency": "<str>",
@@ -341,6 +341,9 @@ _SCHEMA_A = {
         "validation_signals_and_window": {"validation": "<信号>", "time_window": "<时间>", "falsification": "<失效条件>"},
         "actionable": {"type_match": "<投资者类型匹配>", "operating_advice": "<操作建议>"},
     },
+}
+
+_SCHEMA_A2 = {
     "quantitative": {
         "growth": {"title": "① 营收增长", "body": "<数据解读>", "data_status": "ok/missing"},
         "profitability": {"title": "② 盈利质量", "body": "<解读>", "data_status": "ok/missing"},
@@ -444,7 +447,7 @@ def _facts_for_llm(facts: dict) -> dict:
 
 def build_llm_prompt(facts: dict, schema: dict, half_label: str) -> tuple[str, str]:
     """Compose (system, user) prompts for ONE half of the parallel report
-    generation. `schema` is _SCHEMA_A or _SCHEMA_B; `half_label` is shown
+    generation. `schema` is _SCHEMA_A1 / _SCHEMA_A2 / _SCHEMA_B; `half_label` is shown
     in the user prompt so each call knows which subset to produce.
 
     SAFETY: If facts.stale_price=True, we tell the LLM to refuse trading
@@ -664,45 +667,52 @@ def _one_llm_call(half_key: str, half_label: str, schema: dict, facts: dict, loc
 
 
 def call_llm_for_narrative(facts: dict, locale: str = "zh") -> dict:
-    """Two parallel LLM calls → narrative JSON. Returns merged dict.
+    """Three parallel LLM calls → narrative JSON. Returns merged dict.
 
-    Why two parallel calls (v19, was one call in v18):
-      - v18 single call: flash-lite generates 14k chars sequentially via
-        Vercel proxy in ~215s. JSON valid but UX bad.
-      - v19 two parallel calls: each half ~7k chars in ~80-100s. They run
-        concurrently through the proxy on separate sockets, so total
-        wall-clock is max(t_a, t_b) ≈ 100s. ~2x speedup.
+    Why three parallel calls (v20, was two in v19):
+      - v18 single call: 215s. v19 two halves: 166s total (A still 163s).
+      - v19's A half (qualitative + quantitative + valuation, 7 keys) was
+        the new bottleneck — LLM also tended to skip quantitative/valuation
+        because they came AFTER the heavy qualitative frameworks.
+      - v20 splits A into A1 (summary + qualitative, 5 keys) and A2
+        (quantitative + valuation, 2 keys). Three threads in parallel:
+          A1 (~5k chars out, framework-heavy)  → ~70-80s
+          A2 (~2k chars out, tables + summary)  → ~25-35s
+          B  (~4.5k chars out, technical + ops) → ~45-60s
+        Wall-clock = max(A1, A2, B) ≈ 70-80s.
 
     Schema split:
-      - A: summary, core_view, decision_confidence, confidence_level,
-           qualitative (3 frameworks + 6 questions), quantitative, valuation
-      - B: market_sentiment, technical (3 frameworks), debate, risks,
-           operation_plan, follow_up
+      - A1: summary + core_view + decision_confidence + confidence_level + qualitative
+      - A2: quantitative + valuation
+      - B:  market_sentiment + technical + debate + risks + operation_plan + follow_up
 
-    If one half fails the other is still useful — the assemble_report
-    defaults will fill the missing half with placeholders.
+    Disjoint keys → straightforward merge. Any half failing degrades to
+    defaults via assemble_report.
     """
     global _LAST_LLM_DIAG
     from concurrent.futures import ThreadPoolExecutor
 
     _LAST_LLM_DIAG = {
-        "version": "v19_parallel_halves",
+        "version": "v20_three_parallel",
         "tier": "FAST",
         "halves": {},
     }
 
     t_start = time.time()
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        fut_a = ex.submit(_one_llm_call, "A", "前半（summary+qualitative+valuation+quantitative）", _SCHEMA_A, facts, locale)
-        fut_b = ex.submit(_one_llm_call, "B", "后半（market_sentiment+technical+debate+risks+operation_plan+follow_up）", _SCHEMA_B, facts, locale)
-        data_a = fut_a.result()
-        data_b = fut_b.result()
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        fut_a1 = ex.submit(_one_llm_call, "A1", "定性分析（summary+核心观点+定性框架）", _SCHEMA_A1, facts, locale)
+        fut_a2 = ex.submit(_one_llm_call, "A2", "量化与估值（quantitative+valuation）",   _SCHEMA_A2, facts, locale)
+        fut_b  = ex.submit(_one_llm_call, "B",  "情绪/技术/辩论/操作（B 半）",            _SCHEMA_B,  facts, locale)
+        data_a1 = fut_a1.result()
+        data_a2 = fut_a2.result()
+        data_b  = fut_b.result()
 
     _LAST_LLM_DIAG["parallel_total_ms"] = int((time.time() - t_start) * 1000)
 
     # Merge — keys are disjoint by construction, so straightforward.
     merged: dict[str, Any] = {}
-    merged.update(data_a)
+    merged.update(data_a1)
+    merged.update(data_a2)
     merged.update(data_b)
     _LAST_LLM_DIAG["merged_keys"] = list(merged.keys())
     return merged
