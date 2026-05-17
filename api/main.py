@@ -2684,26 +2684,104 @@ def cn_fund_flow_market(days: int = 30) -> dict:
         return {"status": "unavailable", "message": str(e), "rows": []}
 
 
+# v36: 申万 28-industry list with Tencent qt.gtimg.cn fallback.
+# When push2.eastmoney.com is unreachable (Vercel HK ↔ EastMoney transient
+# blocks), we fall back to Tencent's industry-index quotes which are served
+# from a CDN with much broader IP whitelist tolerance.
+_SHENWAN_INDUSTRY_CODES: list[tuple[str, str]] = [
+    ("sh.881101", "农林牧渔"), ("sh.881102", "采掘"),       ("sh.881103", "化工"),
+    ("sh.881104", "钢铁"),     ("sh.881105", "有色金属"),    ("sh.881106", "电子"),
+    ("sh.881107", "家用电器"), ("sh.881108", "食品饮料"),    ("sh.881109", "纺织服装"),
+    ("sh.881110", "轻工制造"), ("sh.881111", "医药生物"),    ("sh.881112", "公用事业"),
+    ("sh.881113", "交通运输"), ("sh.881114", "房地产"),      ("sh.881115", "商业贸易"),
+    ("sh.881116", "休闲服务"), ("sh.881117", "综合"),       ("sh.881118", "建筑材料"),
+    ("sh.881119", "建筑装饰"), ("sh.881120", "电气设备"),    ("sh.881121", "国防军工"),
+    ("sh.881122", "计算机"),   ("sh.881123", "传媒"),       ("sh.881124", "通信"),
+    ("sh.881125", "银行"),     ("sh.881126", "非银金融"),    ("sh.881127", "汽车"),
+    ("sh.881128", "机械设备"),
+]
+
+
+def _tencent_sectors_industry() -> list[dict]:
+    """Fetch 申万行业 quotes via Tencent qt.gtimg.cn batch endpoint.
+    Returns list of rows with 板块名称, 最新点位, 涨跌幅, 涨跌额."""
+    import requests
+    codes = ",".join(code.replace(".", "") for code, _ in _SHENWAN_INDUSTRY_CODES)
+    url = f"https://qt.gtimg.cn/q={codes}"
+    try:
+        # Goes via monkey-patched session — will route through cn-proxy
+        r = requests.get(url, timeout=12, headers={
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+            "Referer": "https://gu.qq.com/",
+        })
+        if r.status_code != 200 or not r.text:
+            return []
+        # Response format: v_sh881101="...~农林牧渔~881101~3120.5~3098.2~3120.5~...~~..."
+        rows: list[dict] = []
+        for line in r.text.splitlines():
+            line = line.strip()
+            if not line or not line.startswith("v_"):
+                continue
+            # Strip prefix and trailing ;
+            try:
+                eq = line.index("=")
+                value = line[eq + 1:].rstrip(";").strip('"')
+                parts = value.split("~")
+                if len(parts) < 10:
+                    continue
+                name = parts[1]
+                code = parts[2]
+                latest = float(parts[3]) if parts[3] else 0.0
+                prev_close = float(parts[4]) if parts[4] else latest
+                chg_amt = latest - prev_close if prev_close else 0.0
+                chg_pct = (chg_amt / prev_close * 100) if prev_close else 0.0
+                # Tencent 板块指数 also reports turnover at parts[36] (近似)
+                rows.append({
+                    "板块名称": name,
+                    "板块代码": code,
+                    "最新价": round(latest, 2),
+                    "涨跌额": round(chg_amt, 2),
+                    "涨跌幅": round(chg_pct, 2),
+                })
+            except Exception:
+                continue
+        return rows
+    except Exception as e:
+        log.warning("tencent sectors fetch failed: %s", e)
+        return []
+
+
 @app.get("/v1/cn/sectors/industry", tags=["markets"])
 def cn_sectors_industry() -> dict:
     """申万行业 list with current-day metrics (涨跌幅, 换手率, etc.).
     Shape per row: {板块名称, 涨跌幅, 总市值, 换手率, ...}."""
+    # Try akshare/EastMoney first (long URL, currently may 502 via cn-proxy)
     try:
         import akshare as ak
-    except ImportError:
-        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
-    try:
         df = ak.stock_board_industry_name_em()
-        if df is None or df.empty:
-            return {"status": "unavailable", "message": "akshare returned empty", "rows": []}
+        if df is not None and not df.empty:
+            return {
+                "status": "ok",
+                "rows": _rows_to_jsonable(df),
+                "source": "akshare/eastmoney",
+            }
+    except Exception as e:
+        log.info("[sectors] akshare path failed: %s — falling to tencent", e)
+
+    # v36 fallback: Tencent qt 行业指数 batch
+    tencent_rows = _tencent_sectors_industry()
+    if tencent_rows:
         return {
             "status": "ok",
-            "rows": _rows_to_jsonable(df),
-            "source": "akshare/eastmoney",
+            "rows": tencent_rows,
+            "source": "tencent/qt (申万 fallback when EM push2 unreachable)",
         }
-    except Exception as e:
-        log.warning("sectors-industry fetch failed: %s", e)
-        return {"status": "unavailable", "message": str(e), "rows": []}
+
+    return {
+        "status": "unavailable",
+        "message": "akshare+tencent both failed",
+        "rows": [],
+    }
 
 
 @app.get("/v1/cn/sectors/concept", tags=["markets"])
