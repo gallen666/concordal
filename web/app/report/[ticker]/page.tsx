@@ -41,11 +41,13 @@ function classifyTicker(ticker: string): "a_share" | "hk_equity" | "unsupported"
   return "unsupported";
 }
 
-/** Fetch with timeout. 180s covers Render-free-tier cold-start (~60s)
- * + first-time fundamentals/quote/technical fetch (~10s) + Gemini Flash
- * LLM call (~15s) + JSON repair (negligible) + 24h cache write. Repeat
- * visits hit the SQLite cache in <500ms. */
-async function fetchWithTimeout(url: string, ms = 180_000): Promise<Response> {
+/** Fetch with timeout. 240s covers Render-free-tier cold-start (~60s)
+ * + multi-source quote/fundamentals (~5s) + Gemini Flash LLM (~30s) +
+ * potential Gemini fallback chain (+30s). Repeat visits hit the SQLite
+ * cache in <500ms. We err on the longer side because 180s previously
+ * triggered false-negative timeouts on legitimately-slow Render
+ * cold-starts. Backend total time is logged in _timings for debug. */
+async function fetchWithTimeout(url: string, ms = 240_000): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
   try {
@@ -102,7 +104,7 @@ export default function ReportPage() {
     setState({ kind: "loading", startedAt: started });
     try {
       const url = `${API_BASE}/v1/report/full?ticker=${encodeURIComponent(ticker)}${force ? "&force=true" : ""}`;
-      const res = await fetchWithTimeout(url, 180_000);
+      const res = await fetchWithTimeout(url, 240_000);
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
         try {

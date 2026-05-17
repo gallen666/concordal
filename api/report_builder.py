@@ -144,11 +144,11 @@ def fetch_facts(ticker: str, market: str) -> dict:
         log.warning("[report.facts] quote multi failed: %s", e)
 
     # 3. History → MA5/MA20/MA60 + support/pressure (multi-source, 5s timeout)
+    # NOTE: fetch_a_share_history_multi signature is (ticker, lookback_days=120)
+    # — int, not date objects. My earlier call passed (ticker, start, end) which
+    # would TypeError silently. Fixed.
     try:
-        from datetime import date as _d, timedelta as _td
-        end = _d.today()
-        start = end - _td(days=120)
-        hist = fetch_a_share_history_multi(ticker, start, end)
+        hist = fetch_a_share_history_multi(ticker, lookback_days=120)
         if hist:
             closes = [float(b.get("close") or 0) for b in hist[-60:]]
             highs  = [float(b.get("high")  or 0) for b in hist[-20:]]
@@ -732,7 +732,14 @@ def _bus_telemetry_snapshot(facts: dict | None = None) -> list[dict]:
 
 
 def assemble_report(ticker: str, locale: str = "zh") -> dict:
-    """Top-level entry: fetch facts → LLM narrative → merge into ReportData."""
+    """Top-level entry: fetch facts → LLM narrative → merge into ReportData.
+
+    Records per-step elapsed_ms so /v1/report/full?debug=true shows
+    exactly which step ate the time budget."""
+    import time as _time
+
+    timings: dict[str, int] = {}
+    t0 = _time.time()
 
     market_kind = classify_ticker(ticker)
     if market_kind == "unsupported":
@@ -745,10 +752,14 @@ def assemble_report(ticker: str, locale: str = "zh") -> dict:
     market_api_name = "a_share"
 
     # 1. Live facts
+    t_facts = _time.time()
     facts = fetch_facts(ticker, market_api_name)
+    timings["fetch_facts_ms"] = int((_time.time() - t_facts) * 1000)
 
     # 2. LLM narrative
+    t_llm = _time.time()
     narrative = call_llm_for_narrative(facts, locale=locale)
+    timings["llm_call_ms"] = int((_time.time() - t_llm) * 1000)
 
     # 3. Merge into ReportData shape
     now_iso = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
@@ -1083,7 +1094,12 @@ def assemble_report(ticker: str, locale: str = "zh") -> dict:
         "stale_price": bool(facts.get("stale_price")),
         "stale_price_diff_pct": facts.get("stale_price_diff_pct"),
         "live_price": facts.get("live_price"),
+
+        # Per-step timings for /v1/report/full?debug=true
+        "_timings": timings,
     }
+    timings["total_ms"] = int((_time.time() - t0) * 1000)
+    report["_timings"] = timings
 
     # If the price is stale, force the operation_plan to be safe even if
     # the LLM didn't follow our prompt instructions perfectly.
