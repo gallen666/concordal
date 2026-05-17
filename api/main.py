@@ -2544,8 +2544,9 @@ def cn_fund_flow_individual(market: str = "沪深A股", top: int = 50) -> dict:
     combined: list[dict] = []
     for fs, _ in market_fs[:2]:  # Just try first 2 markets to keep URL count low
         try:
-            diff = _eastmoney_clist_via_proxy(
-                fs=fs, fields=fields, fid="f62", po=1, pz=50,
+            # v38: use retry helper for transient push2 blocks
+            diff = _retry_clist_via_proxy(
+                fs=fs, fields=fields, fid="f62", po=1, pz=50, attempts=3,
             )
             for d in diff:
                 combined.append({
@@ -2786,23 +2787,35 @@ def _tencent_sectors_industry() -> list[dict]:
         return []
 
 
+def _retry_clist_via_proxy(*, fs: str, fields: str, fid: str = "f3", po: int = 1, pz: int = 100, attempts: int = 3) -> list[dict]:
+    """v38: Wrap _eastmoney_clist_via_proxy with retry. push2.eastmoney.com
+    reachability from Vercel HK is intermittent — retry 3× with 1s delay
+    catches transient windows."""
+    import time
+    for i in range(attempts):
+        diff = _eastmoney_clist_via_proxy(fs=fs, fields=fields, fid=fid, po=po, pz=pz)
+        if diff:
+            return diff
+        if i < attempts - 1:
+            time.sleep(1.0)
+    return []
+
+
 @app.get("/v1/cn/sectors/industry", tags=["markets"])
 def cn_sectors_industry() -> dict:
-    """申万行业 list with current-day metrics (涨跌幅, 换手率, etc.).
+    """申万行业 list with current-day metrics.
 
-    v37: Same proven path as cn_fund_flow_sectors — short URL via
-    _eastmoney_clist_via_proxy → cn-proxy GET → push2.eastmoney.com.
-    Avoids akshare's stock_board_industry_name_em which builds a 1.7K
-    URL that hits Vercel edge nginx URL ceiling (silent 502).
+    v38: 3-attempt retry on push2 short-URL clist (handles intermittent
+    Vercel HK ↔ EastMoney push2 connectivity flicker). Same path as
+    cn_fund_flow_sectors which has delivered real data.
     """
-    # Primary: short-URL clist via cn-proxy (proven working pattern)
-    # fs="m:90+t:2" = 行业板块. Essential fields only — keeps URL under 800 chars.
-    diff = _eastmoney_clist_via_proxy(
+    diff = _retry_clist_via_proxy(
         fs="m:90+t:2",
         fields="f12,f14,f2,f3,f4,f8,f20,f62,f184,f104,f105,f128",
-        fid="f3",  # sort by 涨跌幅
+        fid="f3",
         po=1,
         pz=100,
+        attempts=3,
     )
     if diff:
         rows = [{
