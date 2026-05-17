@@ -2367,33 +2367,127 @@ def _rows_to_jsonable(df) -> list[dict]:
     return rows
 
 
+# ---------------------------------------------------------------------------
+# CN proxy helper — routes EastMoney/Xueqiu calls through Vercel HK Node
+# function (region: hkg1) to bypass Render Singapore's geo-block. Set via
+# env var TA_CN_PROXY_BASE (e.g. https://trading-agents-platform.vercel.app).
+# Falls back to direct call when env not set (for local dev).
+# ---------------------------------------------------------------------------
+
+_CN_PROXY_BASE = os.environ.get(
+    "TA_CN_PROXY_BASE", "https://trading-agents-platform.vercel.app"
+).rstrip("/")
+
+
+def _fetch_cn_url_via_proxy(upstream_url: str, timeout: int = 15) -> tuple[int, str]:
+    """Fetch a Chinese-market URL through the Vercel HK proxy.
+
+    Returns (status_code, response_text). On proxy failure, returns
+    (0, error_message).
+    """
+    import urllib.parse
+    import requests
+    proxy_url = f"{_CN_PROXY_BASE}/api/cn-proxy?upstream={urllib.parse.quote(upstream_url, safe='')}"
+    try:
+        r = requests.get(proxy_url, timeout=timeout, headers={
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+        })
+        return r.status_code, r.text
+    except Exception as e:
+        return 0, f"proxy fetch failed: {e}"
+
+
+def _eastmoney_fund_flow_rank_via_proxy() -> list[dict]:
+    """Direct EastMoney push2 call via Vercel HK proxy, bypassing akshare
+    which calls eastmoney from-process (and gets blocked on Singapore IP).
+
+    The push2 endpoint /api/qt/clist/get with the right field codes is what
+    EastMoney's own UI uses for the 主力净流入排行 table. Field codes:
+      f12=代码, f14=名称, f2=最新价, f3=涨跌幅,
+      f62=主力净流入-净额, f184=主力净流入-净占比,
+      f66=超大单净流入-净额, f72=大单净流入-净额,
+      f78=中单净流入-净额, f84=小单净流入-净额
+    """
+    fields = ",".join([
+        "f12", "f14", "f2", "f3",
+        "f62", "f184", "f66", "f72", "f78", "f84",
+    ])
+    url = (
+        "https://push2.eastmoney.com/api/qt/clist/get"
+        "?pn=1&pz=200&po=1&np=1&fltt=2&invt=2"
+        "&fs=m:0+t:6+f:!2,m:0+t:13+f:!2,m:0+t:80+f:!2,m:1+t:2+f:!2,m:1+t:23+f:!2,m:0+t:7+f:!2,m:1+t:3+f:!2"
+        f"&fid=f62&fields={fields}"
+    )
+    status, body = _fetch_cn_url_via_proxy(url)
+    if status != 200 or not body:
+        return []
+    try:
+        import json as _json
+        data = _json.loads(body).get("data") or {}
+        diff = data.get("diff") or []
+        # EastMoney returns either list-of-dicts or dict-of-dicts; normalise.
+        rows: list[dict] = []
+        if isinstance(diff, list):
+            iter_ = diff
+        elif isinstance(diff, dict):
+            iter_ = list(diff.values())
+        else:
+            return []
+        for item in iter_:
+            if not isinstance(item, dict):
+                continue
+            rows.append({
+                "代码": item.get("f12"),
+                "名称": item.get("f14"),
+                "最新价": item.get("f2"),
+                "涨跌幅": item.get("f3"),
+                "主力净流入-净额": item.get("f62"),
+                "主力净流入-净占比": item.get("f184"),
+                "超大单净流入-净额": item.get("f66"),
+                "大单净流入-净额": item.get("f72"),
+                "中单净流入-净额": item.get("f78"),
+                "小单净流入-净额": item.get("f84"),
+            })
+        return rows
+    except Exception as e:
+        log.warning("eastmoney push2 parse failed: %s", e)
+        return []
+
+
 @app.get("/v1/cn/fund-flow/individual", tags=["markets"])
 def cn_fund_flow_individual(market: str = "沪深A股", top: int = 50) -> dict:
-    """Top individual-stock 主力净流入 ranking — the single most-
-    watched A-share retail metric. East-money lists this on every
-    stock card.
+    """Top individual-stock 主力净流入 ranking — fetches directly from
+    EastMoney push2 via our Vercel HK proxy to bypass Render Singapore
+    geo-block. Falls back to akshare if proxy fails.
 
     `market` ∈ {"沪深A股", "沪市A股", "深市A股", "创业板", "科创板",
     "沪市B股", "深市B股"}; default covers the whole A-share universe.
-    Returns rows like {代码, 名称, 最新价, 主力净流入-净额, ...}
-    sorted by 主力净流入-净额 desc.
     """
+    # Primary: Vercel HK proxy → EastMoney push2 (real data, no geo-block)
+    rows = _eastmoney_fund_flow_rank_via_proxy()
+    if rows:
+        return {
+            "status": "ok",
+            "market": market,
+            "rows": rows[: max(10, min(top, 200))],
+            "source": "eastmoney via vercel-hk-proxy",
+        }
+
+    # Fallback: try akshare directly (will fail on Singapore but works locally)
     try:
         import akshare as ak
     except ImportError:
-        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+        return {"status": "unavailable", "message": "akshare not installed and proxy returned empty", "rows": []}
     try:
         df = ak.stock_individual_fund_flow_rank(indicator="今日")
         if df is None or df.empty:
             return {"status": "unavailable", "message": "akshare returned empty", "rows": []}
-        # df columns vary by akshare version; trust that the rank function
-        # already orders desc by 主力净流入-净额.
         df = df.head(max(10, min(top, 200)))
         return {
             "status": "ok",
             "market": market,
             "rows": _rows_to_jsonable(df),
-            "source": "akshare/eastmoney",
+            "source": "akshare/eastmoney (direct fallback)",
         }
     except Exception as e:
         log.warning("fund-flow-individual fetch failed: %s", e)
