@@ -41,8 +41,11 @@ function classifyTicker(ticker: string): "a_share" | "hk_equity" | "unsupported"
   return "unsupported";
 }
 
-/** Fetch with timeout (Render free tier cold-start can take 30-60s). */
-async function fetchWithTimeout(url: string, ms = 120_000): Promise<Response> {
+/** Fetch with timeout. 180s covers Render-free-tier cold-start (~60s)
+ * + first-time fundamentals/quote/technical fetch (~10s) + Gemini Flash
+ * LLM call (~15s) + JSON repair (negligible) + 24h cache write. Repeat
+ * visits hit the SQLite cache in <500ms. */
+async function fetchWithTimeout(url: string, ms = 180_000): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
   try {
@@ -99,7 +102,7 @@ export default function ReportPage() {
     setState({ kind: "loading", startedAt: started });
     try {
       const url = `${API_BASE}/v1/report/full?ticker=${encodeURIComponent(ticker)}${force ? "&force=true" : ""}`;
-      const res = await fetchWithTimeout(url, 120_000);
+      const res = await fetchWithTimeout(url, 180_000);
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
         try {
@@ -112,7 +115,7 @@ export default function ReportPage() {
       setState({ kind: "ready", data: payload });
     } catch (e: any) {
       const msg = e?.name === "AbortError"
-        ? "120 秒超时 — 后端可能正在冷启动 (Render free tier)。点击重试一次。"
+        ? "180 秒超时 — 后端可能正在冷启动 (Render free tier)，或当前 LLM 服务繁忙。点击重试一次。"
         : e?.message || "请求失败";
       setState({ kind: "error", message: msg });
     }

@@ -479,8 +479,15 @@ _LAST_LLM_DIAG: dict[str, Any] = {}
 def call_llm_for_narrative(facts: dict, locale: str = "zh") -> dict:
     """Single LLM call → narrative JSON. Returns empty dict on failure.
 
-    Uses Tier.DEEP so the analyst tone matches what the rest of the
-    platform expects (actual tiers are FAST/MID/DEEP).
+    Uses Tier.MID (gemini-2.5-flash) deliberately over Tier.DEEP because:
+      - DEEP maps to gemini-3.1-pro-preview which is a thinking model.
+        Even with max_tokens=16384 the response routinely truncates,
+        AND the call can take 60-120s before falling through to flash.
+        That blows past the frontend's timeout.
+      - MID maps to gemini-2.5-flash which is non-thinking, ~5-15s per
+        call, returns clean JSON, and is 1/4 the cost. The narrative
+        quality is plenty good for a single-call report — when the user
+        wants 7-agent depth they click the dedicated button.
     """
     global _LAST_LLM_DIAG
     from trading_agents.llm.router import LLMRouter, Tier
@@ -490,19 +497,17 @@ def call_llm_for_narrative(facts: dict, locale: str = "zh") -> dict:
     _LAST_LLM_DIAG = {
         "sys_prompt_len": len(sys_prompt),
         "user_prompt_len": len(user_prompt),
-        "tier": "DEEP",
+        "tier": "MID",
         "phase": "starting",
     }
 
     try:
-        # gemini-3.1-pro-preview is a thinking model — the default
-        # maxOutputTokens=4096 budget gets spent mostly on internal
-        # reasoning, leaving only ~150 tokens of visible output (the
-        # JSON gets truncated mid-key). Bump to 16384 so the output
-        # half of the budget can comfortably hold the 5-8k char JSON
-        # for an 11-section report.
+        # Tier.MID = gemini-2.5-flash. Fast (~5-15s), high quota,
+        # non-thinking model so all tokens go to visible output.
+        # max_tokens=16384 lets the ~6k-char JSON for 11 sections fit
+        # comfortably with headroom.
         resp = router.complete(
-            tier=Tier.DEEP,
+            tier=Tier.MID,
             system=sys_prompt,
             user=user_prompt,
             temperature=0.35,
