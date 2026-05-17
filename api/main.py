@@ -3621,7 +3621,7 @@ def cn_hot_rankings(limit: int = 20) -> dict:
 
 
 @app.get("/v1/report/full", tags=["report"])
-def get_full_report(ticker: str, force: bool = False, locale: str = "zh") -> dict:
+def get_full_report(ticker: str, force: bool = False, locale: str = "zh", debug: bool = False) -> dict:
     """Build a full 11-section investment research report for `ticker`.
 
     Supports A-share (6-digit) tickers. Result is the ReportData shape
@@ -3687,6 +3687,17 @@ def get_full_report(ticker: str, force: bool = False, locale: str = "zh") -> dic
         raise HTTPException(400, str(report.get("error")))
 
     report["_cache_status"] = "miss"
+    if debug:
+        try:
+            report["_debug"] = {
+                "llm": rb.get_last_llm_diagnostics(),
+                "facts_summary": {
+                    "current_price": report.get("summary", {}).get("current_price"),
+                    "name": report.get("name"),
+                },
+            }
+        except Exception as e:
+            report["_debug"] = {"error": f"diag fetch failed: {type(e).__name__}: {e}"}
     try:
         rb.put_cache(t, report)
     except Exception as e:

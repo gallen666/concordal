@@ -375,26 +375,64 @@ def _extract_json(text: str) -> dict | None:
     return None
 
 
+# Module-level diagnostics, exposed via the `_debug` field when caller
+# passes ?debug=true on the endpoint. Each generation overwrites these.
+_LAST_LLM_DIAG: dict[str, Any] = {}
+
+
 def call_llm_for_narrative(facts: dict, locale: str = "zh") -> dict:
     """Single LLM call → narrative JSON. Returns empty dict on failure.
 
     Uses Tier.DEEP so the analyst tone matches what the rest of the
-    platform expects (analyst-write, deep-reflection tier — actual tiers
-    are FAST/MID/DEEP, no HIGH).
+    platform expects (actual tiers are FAST/MID/DEEP).
     """
+    global _LAST_LLM_DIAG
     from trading_agents.llm.router import LLMRouter, Tier
     sys_prompt, user_prompt = build_llm_prompt(facts)
     router = LLMRouter(locale=locale)
+
+    _LAST_LLM_DIAG = {
+        "sys_prompt_len": len(sys_prompt),
+        "user_prompt_len": len(user_prompt),
+        "tier": "DEEP",
+        "phase": "starting",
+    }
+
     try:
         resp = router.complete(tier=Tier.DEEP, system=sys_prompt, user=user_prompt, temperature=0.35)
-        data = _extract_json(resp.text or "")
+        raw = resp.text or ""
+        _LAST_LLM_DIAG.update({
+            "phase": "got_response",
+            "raw_len": len(raw),
+            "raw_head_200": raw[:200],
+            "raw_tail_200": raw[-200:] if len(raw) > 200 else "",
+            "model_used": getattr(resp, "model", None) or getattr(resp.usage, "model", None) if hasattr(resp, "usage") else None,
+            "cost_usd": float(getattr(resp.usage, "usd_cost", 0.0) or 0.0) if hasattr(resp, "usage") else 0.0,
+        })
+
+        data = _extract_json(raw)
         if data:
+            _LAST_LLM_DIAG.update({"phase": "json_extracted", "json_keys": list(data.keys())})
             return data
-        log.warning("[report.llm] failed to extract JSON from response (len=%d)", len(resp.text or ""))
+
+        _LAST_LLM_DIAG.update({"phase": "json_extract_failed", "error": "no parseable JSON in response"})
+        log.warning("[report.llm] failed to extract JSON from response (len=%d) — head: %r", len(raw), raw[:300])
         return {}
     except Exception as e:
+        import traceback
+        _LAST_LLM_DIAG.update({
+            "phase": "exception",
+            "error_type": type(e).__name__,
+            "error_msg": str(e),
+            "traceback": traceback.format_exc()[:1000],
+        })
         log.warning("[report.llm] generation failed: %s", e, exc_info=True)
         return {}
+
+
+def get_last_llm_diagnostics() -> dict:
+    """Return the most recent LLM call's diagnostic info (for debug=true)."""
+    return dict(_LAST_LLM_DIAG)
 
 
 # --- Assembly -------------------------------------------------------------
