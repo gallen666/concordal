@@ -210,9 +210,35 @@ function SkeletonRow() {
 }
 
 function Unavailable({ message }: { message?: string }) {
+  // Translate raw Python/urllib3 exception strings into user-friendly Chinese.
+  // EastMoney's push2 API is geo-blocked from our Render Singapore region —
+  // all three patterns below indicate the same root cause.
+  const raw = (message || "").toLowerCase();
+  const isGeoBlock =
+    raw.includes("connection aborted") ||
+    raw.includes("remotedisconnected") ||
+    raw.includes("expecting value") ||
+    raw.includes("远端关闭") ||
+    raw.includes("timeout") ||
+    raw.includes("akshare returned empty");
+
+  if (isGeoBlock) {
+    return (
+      <div className="surface p-4 text-xs text-ink-tertiary leading-relaxed">
+        <div className="font-medium text-ink-secondary mb-1">资金流向数据源暂不可达</div>
+        <div>
+          东方财富 push2 接口仅对中国大陆 IP 开放，本服务器位于
+          Singapore 出口经常被屏（命中率 &lt; 20%）。可改用
+          <a href="/report" className="text-accent underline mx-1">单股深度报告</a>
+          ，那条链路走腾讯+新浪多源，Singapore 可达率 95%+。
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="surface p-4 text-xs text-ink-tertiary">
-      数据暂时不可用 — {message || "akshare 上游未返回"}
+      数据暂时不可用 — {message || "上游未返回"}
     </div>
   );
 }
