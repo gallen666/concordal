@@ -538,9 +538,67 @@ class CnEquityAdapter(MarketAdapter):
             )
 
     def get_technical(self, ticker: str, asof: date) -> TechnicalSnapshot:
+        # v45 helper: if akshare history missing/stale, use Tencent/Sina k-line
+        # to compute REAL indicators (same fallback path as get_price_history).
+        # Previously this method only had a single-point quote fallback, so
+        # SMA/RSI/MACD were either None (no signal) OR — worse — populated
+        # from STALE akshare cache without anyone noticing the asof drift.
+        def _compute_from_rows(rows: list[dict]) -> "TechnicalSnapshot | None":
+            try:
+                import pandas as pd
+                df_rows = []
+                for r in rows:
+                    try:
+                        d = date.fromisoformat(r["date"])
+                    except Exception:
+                        continue
+                    df_rows.append({"date": d, "close": float(r["close"])})
+                if len(df_rows) < 20:
+                    return None
+                df = pd.DataFrame(df_rows).sort_values("date").reset_index(drop=True)
+                close = df["close"].astype(float)
+                last = float(close.iloc[-1])
+                sma20 = float(close.rolling(20).mean().iloc[-1])
+                sma50 = float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else None
+                sma200 = float(close.rolling(200).mean().iloc[-1]) if len(close) >= 200 else None
+                ema12 = float(close.ewm(span=12).mean().iloc[-1])
+                ema26 = float(close.ewm(span=26).mean().iloc[-1])
+                macd = ema12 - ema26
+                signal_series = (close.ewm(span=12).mean() - close.ewm(span=26).mean()).ewm(span=9).mean()
+                signal = float(signal_series.iloc[-1])
+                delta = close.diff()
+                up = delta.clip(lower=0).rolling(14).mean()
+                down = (-delta.clip(upper=0)).rolling(14).mean()
+                rs = (up / down).iloc[-1] if not down.iloc[-1] == 0 else None
+                rsi = float(100 - 100 / (1 + rs)) if rs else 50.0
+                last_date = df["date"].iloc[-1]
+                return TechnicalSnapshot(
+                    ticker=ticker, asof=asof, last_close=last,
+                    sma_20=sma20, sma_50=sma50, sma_200=sma200,
+                    ema_12=ema12, ema_26=ema26,
+                    macd=macd, macd_signal=signal, rsi_14=rsi,
+                    notes=(
+                        f"技术指标 (multi-source 历史 k 线): last={last:.2f} "
+                        f"({last_date}); "
+                        f"趋势：{'上行' if last > (sma50 or last) else '下行'}（vs SMA50）；"
+                        f"RSI14={rsi:.1f}；MACD={macd:.2f}。"
+                    ),
+                )
+            except Exception as e:
+                log.warning("technical compute_from_rows failed: %s", e)
+                return None
+
         if not self._available:
-            # last_close is REQUIRED on TechnicalSnapshot. Try multi-source
-            # for a real price; if even that fails use 0.0 + a loud note.
+            # akshare not installed — try Tencent/Sina history first for REAL indicators
+            try:
+                from .cn_stock_multi_source import fetch_a_share_history_multi
+                rows = fetch_a_share_history_multi(ticker, lookback_days=250)
+                snap = _compute_from_rows(rows or [])
+                if snap is not None:
+                    return snap
+            except Exception as e:
+                log.info("[get_technical] multi-source history failed: %s", e)
+            # Final fallback: single-point quote, no indicators
             try:
                 from .cn_stock_multi_source import fetch_a_share_quote_multi
                 _q = fetch_a_share_quote_multi(ticker)
@@ -552,9 +610,9 @@ class CnEquityAdapter(MarketAdapter):
                 rsi_14=None, macd=None, macd_signal=None,
                 sma_20=None, sma_50=None, sma_200=None, atr_14=None,
                 notes=(
-                    "技术指标不可用 (akshare unreachable). "
+                    "技术指标不可用 (akshare unreachable + Tencent/Sina 历史均失败). "
                     "UNAVAILABLE — DO NOT FABRICATE technical numbers. "
-                    f"last_close={_last} 仅来自多源回退快照。"
+                    f"last_close={_last} 仅来自多源回退报价快照。"
                 ),
             )
         try:
@@ -562,6 +620,16 @@ class CnEquityAdapter(MarketAdapter):
 
             df = self._hist_df(ticker, asof - timedelta(days=400), asof)
             if df is None or df.empty:
+                # v45: akshare empty — go to Tencent/Sina history for REAL indicators
+                try:
+                    from .cn_stock_multi_source import fetch_a_share_history_multi
+                    rows = fetch_a_share_history_multi(ticker, lookback_days=250)
+                    snap = _compute_from_rows(rows or [])
+                    if snap is not None:
+                        return snap
+                except Exception as e:
+                    log.info("[get_technical] multi-source history fallback failed: %s", e)
+                # Last resort
                 try:
                     from .cn_stock_multi_source import fetch_a_share_quote_multi
                     _q = fetch_a_share_quote_multi(ticker)
@@ -573,11 +641,31 @@ class CnEquityAdapter(MarketAdapter):
                     rsi_14=None, macd=None, macd_signal=None,
                     sma_20=None, sma_50=None, sma_200=None, atr_14=None,
                     notes=(
-                        "技术指标不可用 — akshare 返回空。 "
+                        "技术指标不可用 — akshare 返回空, 历史多源也空。 "
                         "UNAVAILABLE — DO NOT FABRICATE technical numbers. "
-                        f"last_close={_last} 来自多源回退快照。"
+                        f"last_close={_last} 来自多源回退报价快照。"
                     ),
                 )
+            # v45: stale-data check — if akshare's newest bar is >7 days old,
+            # trust Tencent/Sina history instead. Prevents the LLM hallucinating
+            # based on year-old SMA20/RSI numbers (real bug observed for 688017
+            # which returned 2024 data when current price is 2× higher).
+            try:
+                newest_str = str(df["日期"].iloc[-1])
+                newest_d = date.fromisoformat(newest_str[:10])
+                if (asof - newest_d).days > 7:
+                    log.warning(
+                        "akshare history for %s ends %s (%d days stale vs asof %s) — using Tencent/Sina fallback",
+                        ticker, newest_d, (asof - newest_d).days, asof,
+                    )
+                    from .cn_stock_multi_source import fetch_a_share_history_multi
+                    rows = fetch_a_share_history_multi(ticker, lookback_days=250)
+                    snap = _compute_from_rows(rows or [])
+                    if snap is not None:
+                        return snap
+            except Exception as e:
+                log.info("[get_technical] stale-check failed (non-fatal): %s", e)
+
             close = df["收盘"].astype(float)
             last = float(close.iloc[-1])
             sma20 = float(close.rolling(20).mean().iloc[-1])
