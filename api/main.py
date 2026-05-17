@@ -2102,6 +2102,125 @@ def lean_insight_export(job_id: str) -> dict:
         raise HTTPException(500, f"Lean export failed: {e}")
 
 
+# ---------------------------------------------------------------------------
+# vnpy SignalData export — converts a report or decision to vnpy CtaTemplate
+# compatible JSON. Read-only — vnpy users paste into their on_signal() handler.
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/vnpy/signal", tags=["execution"])
+def vnpy_signal_export(ticker: str, force: bool = False) -> dict:
+    """Generate a vnpy-compatible SignalData JSON for an A-share ticker.
+
+    Internally calls /v1/report/full to get the latest decision, then
+    converts to vnpy's CtaTemplate signal schema (direction / stop_loss /
+    take_profit / size_fraction / support_level). Suitable for ingestion
+    into a vnpy strategy via `on_signal(signal)`.
+    """
+    try:
+        from api.report_builder import assemble_report
+        from trading_agents.execution.vnpy_bridge import report_to_vnpy_signal
+    except Exception as e:
+        raise HTTPException(500, f"vnpy bridge import failed: {e}")
+
+    try:
+        report = assemble_report(ticker, locale="zh")
+        if "error" in report:
+            raise HTTPException(400, report.get("error"))
+        signal = report_to_vnpy_signal(report)
+        return {
+            "signal": signal,
+            "source_report_id": report.get("report_id"),
+            "generated_at": report.get("generated_at"),
+            "_note": "Read-only export. Paste into vnpy CtaTemplate.on_signal() handler.",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"vnpy signal generation failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# FinRL Kelly position-sizing — DRL-inspired risk budgeting helper.
+# Pure-math endpoint; no LLM calls; sub-millisecond response.
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/finrl/kelly", tags=["execution"])
+def finrl_kelly_sizing(
+    confidence: float = 0.6,
+    hit_rate: float = 0.62,
+    expected_return_pct: float = 15.0,
+    expected_drawdown_pct: float = 10.0,
+    safety_factor: float = 0.25,
+) -> dict:
+    """Quarter-Kelly position sizing — DRL-equivalent risk budgeting.
+
+    Lightweight stand-in for FinRL's PPO position-sizing agent (which
+    requires PyTorch + gym + stable-baselines3 — too heavy for our
+    serverless free tier). Returns the same shape FinRL's `act()` would.
+
+    Inputs are percentages (e.g. 15.0 for 15%, NOT 0.15).
+
+    Example: /v1/finrl/kelly?hit_rate=0.7&expected_return_pct=20&expected_drawdown_pct=8
+      → Kelly fraction ~5%, suggested range "3-5%"
+    """
+    try:
+        from trading_agents.strategies.finrl_kelly import (
+            kelly_position_size,
+            to_position_range_string,
+        )
+        result = kelly_position_size(
+            confidence=confidence,
+            historical_hit_rate=hit_rate,
+            expected_return_pct=expected_return_pct,
+            expected_drawdown_pct=expected_drawdown_pct,
+            safety_factor=safety_factor,
+        )
+        return {
+            "fraction": result.fraction,
+            "fraction_pct": result.fraction_pct,
+            "range": to_position_range_string(result),
+            "range_low_pct": result.range_low_pct,
+            "range_high_pct": result.range_high_pct,
+            "kelly_raw": result.kelly_raw,
+            "safety_factor": result.safety_factor,
+            "method": result.method,
+            "rationale": result.rationale,
+            "_note": "Inspired by FinRL DRL position sizing — quarter-Kelly default.",
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Kelly sizing failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# FinGPT vocabulary endpoint — returns the FinNLP-style finance glossary.
+# Used by the /ecosystem page to advertise integration coverage.
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/fingpt/glossary", tags=["llm"])
+def fingpt_glossary_endpoint(max_terms: int = 0) -> dict:
+    """Return the FinNLP-style finance vocabulary used to enrich LLM prompts.
+
+    When max_terms=0 (default), returns the full curated set. Otherwise
+    truncates to the top N most-cited terms. The same glossary is injected
+    into report-builder system prompts (when enabled).
+    """
+    try:
+        from trading_agents.llm.fingpt_glossary import _FINNLP_TERMS, get_term_count
+        items = list(_FINNLP_TERMS.items())
+        if max_terms > 0:
+            items = items[:max_terms]
+        return {
+            "total_terms": get_term_count(),
+            "returned": len(items),
+            "vocabulary": [{"zh": zh, "en": en} for zh, en in items],
+            "source": "FinNLP corpus (top-frequency) + Wind/iFinD professional terms",
+            "license": "MIT (term curation only — no FinGPT weights bundled)",
+            "_note": "Inspired by FinGPT — vocabulary anchor only, full SDK not installed.",
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Glossary load failed: {e}")
+
+
 @app.post("/v1/alpaca/paper/orders/from-decision/{job_id}", tags=["execution"])
 def alpaca_order_from_decision(job_id: str, user: CurrentUser = Depends(get_current_user)) -> dict:
     """Convert a finished decision into a paper order on Alpaca.

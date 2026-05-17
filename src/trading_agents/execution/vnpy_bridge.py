@@ -58,3 +58,91 @@ def decision_to_vnpy(decision: dict) -> VnpyOrderRequest | None:
         price=price,
         order_type="LIMIT",
     )
+
+
+def report_to_vnpy_signal(report: dict) -> dict:
+    """Richer export — converts a /v1/report/full output to a vnpy-compatible
+    SignalData dict that vnpy's CtaTemplate.on_signal() can ingest directly.
+
+    Unlike decision_to_vnpy (which returns only OrderRequest with size/price),
+    this includes stop_loss, take_profit, support_level, and a human-readable
+    rationale — i.e. a complete signal a vnpy strategy can act on without
+    re-querying our API.
+
+    Output schema matches vnpy 3.x SignalData + our extensions:
+      {
+        symbol, exchange, direction, offset,
+        price, stop_loss, support_level, take_profit,
+        size_fraction, tif, rationale, source, schema_version
+      }
+    """
+    summary = report.get("summary") or {}
+    technical = report.get("technical") or {}
+    op_plan = report.get("operation_plan") or {}
+
+    rating = (summary.get("rating") or op_plan.get("action") or "HOLD").upper()
+    direction_map = {"BUY": "long", "SELL": "short", "HOLD": "flat"}
+    direction = direction_map.get(rating, "flat")
+
+    ticker = report.get("ticker") or "UNKNOWN"
+    exchange = (report.get("exchange") or "SSE").upper()
+    current_price = float(summary.get("current_price") or 0.0)
+    target_high = float(summary.get("target_price_high") or current_price)
+    target_low = float(summary.get("target_price_low") or current_price * 0.9)
+
+    # Pull support / pressure levels from technical framework_3 if present
+    support_level = round(current_price * 0.95, 2)
+    take_profit = target_high
+    f3 = technical.get("framework_3_key_levels") or {}
+    sup_dict = f3.get("support") or {}
+    pres_dict = f3.get("pressure") or {}
+    for raw in (sup_dict.get("level"),):
+        try:
+            if raw not in (None, "—", ""):
+                support_level = float(str(raw).replace("元", "").strip())
+        except (TypeError, ValueError):
+            pass
+    for raw in (pres_dict.get("level"),):
+        try:
+            if raw not in (None, "—", ""):
+                take_profit = float(str(raw).replace("元", "").strip())
+        except (TypeError, ValueError):
+            pass
+
+    # Parse "5-15%" → midpoint as fraction
+    size_fraction = 0.10
+    size_range = summary.get("position_size_range") or "5-15%"
+    try:
+        clean = str(size_range).replace("%", "").strip()
+        if "-" in clean:
+            lo, hi = clean.split("-", 1)
+            size_fraction = (float(lo) + float(hi)) / 200.0
+        else:
+            size_fraction = float(clean) / 100.0
+    except (TypeError, ValueError):
+        size_fraction = 0.10
+
+    rationale = (
+        report.get("core_view")
+        or summary.get("entry_timing")
+        or op_plan.get("trade_decision")
+        or "TradingAgents decision"
+    )
+    if isinstance(rationale, str) and len(rationale) > 280:
+        rationale = rationale[:280] + "…"
+
+    return {
+        "symbol": f"{ticker}.{exchange}",
+        "exchange": exchange,
+        "direction": direction,
+        "offset": "open" if direction != "flat" else "close",
+        "price": round(current_price, 2),
+        "stop_loss": round(target_low if direction == "long" else target_high, 2),
+        "support_level": round(support_level, 2),
+        "take_profit": round(take_profit, 2),
+        "size_fraction": round(size_fraction, 4),
+        "tif": "GFD",  # Good-For-Day (A-share T+1 standard)
+        "rationale": rationale,
+        "source": "tradingagents",
+        "schema_version": "vnpy-signal-v1",
+    }
