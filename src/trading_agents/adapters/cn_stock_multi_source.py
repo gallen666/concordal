@@ -847,6 +847,80 @@ def fetch_a_share_fundamentals_sina_pe(ticker: str) -> dict | None:
         return None
 
 
+def fetch_a_share_dupont_xueqiu(ticker: str) -> dict | None:
+    """Xueqiu finance/indicator — annual ratio decomposition.
+
+    Returns ROE / 净利率 / 资产周转率 / 杠杆率 (权益乘数) explicitly,
+    which is exactly what the DuPont analysis needs. The other fundamentals
+    endpoints (Tencent quote, EastMoney push2) only return PE/PB/市值;
+    they don't decompose into the 3 DuPont components.
+
+    URL: https://stock.xueqiu.com/v5/stock/finance/cn/indicator.json
+         ?symbol=SH600519&type=Q4&is_detail=true&count=1
+
+    type=Q4 means most-recent fiscal year. count=1 keeps payload small.
+    """
+    try:
+        pfx = _exchange_prefix(ticker)
+    except ValueError:
+        return None
+    sym = f"{pfx.upper()}{ticker}"
+    url = (
+        f"https://stock.xueqiu.com/v5/stock/finance/cn/indicator.json"
+        f"?symbol={sym}&type=Q4&is_detail=true&count=1"
+    )
+    try:
+        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as c:
+            r = c.get(url, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Referer": f"https://xueqiu.com/S/{sym}",
+            })
+        if r.status_code != 200:
+            return None
+        body = r.json() or {}
+        data = (body.get("data") or {})
+        items = data.get("list") or []
+        if not items:
+            return None
+        latest = items[0] or {}
+
+        # Xueqiu indicator field names (well-documented from xueqiu.com/snowball):
+        #   net_profit_atsopc_ratio   净资产收益率 ROE (%)
+        #   net_selling_rate          净利率 (%)
+        #   total_assets_turnover     总资产周转率 (次)
+        #   equity_multiplier         权益乘数 (杠杆率)
+        # All can come back as [value, yoy_change] arrays or simple floats.
+        def _pick(field):
+            v = latest.get(field)
+            if isinstance(v, list) and v:
+                return v[0]
+            if isinstance(v, (int, float)):
+                return v
+            return None
+
+        roe = _pick("net_profit_atsopc_ratio") or _pick("avg_roe")
+        net_margin = _pick("net_selling_rate") or _pick("np_to_or")
+        asset_turnover = _pick("total_assets_turnover") or _pick("ta_turnover")
+        leverage = _pick("equity_multiplier")
+
+        # Filter out garbage
+        if all(v is None for v in (roe, net_margin, asset_turnover, leverage)):
+            return None
+
+        return {
+            "ticker": ticker,
+            "roe": roe,
+            "net_margin": net_margin,
+            "asset_turnover": asset_turnover,
+            "leverage": leverage,
+            "source": "xueqiu_finance_indicator",
+            "report_date": latest.get("report_date") or latest.get("end_date"),
+        }
+    except Exception as e:
+        log.warning("xueqiu dupont indicator failed for %s: %s", ticker, e)
+        return None
+
+
 def fetch_a_share_fundamentals_multi(ticker: str) -> dict | None:
     """Try Tencent → Xueqiu → EastMoney push2 in order.
 

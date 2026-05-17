@@ -91,6 +91,7 @@ def fetch_facts(ticker: str, market: str) -> dict:
         # Fundamentals
         "pe": None, "pb": None, "ps": None,
         "roe": None, "net_margin": None,
+        "asset_turnover": None, "leverage": None,
         "revenue_yoy": None, "profit_yoy": None,
         "dividend_yield": None,
         "market_cap": None,
@@ -259,6 +260,36 @@ def fetch_facts(ticker: str, market: str) -> dict:
     # narrative — LLM can reason on MA trends + support/pressure even
     # without RSI/MACD numbers. If you want them, compute inline from
     # closes here (TODO: add lightweight inline RSI calculation).
+
+    # 7a. DuPont real data from Xueqiu finance/indicator ----------------
+    # Xueqiu's finance/indicator endpoint returns the actual DuPont
+    # decomposition (净利率, 资产周转率, 杠杆率) — exactly what PE/PB-derived
+    # ROE alone cannot provide. Try this BEFORE the math fallback so real
+    # values take precedence.
+    if market == "a_share":
+        try:
+            from trading_agents.adapters.cn_stock_multi_source import (
+                fetch_a_share_dupont_xueqiu,
+            )
+            dupont = fetch_a_share_dupont_xueqiu(ticker)
+            if dupont:
+                if out.get("roe") is None and dupont.get("roe") is not None:
+                    out["roe"] = dupont["roe"]
+                    out["_provenance"]["roe"] = dupont["source"]
+                if out.get("net_margin") is None and dupont.get("net_margin") is not None:
+                    out["net_margin"] = dupont["net_margin"]
+                    out["_provenance"]["net_margin"] = dupont["source"]
+                if dupont.get("asset_turnover") is not None:
+                    out["asset_turnover"] = dupont["asset_turnover"]
+                    out["_provenance"]["asset_turnover"] = dupont["source"]
+                if dupont.get("leverage") is not None:
+                    out["leverage"] = dupont["leverage"]
+                    out["_provenance"]["leverage"] = dupont["source"]
+                log.info("[report.facts] dupont via xueqiu: roe=%s nm=%s at=%s lev=%s",
+                         out.get("roe"), out.get("net_margin"),
+                         out.get("asset_turnover"), out.get("leverage"))
+        except Exception as e:
+            log.warning("[report.facts] xueqiu dupont fetch failed: %s", e)
 
     # 7. DuPont decomposition fallbacks ----------------------------------
     # Most sources (Tencent) don't give us ROE / 净利率 / 资产周转率 / 杠杆率
@@ -1038,27 +1069,101 @@ def assemble_report(ticker: str, locale: str = "zh") -> dict:
     })
 
     # Hard override: force-fill ROE from facts.roe even if the LLM left it null.
-    # facts.roe was derived from PB/PE in fetch_facts (step 7) when sources
-    # don't provide it directly. This guarantees the UI never shows "数据待补充"
-    # on ROE when PE+PB are present.
-    _dupont = qualitative.get("framework_2_dupont") or {}
+    # Also fill empty decomposition[] / nature_of_change[] arrays (LLM sometimes
+    # returns the framework_2_dupont parent dict but with empty child arrays —
+    # setdefault doesn't help in that case since the parent key exists).
+    _dupont = qualitative.get("framework_2_dupont")
+    if not isinstance(_dupont, dict):
+        _dupont = {}
+        qualitative["framework_2_dupont"] = _dupont
+
+    _dupont.setdefault("title", "杜邦分解")
+
+    # ROE: prefer LLM-provided non-null, else facts (derived from PB/PE)
     _roe_from_facts = facts.get("roe")
-    if isinstance(_dupont, dict) and _roe_from_facts is not None:
-        if _dupont.get("roe") is None:
-            _dupont["roe"] = _roe_from_facts
-            # Append a note explaining the derivation provenance
-            prov = (facts.get("_provenance") or {}).get("roe", "")
-            if "derived" in str(prov).lower() and _dupont.get("change_signal") == "数据待补充":
-                _dupont["change_signal"] = (
-                    f"ROE {_roe_from_facts:.2f}% 由市场 PE/PB 倒推得出（PB÷PE 数学恒等式）。"
-                    f"下季度财报披露后可直接核对净资产收益率指标，验证当前估值假设。"
-                )
-        # If the LLM left net_margin null but we have facts.net_margin, fill it
-        for row in _dupont.get("decomposition", []):
-            if not isinstance(row, dict):
-                continue
-            if row.get("name") == "净利率" and row.get("value") is None and facts.get("net_margin") is not None:
-                row["value"] = facts["net_margin"]
+    if _dupont.get("roe") is None and _roe_from_facts is not None:
+        _dupont["roe"] = _roe_from_facts
+
+    # decomposition: must always have 3 rows for the UI to render
+    _decomp = _dupont.get("decomposition")
+    if not isinstance(_decomp, list) or len(_decomp) == 0:
+        _dupont["decomposition"] = [
+            {"name": "净利率", "value": facts.get("net_margin"), "unit": "%",
+             "note": "净利率反映公司销售收入转化为净利润的效率，是衡量产品定价权和成本控制能力的核心盈利指标。该数据需从季度财报中提取，公开行情接口暂未披露。"},
+            {"name": "资产周转率", "value": None, "unit": "次",
+             "note": "资产周转率（营业收入÷总资产）衡量资产运营效率，越高代表用更少的资产产生更多收入。建议在最新季度报告披露后跟踪该指标的变化趋势。"},
+            {"name": "杠杆率", "value": None, "unit": "",
+             "note": "杠杆率（总资产÷净资产 / 权益乘数）反映财务杠杆使用程度。该指标暂未在公开行情数据中披露，需待财报数据。"},
+        ]
+
+    # nature_of_change: must have at least 2 entries
+    _noc = _dupont.get("nature_of_change")
+    if not isinstance(_noc, list) or len(_noc) == 0:
+        _dupont["nature_of_change"] = [
+            {"label": "结构 vs 周期",
+             "body": "在缺乏季度财报数据的情况下，难以严格区分盈利变化的结构性与周期性成因。可结合行业景气度与公司战略布局综合判断。"},
+            {"label": "可持续性",
+             "body": "ROE 的可持续性取决于净利率、资产周转率与杠杆率三因素的稳定性。当其中任一因素显著恶化时，高 ROE 难以为继。"},
+        ]
+
+    # key_observation_indicator and change_signal
+    if not _dupont.get("key_observation_indicator"):
+        _dupont["key_observation_indicator"] = "下季度毛利率、净利率与营业收入同比"
+
+    _prov = (facts.get("_provenance") or {}).get("roe", "")
+    if not _dupont.get("change_signal") or _dupont.get("change_signal") == "数据待补充":
+        if "derived" in str(_prov).lower() and _roe_from_facts is not None:
+            _dupont["change_signal"] = (
+                f"ROE {_roe_from_facts:.2f}% 由市场 PE/PB 倒推得出（PB÷PE 数学恒等式）。"
+                f"下季度财报披露后可直接核对净资产收益率指标，验证当前估值是否得到基本面支撑。"
+            )
+        elif _roe_from_facts is not None:
+            _dupont["change_signal"] = (
+                f"当前 ROE 为 {_roe_from_facts:.2f}%。重点关注下季度净利率与资产周转率的变化方向，"
+                f"以判断 ROE 提升或下滑是来自盈利质量改善还是资产运营效率波动。"
+            )
+        else:
+            _dupont["change_signal"] = "下季度财报披露后可重新评估 ROE、净利率与杠杆率三大维度的演变方向。"
+
+    # Fill decomposition rows with real DuPont data from facts (Xueqiu source).
+    # facts now carries net_margin, asset_turnover, leverage when Xueqiu's
+    # finance/indicator endpoint succeeded. Each row gets the actual value
+    # AND a richer note when real data is available.
+    _name_to_facts_key = {
+        "净利率": "net_margin",
+        "资产周转率": "asset_turnover",
+        "杠杆率": "leverage",
+    }
+    for row in _dupont.get("decomposition", []):
+        if not isinstance(row, dict):
+            continue
+        facts_key = _name_to_facts_key.get(row.get("name"))
+        if not facts_key:
+            continue
+        v_from_facts = facts.get(facts_key)
+        if row.get("value") is None and v_from_facts is not None:
+            try:
+                row["value"] = round(float(v_from_facts), 2)
+                # Update note to reflect real data presence
+                prov = (facts.get("_provenance") or {}).get(facts_key, "")
+                if "xueqiu" in str(prov).lower():
+                    if row["name"] == "净利率":
+                        row["note"] = (
+                            f"净利率 {row['value']:.2f}%（雪球财务指标，最新财年）。"
+                            f"反映公司销售收入转化为净利润的效率，是衡量产品定价权和成本控制能力的核心盈利指标。"
+                        )
+                    elif row["name"] == "资产周转率":
+                        row["note"] = (
+                            f"总资产周转率 {row['value']:.2f} 次（雪球财务指标）。"
+                            f"衡量资产运营效率：营业收入÷总资产，数值越高代表用更少资产产生更多收入。"
+                        )
+                    elif row["name"] == "杠杆率":
+                        row["note"] = (
+                            f"权益乘数 {row['value']:.2f}（雪球财务指标）。"
+                            f"反映财务杠杆使用程度：总资产÷净资产。该指标越高代表资产中负债占比越高。"
+                        )
+            except (TypeError, ValueError):
+                pass
 
     qualitative.setdefault("framework_3_logic_chain", {
         "title": "逻辑链构建",
