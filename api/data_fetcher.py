@@ -386,11 +386,9 @@ def probe_all_sources() -> dict:
     success bool, and key fields it returned."""
     results: dict = {"canary": _CANARY_TICKER, "as_of": time.time(), "sources": []}
     from trading_agents.adapters.cn_stock_multi_source import (
-        fetch_a_share_quote_xueqiu,
         fetch_a_share_quote_tencent,
         fetch_a_share_quote_sina,
         fetch_a_share_fundamentals_tencent,
-        fetch_a_share_fundamentals_xueqiu,
         fetch_a_share_fundamentals_eastmoney,
     )
 
@@ -415,15 +413,27 @@ def probe_all_sources() -> dict:
                 "error": f"{type(e).__name__}: {e}",
             }
 
+    # v41: removed xueqiu/quote and xueqiu/fundamentals from active probes —
+    # Xueqiu API requires auth (xq_a_token cookie from a logged-in session),
+    # which we can't obtain anonymously from the cn-proxy (stateless edge
+    # functions). The helpers remain in cn_stock_multi_source as best-effort
+    # fallbacks, but probing them here just adds noise to the health page.
+    # Tencent + Sina + EastMoney cover all needed data fields.
     results["sources"] = [
-        _probe("xueqiu/quote",          fetch_a_share_quote_xueqiu,          "current"),
-        _probe("tencent/quote",         fetch_a_share_quote_tencent,         "current"),
-        _probe("sina/quote",            fetch_a_share_quote_sina,            "current"),
-        _probe("tencent/fundamentals",   fetch_a_share_fundamentals_tencent,   "pe"),
-        _probe("xueqiu/fundamentals",   fetch_a_share_fundamentals_xueqiu,   "pe"),
+        _probe("tencent/quote",          fetch_a_share_quote_tencent,         "current"),
+        _probe("sina/quote",             fetch_a_share_quote_sina,            "current"),
+        _probe("tencent/fundamentals",   fetch_a_share_fundamentals_tencent,  "pe"),
         _probe("eastmoney/fundamentals", fetch_a_share_fundamentals_eastmoney, "pe"),
     ]
-    results["healthy_count"]   = sum(1 for s in results["sources"] if s["ok"])
-    results["total_sources"]   = len(results["sources"])
+    # Mark xueqiu as 'auth-required' informational entry (not counted in healthy)
+    results["sources"].append({
+        "name": "xueqiu (auth-required)",
+        "ok": None,
+        "latency_ms": 0,
+        "value_sample": None,
+        "error": "skipped — Xueqiu v5 API requires xq_a_token cookie; falls back via Tencent/Sina",
+    })
+    results["healthy_count"]   = sum(1 for s in results["sources"] if s["ok"] is True)
+    results["total_sources"]   = sum(1 for s in results["sources"] if s["ok"] is not None)
     results["health_status"]   = "ok" if results["healthy_count"] >= 3 else ("degraded" if results["healthy_count"] >= 1 else "down")
     return results
