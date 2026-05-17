@@ -1,4 +1,13 @@
-// v33 — Node-runtime proxy for Chinese-market data APIs (EastMoney / Xueqiu / etc).
+// v34 — Node-runtime proxy for Chinese-market data APIs (EastMoney / Xueqiu / etc).
+//
+// v34 change vs v33:
+//   - Accept POST /api/cn-proxy with JSON body {upstream, method?, body?}
+//     so long upstream URLs (≥1.5K) don't hit Vercel edge nginx URL-length
+//     ceiling (which silently 502s BEFORE our function runs).
+//     Verified failure mode: clist/get with fields=f1..f222 (~1.7K) returns
+//     nginx 502 in ~1.5s with content-type:text/html — handler never ran,
+//     so our v33 catch-all couldn't help. POST body bypasses that entirely.
+//   - GET form (with ?upstream=) preserved for short URLs (faster).
 //
 // v33 changes vs v32:
 //   - Fixed bug: line 126 referenced undefined ALLOWED_HOSTS (was ALLOWED_SUFFIXES)
@@ -132,11 +141,42 @@ async function handler(req: Request): Promise<Response> {
   const startedAt = Date.now();
   try {
     const reqUrl = new URL(req.url);
-    const upstreamParam = reqUrl.searchParams.get("upstream");
+    let upstreamParam = reqUrl.searchParams.get("upstream");
+    // v34: For long upstream URLs (≥1.5K chars) the GET query-string form
+    // hits Vercel edge limits (nginx 502 before our function runs). Accept
+    // POST with JSON body {upstream, method?, body?} as the long-URL escape.
+    let upstreamMethod = req.method;
+    let upstreamBody: ArrayBuffer | undefined;
+    let usedPostBody = false;
+    if (!upstreamParam && req.method === "POST") {
+      const ct = req.headers.get("content-type") || "";
+      if (ct.includes("json")) {
+        try {
+          const j = (await req.json()) as {
+            upstream?: string;
+            method?: string;
+            body?: string;
+          };
+          upstreamParam = j.upstream;
+          upstreamMethod = (j.method || "GET").toUpperCase();
+          if (j.body) {
+            upstreamBody = new TextEncoder().encode(j.body).buffer;
+          }
+          usedPostBody = true;
+        } catch (e) {
+          return jsonError(400, {
+            error: "invalid_post_body",
+            message: (e as Error).message,
+            usage: "POST /api/cn-proxy with JSON body {upstream: '...', method?: 'GET'}",
+          });
+        }
+      }
+    }
     if (!upstreamParam) {
       return jsonError(400, {
         error: "missing_upstream",
-        usage: "GET /api/cn-proxy?upstream=<encoded-url>",
+        usage:
+          "GET /api/cn-proxy?upstream=<encoded-url>  OR  POST /api/cn-proxy with body {upstream: '...'}",
         allowed_suffixes: ALLOWED_SUFFIXES,
       });
     }
@@ -157,19 +197,23 @@ async function handler(req: Request): Promise<Response> {
     }
 
     // Forward extra query params (besides `upstream`) onto the target URL.
-    for (const [k, v] of reqUrl.searchParams.entries()) {
-      if (k === "upstream" || k.startsWith("nxtP") || k.startsWith("nxtI")) continue;
-      target.searchParams.set(k, v);
+    // Skipped for POST-body mode (upstream URL already complete in body).
+    if (!usedPostBody) {
+      for (const [k, v] of reqUrl.searchParams.entries()) {
+        if (k === "upstream" || k.startsWith("nxtP") || k.startsWith("nxtI")) continue;
+        target.searchParams.set(k, v);
+      }
     }
 
     const headers = pruneRequestHeaders(req.headers);
     const init: RequestInit = {
-      method: req.method,
+      method: upstreamMethod,
       headers,
       redirect: "follow",
     };
-    if (req.method !== "GET" && req.method !== "HEAD") {
-      init.body = await req.arrayBuffer();
+    if (upstreamMethod !== "GET" && upstreamMethod !== "HEAD") {
+      // Prefer explicit POST-body body, fall back to req body for raw POST passthrough
+      init.body = upstreamBody ?? (await req.arrayBuffer());
     }
 
     // Explicit timeout via AbortController — Vercel maxDuration is 30s; we

@@ -114,6 +114,20 @@ def _proxy_url(original_url: str) -> str:
     return f"{proxy_base}/api/cn-proxy?upstream={urllib.parse.quote(normalized, safe='')}"
 
 
+# v34: GET query-string URL has a ~1.5K char practical ceiling on Vercel —
+# above that, nginx returns 502 BEFORE our serverless function runs (verified
+# via v33 diagnostic catch-all NOT firing; response was text/html nginx page,
+# not our JSON). Switch long URLs to POST with JSON body {upstream:...}.
+_POST_THRESHOLD = 1500
+
+
+def _proxy_post_url() -> str:
+    proxy_base = os.environ.get(
+        "TA_CN_PROXY_BASE", "https://trading-agents-platform.vercel.app"
+    ).rstrip("/")
+    return f"{proxy_base}/api/cn-proxy"
+
+
 _patched = False
 
 
@@ -128,6 +142,7 @@ def apply_patch() -> bool:
         return False
 
     try:
+        import json as _json
         import requests
         from urllib.parse import urlparse
     except ImportError:
@@ -147,14 +162,44 @@ def apply_patch() -> bool:
                 # (avoid infinite loops in the proxy itself).
                 if "/api/cn-proxy" in url:
                     return _orig_send(self, request, **kwargs)
-                new_url = _proxy_url(url)
+
+                # Build GET-style proxy URL first to measure length
+                get_proxy_url = _proxy_url(url)
                 log.debug("[cn_proxy_patch] %s → cn-proxy", parsed.hostname)
-                # Build a fresh PreparedRequest pointing at the proxy.
-                # We keep method, headers, body — only swap URL.
-                request.url = new_url
+
                 # Remove Host header to let requests reset it for vercel.app
                 if request.headers.get("Host"):
                     del request.headers["Host"]
+
+                # v34: If GET URL would be too long for Vercel edge, switch to
+                # POST {upstream, method, body} — bypasses nginx URL ceiling.
+                if len(get_proxy_url) >= _POST_THRESHOLD:
+                    normalized = _normalize_cn_url(url)
+                    payload = {
+                        "upstream": normalized,
+                        "method": request.method or "GET",
+                    }
+                    # Forward body for non-GET requests
+                    if request.body is not None and request.method not in ("GET", "HEAD"):
+                        try:
+                            if isinstance(request.body, (bytes, bytearray)):
+                                payload["body"] = request.body.decode("utf-8", errors="replace")
+                            else:
+                                payload["body"] = str(request.body)
+                        except Exception:
+                            pass
+                    body_bytes = _json.dumps(payload).encode("utf-8")
+                    request.url = _proxy_post_url()
+                    request.method = "POST"
+                    request.body = body_bytes
+                    # Replace content-length / content-type for the JSON body
+                    request.headers["Content-Type"] = "application/json"
+                    request.headers["Content-Length"] = str(len(body_bytes))
+                    log.debug(
+                        "[cn_proxy_patch] long URL %d chars → POST body", len(get_proxy_url)
+                    )
+                else:
+                    request.url = get_proxy_url
         except Exception as e:
             log.warning("[cn_proxy_patch] URL rewrite failed: %s", e)
         return _orig_send(self, request, **kwargs)

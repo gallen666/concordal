@@ -2395,14 +2395,29 @@ def _fetch_cn_url_via_proxy(upstream_url: str, timeout: int = 15) -> tuple[int, 
 
     Returns (status_code, response_text). On proxy failure, returns
     (0, error_message).
+
+    v34: For URLs that would exceed ~1.5K chars when wrapped in GET ?upstream=,
+    switch to POST /api/cn-proxy with JSON body {upstream:...}. The Vercel
+    edge nginx silently returns 502 (text/html, before our function runs)
+    for long GET URLs; POST body bypasses that ceiling.
     """
+    import json as _json
     import urllib.parse
     import requests
-    proxy_url = f"{_CN_PROXY_BASE}/api/cn-proxy?upstream={urllib.parse.quote(upstream_url, safe='')}"
+    proxy_get_url = f"{_CN_PROXY_BASE}/api/cn-proxy?upstream={urllib.parse.quote(upstream_url, safe='')}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+    }
     try:
-        r = requests.get(proxy_url, timeout=timeout, headers={
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
-        })
+        if len(proxy_get_url) >= 1500:
+            r = requests.post(
+                f"{_CN_PROXY_BASE}/api/cn-proxy",
+                json={"upstream": upstream_url, "method": "GET"},
+                timeout=timeout,
+                headers=headers,
+            )
+        else:
+            r = requests.get(proxy_get_url, timeout=timeout, headers=headers)
         return r.status_code, r.text
     except Exception as e:
         return 0, f"proxy fetch failed: {e}"
