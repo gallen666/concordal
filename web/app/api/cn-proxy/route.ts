@@ -30,34 +30,44 @@ export const maxDuration = 30;
 // other routes (like gemini-proxy) keep their own default (US-East).
 export const preferredRegion = "hkg1";
 
-// Whitelist of allowed upstream hosts (defense-in-depth against SSRF).
-const ALLOWED_HOSTS = new Set<string>([
-  // EastMoney
-  "push2.eastmoney.com",
-  "push2his.eastmoney.com",
-  "emweb.eastmoney.com",
-  "emweb.securities.eastmoney.com",
-  "datacenter.eastmoney.com",
-  "datacenter-web.eastmoney.com",
-  "guba.eastmoney.com",
-  // Xueqiu
-  "stock.xueqiu.com",
-  "xueqiu.com",
-  // Tencent
-  "qt.gtimg.cn",
-  "web.ifzq.gtimg.cn",
-  "stockapp.finance.qq.com",
-  // Sina
-  "hq.sinajs.cn",
-  "money.finance.sina.com.cn",
-  "finance.sina.com.cn",
-  // Tonghuashun
-  "stock.10jqka.com.cn",
-  "d.10jqka.com.cn",
-  // Baidu finance
+// Whitelist of allowed upstream host SUFFIXES (defense-in-depth against SSRF).
+// Suffix matching covers all subdomains — '.eastmoney.com' allows push2 /
+// push2his / emweb / datacenter / np-anotice / 88.push2 / so / etc.
+const ALLOWED_SUFFIXES: string[] = [
+  // EastMoney + 东方财富 全系
+  ".eastmoney.com",
+  ".dfcfw.com",            // 东方财富 CDN
+  // Xueqiu 雪球
+  ".xueqiu.com",
+  // Tencent 腾讯
+  ".gtimg.cn",
+  ".qq.com",
+  // Sina 新浪
+  ".sinajs.cn",
+  ".sina.com.cn",
+  // Tonghuashun 同花顺
+  ".10jqka.com.cn",
+  ".hexin.cn",
+  // Baidu finance 百度
   "finance.baidu.com",
   "gushitong.baidu.com",
-]);
+  // CNINFO 巨潮 (公告)
+  ".cninfo.com.cn",
+  ".szse.cn",
+  ".sse.com.cn",
+];
+
+function isHostAllowed(host: string): boolean {
+  const h = host.toLowerCase();
+  for (const suf of ALLOWED_SUFFIXES) {
+    if (suf.startsWith(".")) {
+      if (h.endsWith(suf) || h === suf.slice(1)) return true;
+    } else {
+      if (h === suf) return true;
+    }
+  }
+  return false;
+}
 
 
 function pruneRequestHeaders(src: Headers): Headers {
@@ -128,12 +138,12 @@ async function handler(req: Request): Promise<Response> {
     );
   }
 
-  if (!ALLOWED_HOSTS.has(target.host)) {
+  if (!isHostAllowed(target.host)) {
     return new Response(
       JSON.stringify({
         error: "host not allowed",
         host: target.host,
-        allowed_hosts: Array.from(ALLOWED_HOSTS),
+        allowed_suffixes: ALLOWED_SUFFIXES,
       }),
       { status: 403, headers: { "content-type": "application/json" } }
     );

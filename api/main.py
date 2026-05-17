@@ -91,6 +91,17 @@ _maybe_init_sentry()
 
 # --- app -----------------------------------------------------------------
 
+# v31: Install global monkey-patch on requests.Session.send to route every
+# Chinese-market HTTP call (akshare, xueqiu, eastmoney, etc.) through our
+# Vercel HK proxy. This must happen BEFORE any module that initiates
+# CN-domain requests is imported.
+try:
+    from trading_agents.net.cn_proxy_patch import apply_patch as _apply_cn_proxy_patch
+    _apply_cn_proxy_patch()
+except Exception as _e:
+    import logging as _logging
+    _logging.getLogger(__name__).warning("[cn_proxy_patch] failed to apply: %s", _e)
+
 app = FastAPI(
     title="TradingAgents Platform API",
     version="0.2.0",
