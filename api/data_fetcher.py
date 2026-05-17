@@ -183,12 +183,18 @@ def fetch_fundamentals_a_share(ticker: str) -> FetchResult:
     fields the earlier one left null).
     """
     from trading_agents.adapters.cn_stock_multi_source import (
+        fetch_a_share_fundamentals_tencent,
         fetch_a_share_fundamentals_xueqiu,
         fetch_a_share_fundamentals_eastmoney,
     )
     sources_tried: list[str] = []
     elapsed_by_src: dict[str, int] = {}
+    # Tencent first because its quote CDN works from anywhere AND its 50-
+    # field response gives PE / PB / 总市值 in stable positions. Xueqiu +
+    # EastMoney are nice-to-have backups but often return 200 with empty
+    # body when called from Singapore / non-mainland IPs.
     chain = [
+        ("tencent",   _wrap(fetch_a_share_fundamentals_tencent)),
         ("xueqiu",    _wrap(fetch_a_share_fundamentals_xueqiu)),
         ("eastmoney", _wrap(fetch_a_share_fundamentals_eastmoney)),
     ]
@@ -383,6 +389,7 @@ def probe_all_sources() -> dict:
         fetch_a_share_quote_xueqiu,
         fetch_a_share_quote_tencent,
         fetch_a_share_quote_sina,
+        fetch_a_share_fundamentals_tencent,
         fetch_a_share_fundamentals_xueqiu,
         fetch_a_share_fundamentals_eastmoney,
     )
@@ -412,6 +419,7 @@ def probe_all_sources() -> dict:
         _probe("xueqiu/quote",          fetch_a_share_quote_xueqiu,          "current"),
         _probe("tencent/quote",         fetch_a_share_quote_tencent,         "current"),
         _probe("sina/quote",            fetch_a_share_quote_sina,            "current"),
+        _probe("tencent/fundamentals",   fetch_a_share_fundamentals_tencent,   "pe"),
         _probe("xueqiu/fundamentals",   fetch_a_share_fundamentals_xueqiu,   "pe"),
         _probe("eastmoney/fundamentals", fetch_a_share_fundamentals_eastmoney, "pe"),
     ]

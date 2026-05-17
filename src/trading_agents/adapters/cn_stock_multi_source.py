@@ -747,14 +747,125 @@ def fetch_a_share_fundamentals_eastmoney(ticker: str) -> dict | None:
         return None
 
 
-def fetch_a_share_fundamentals_multi(ticker: str) -> dict | None:
-    """Try Xueqiu → EastMoney push2 in order. Merge their outputs into a
-    single dict — later sources fill fields the earlier one left None.
+def fetch_a_share_fundamentals_tencent(ticker: str) -> dict | None:
+    """Parse fundamentals out of Tencent's 50-field quote response.
 
-    Returns None only if EVERY source failed.
+    Tencent's response packs PE / PB / 总市值 / 流通市值 / 换手率 alongside
+    price data. Field positions are stable across stocks (verified against
+    finance.qq.com/cn/600519). This source is the most reliable because
+    Tencent's quote CDN is reachable from anywhere and used by every
+    Chinese broker's mobile widget.
+
+    Field positions (0-indexed):
+      [1]  股票名
+      [3]  当前价
+      [38] 换手率 (%)
+      [39] PE (TTM)
+      [40] none / amount
+      [41] 52周高
+      [42] 52周低
+      [44] 振幅 (%)
+      [45] 流通市值 (亿)
+      [46] 总市值 (亿)
+      [47] PB
+    """
+    try:
+        pfx = _exchange_prefix(ticker)
+    except ValueError:
+        return None
+    url = f"https://qt.gtimg.cn/q={pfx}{ticker}"
+    try:
+        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as c:
+            r = c.get(url, headers={"Referer": "https://gu.qq.com/"})
+        if r.status_code != 200:
+            return None
+        text = r.content.decode("gbk", errors="replace")
+        m = re.search(rf'v_{pfx}{ticker}\s*=\s*"([^"]*)"', text)
+        if not m:
+            return None
+        parts = m.group(1).split("~")
+        if len(parts) < 48:
+            log.info("tencent fundamentals %s: short response (%d fields)", ticker, len(parts))
+            return None
+        name = parts[1].strip()
+        if not name or name in ("-", "--"):
+            return None
+        # PE / PB / 市值 — these positions are stable
+        pe = _safe_float(parts[39])
+        pb = _safe_float(parts[47])
+        float_mc_yi = _safe_float(parts[45])   # 流通市值 (亿)
+        total_mc_yi = _safe_float(parts[46])    # 总市值 (亿)
+        turnover_rate = _safe_float(parts[38])
+        return {
+            "ticker": ticker,
+            "name": name,
+            "current": _safe_float(parts[3]),
+            "pe": pe if (pe and pe > 0) else None,    # negative PE for loss makers — keep but mark
+            "pe_raw": pe,                              # keep raw for negative-PE detection
+            "pb": pb if (pb and pb > 0) else None,
+            "turnover_rate": turnover_rate,
+            "market_cap": (total_mc_yi * 1e8) if total_mc_yi else None,
+            "market_cap_yi": total_mc_yi,
+            "float_market_cap_yi": float_mc_yi,
+            "source": "tencent",
+        }
+    except Exception as e:
+        log.warning("tencent fundamentals failed for %s: %s", ticker, e)
+        return None
+
+
+def fetch_a_share_fundamentals_sina_pe(ticker: str) -> dict | None:
+    """Sina spot has limited fundamentals but reachable from anywhere.
+    We mainly use it as a tertiary cross-check for total market cap.
+    """
+    try:
+        pfx = _exchange_prefix(ticker)
+    except ValueError:
+        return None
+    url = f"https://hq.sinajs.cn/list={pfx}{ticker}"
+    try:
+        with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as c:
+            r = c.get(url, headers={"Referer": "https://finance.sina.com.cn/"})
+        if r.status_code != 200:
+            return None
+        text = r.content.decode("gbk", errors="replace")
+        m = re.search(rf'hq_str_{pfx}{ticker}\s*=\s*"([^"]*)"', text)
+        if not m:
+            return None
+        parts = m.group(1).split(",")
+        if len(parts) < 9:
+            return None
+        # Sina quote has name + price but not PE/PB. Return name only as
+        # cross-check signal; pe/pb will come from tencent or eastmoney.
+        return {
+            "ticker": ticker,
+            "name": parts[0].strip(),
+            "current": _safe_float(parts[3]),
+            "source": "sina",
+        }
+    except Exception:
+        return None
+
+
+def fetch_a_share_fundamentals_multi(ticker: str) -> dict | None:
+    """Try Tencent → Xueqiu → EastMoney push2 in order.
+
+    Tencent moved to the front of the chain because its quote CDN is
+    globally reachable AND its 50-field response packs PE / PB / 总市值
+    in stable positions (39, 47, 46). Xueqiu + EastMoney often return
+    200 with empty body when called from non-China IPs.
+
+    Merges non-null fields across sources so a partial response from
+    one chains naturally with a partial from another.
     """
     out: dict | None = None
-    for fetcher in (fetch_a_share_fundamentals_xueqiu, fetch_a_share_fundamentals_eastmoney):
+    fetchers = [
+        fetch_a_share_fundamentals_tencent,
+        fetch_a_share_fundamentals_xueqiu,
+        fetch_a_share_fundamentals_eastmoney,
+    ]
+    served_by: list[str] = []
+    for fetcher in fetchers:
         try:
             res = fetcher(ticker)
         except Exception as e:
@@ -763,14 +874,13 @@ def fetch_a_share_fundamentals_multi(ticker: str) -> dict | None:
             res = None
         if not res:
             continue
+        served_by.append(res.get("source", fetcher.__name__))
         if out is None:
-            out = res
+            out = dict(res)
             continue
-        # Merge: keep existing non-None values, fill None ones from this source.
         for k, v in res.items():
             if v is not None and out.get(k) in (None, ""):
                 out[k] = v
-        # Record fallback chain in source
-        if res.get("source") and res["source"] != out.get("source"):
-            out["source"] = f"{out['source']}+{res['source']}"
+    if out:
+        out["source"] = "+".join(served_by)
     return out
