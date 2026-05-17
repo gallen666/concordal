@@ -171,32 +171,21 @@ def apply_patch() -> bool:
                 if request.headers.get("Host"):
                     del request.headers["Host"]
 
-                # v34: If GET URL would be too long for Vercel edge, switch to
-                # POST {upstream, method, body} — bypasses nginx URL ceiling.
+                # v35: If GET URL would be too long for Vercel edge, send
+                # the upstream URL via X-Cn-Proxy-Upstream header (8K+ limit).
+                # This is more reliable than POST body (v34 observed POST
+                # path returning nginx 502 at Vercel edge for unknown reason).
                 if len(get_proxy_url) >= _POST_THRESHOLD:
                     normalized = _normalize_cn_url(url)
-                    payload = {
-                        "upstream": normalized,
-                        "method": request.method or "GET",
-                    }
-                    # Forward body for non-GET requests
-                    if request.body is not None and request.method not in ("GET", "HEAD"):
-                        try:
-                            if isinstance(request.body, (bytes, bytearray)):
-                                payload["body"] = request.body.decode("utf-8", errors="replace")
-                            else:
-                                payload["body"] = str(request.body)
-                        except Exception:
-                            pass
-                    body_bytes = _json.dumps(payload).encode("utf-8")
-                    request.url = _proxy_post_url()
-                    request.method = "POST"
-                    request.body = body_bytes
-                    # Replace content-length / content-type for the JSON body
-                    request.headers["Content-Type"] = "application/json"
-                    request.headers["Content-Length"] = str(len(body_bytes))
+                    request.url = _proxy_post_url()  # bare /api/cn-proxy, no query
+                    # Preserve original HTTP method on the URL fetched by
+                    # cn-proxy (route.ts uses req.method as upstream method
+                    # when header mode is in play — so we must keep our
+                    # request.method = original (GET for clist/get)).
+                    request.headers["X-Cn-Proxy-Upstream"] = normalized
                     log.debug(
-                        "[cn_proxy_patch] long URL %d chars → POST body", len(get_proxy_url)
+                        "[cn_proxy_patch] long URL %d chars → X-Cn-Proxy-Upstream header",
+                        len(get_proxy_url),
                     )
                 else:
                     request.url = get_proxy_url

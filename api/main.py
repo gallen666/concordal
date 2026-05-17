@@ -2396,12 +2396,10 @@ def _fetch_cn_url_via_proxy(upstream_url: str, timeout: int = 15) -> tuple[int, 
     Returns (status_code, response_text). On proxy failure, returns
     (0, error_message).
 
-    v34: For URLs that would exceed ~1.5K chars when wrapped in GET ?upstream=,
-    switch to POST /api/cn-proxy with JSON body {upstream:...}. The Vercel
-    edge nginx silently returns 502 (text/html, before our function runs)
-    for long GET URLs; POST body bypasses that ceiling.
+    v35: For URLs ≥1.5K chars (where GET ?upstream= triggers Vercel edge
+    URL-length 502), pass the upstream URL via X-Cn-Proxy-Upstream header
+    instead. Headers have 8K+ limit on default nginx config — comfortable.
     """
-    import json as _json
     import urllib.parse
     import requests
     proxy_get_url = f"{_CN_PROXY_BASE}/api/cn-proxy?upstream={urllib.parse.quote(upstream_url, safe='')}"
@@ -2410,11 +2408,13 @@ def _fetch_cn_url_via_proxy(upstream_url: str, timeout: int = 15) -> tuple[int, 
     }
     try:
         if len(proxy_get_url) >= 1500:
-            r = requests.post(
+            # Long URL — use header path
+            hdr = dict(headers)
+            hdr["X-Cn-Proxy-Upstream"] = upstream_url
+            r = requests.get(
                 f"{_CN_PROXY_BASE}/api/cn-proxy",
-                json={"upstream": upstream_url, "method": "GET"},
                 timeout=timeout,
-                headers=headers,
+                headers=hdr,
             )
         else:
             r = requests.get(proxy_get_url, timeout=timeout, headers=headers)

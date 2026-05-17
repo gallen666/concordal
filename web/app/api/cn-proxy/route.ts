@@ -1,4 +1,16 @@
-// v34 — Node-runtime proxy for Chinese-market data APIs (EastMoney / Xueqiu / etc).
+// v35 — Node-runtime proxy for Chinese-market data APIs (EastMoney / Xueqiu / etc).
+//
+// v35 change vs v34:
+//   - Accept upstream via X-Cn-Proxy-Upstream HEADER (GET method).
+//     Header limits are typically 8KB+ — comfortably above 1.7K. Plus
+//     GET requests bypass whatever was making our v34 POST handler 502
+//     (verified: v34 POST returns nginx 502 even for tiny bodies, while
+//     same-route GET returns our JSON 400 cleanly — meaning the JSON-body
+//     path itself is broken at Vercel runtime, not the function code).
+//   - All three input modes now supported:
+//       1) GET ?upstream=...      (short URLs, fast path)
+//       2) GET + X-Cn-Proxy-Upstream header  (long URLs, recommended)
+//       3) POST {upstream, ...}   (kept as compatibility, may still 502)
 //
 // v34 change vs v33:
 //   - Accept POST /api/cn-proxy with JSON body {upstream, method?, body?}
@@ -84,6 +96,8 @@ function pruneRequestHeaders(src: Headers): Headers {
       lower === "host" ||
       lower === "connection" ||
       lower === "content-length" ||
+      lower === "content-type" || // v35: our POST-body input shouldn't leak to upstream
+      lower === "x-cn-proxy-upstream" || // v35: don't forward our own routing header
       lower.startsWith("x-vercel-") ||
       lower.startsWith("x-forwarded-") ||
       lower === "cf-connecting-ip" ||
@@ -142,9 +156,17 @@ async function handler(req: Request): Promise<Response> {
   try {
     const reqUrl = new URL(req.url);
     let upstreamParam = reqUrl.searchParams.get("upstream");
-    // v34: For long upstream URLs (≥1.5K chars) the GET query-string form
-    // hits Vercel edge limits (nginx 502 before our function runs). Accept
-    // POST with JSON body {upstream, method?, body?} as the long-URL escape.
+    // v35: For long upstream URLs (≥1.5K chars) the GET query-string form
+    // hits Vercel edge URL ceiling (silent 502). Prefer X-Cn-Proxy-Upstream
+    // header (8K+ limit). Also keeps the POST-body path as a tertiary fallback.
+    let usedHeader = false;
+    if (!upstreamParam) {
+      const hdr = req.headers.get("x-cn-proxy-upstream");
+      if (hdr) {
+        upstreamParam = hdr;
+        usedHeader = true;
+      }
+    }
     let upstreamMethod = req.method;
     let upstreamBody: ArrayBuffer | undefined;
     let usedPostBody = false;
@@ -176,7 +198,8 @@ async function handler(req: Request): Promise<Response> {
       return jsonError(400, {
         error: "missing_upstream",
         usage:
-          "GET /api/cn-proxy?upstream=<encoded-url>  OR  POST /api/cn-proxy with body {upstream: '...'}",
+          "GET /api/cn-proxy?upstream=<encoded-url>  |  GET + X-Cn-Proxy-Upstream header  |  POST {upstream: '...'}",
+        version: "v35",
         allowed_suffixes: ALLOWED_SUFFIXES,
       });
     }
@@ -197,8 +220,8 @@ async function handler(req: Request): Promise<Response> {
     }
 
     // Forward extra query params (besides `upstream`) onto the target URL.
-    // Skipped for POST-body mode (upstream URL already complete in body).
-    if (!usedPostBody) {
+    // Skipped for POST-body / header modes (upstream URL already complete).
+    if (!usedPostBody && !usedHeader) {
       for (const [k, v] of reqUrl.searchParams.entries()) {
         if (k === "upstream" || k.startsWith("nxtP") || k.startsWith("nxtI")) continue;
         target.searchParams.set(k, v);
