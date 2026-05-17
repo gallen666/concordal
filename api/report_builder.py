@@ -111,40 +111,61 @@ def fetch_facts(ticker: str, market: str) -> dict:
         "_provenance": {},
     }
 
-    # 1. Adapter (we use it for quotes + fundamentals + technical)
-    adapter = None
-    try:
-        from trading_agents.adapters import get_adapter
-        adapter = get_adapter(market)
-    except Exception as e:
-        log.warning("[report.facts] adapter init failed for %s/%s: %s", ticker, market, e)
+    # ARCHITECTURE NOTE: we deliberately DO NOT call the cn_equity adapter
+    # from here. The adapter wraps akshare, which on Render Singapore
+    # frequently hangs 30-60s before timing out. Four adapter calls in
+    # sequence (quote / fundamentals / technical / metadata) used to burn
+    # 60-90s before LLM even started, pushing total above the 180s ceiling.
+    #
+    # All paths below go directly to cn_stock_multi_source, which has 5s
+    # hard timeouts per source and Tencent/Sina as primary (globally
+    # reachable). The adapter is still used by the 7-agent /decision flow
+    # which has its own slower budget — only /report/full bypasses it.
 
-    # 2. Quote + MAs + support/pressure
-    if adapter is not None:
-        try:
-            end = date.today()
-            start = end - timedelta(days=180)
-            hist = adapter.get_price_history(ticker, start, end)
-            if hist:
-                last = hist[-1]
-                prev = hist[-2] if len(hist) >= 2 else last
-                out["current_price"] = float(getattr(last, "close", 0) or 0)
-                out["prev_close"] = float(getattr(prev, "close", 0) or 0)
-                if out["prev_close"]:
-                    out["change_pct"] = round((out["current_price"] - out["prev_close"]) / out["prev_close"] * 100, 2)
-                closes = [float(getattr(b, "close", 0) or 0) for b in hist[-60:]]
-                if len(closes) >= 5:
-                    out["ma5"] = round(sum(closes[-5:]) / 5, 2)
-                if len(closes) >= 20:
-                    out["ma20"] = round(sum(closes[-20:]) / 20, 2)
-                if len(closes) >= 60:
-                    out["ma60"] = round(sum(closes[-60:]) / 60, 2)
-                if len(hist) >= 20:
-                    window = hist[-20:]
-                    out["pressure_level"] = round(max(float(getattr(b, "high", 0) or 0) for b in window), 2)
-                    out["support_level"] = round(min(float(getattr(b, "low", 0) or 0) for b in window), 2)
-        except Exception as e:
-            log.warning("[report.facts] quote fetch failed for %s: %s", ticker, e)
+    # 2. Quote (Tencent) — 1 fast call gives current/prev/open + name + PE/PB/总市值
+    try:
+        from trading_agents.adapters.cn_stock_multi_source import (
+            fetch_a_share_quote_multi,
+            fetch_a_share_history_multi,
+        )
+        q = fetch_a_share_quote_multi(ticker)
+        if q:
+            out["current_price"] = q.get("current") or out["current_price"]
+            out["prev_close"]    = q.get("prev")    or out["prev_close"]
+            if out["prev_close"]:
+                out["change_pct"] = round(
+                    (out["current_price"] - out["prev_close"]) / out["prev_close"] * 100, 2
+                )
+            if q.get("name") and not out["name"]:
+                out["name"] = q["name"]
+            out["_provenance"]["current_price"] = q.get("source")
+            out["_provenance"]["name"]          = q.get("source")
+    except Exception as e:
+        log.warning("[report.facts] quote multi failed: %s", e)
+
+    # 3. History → MA5/MA20/MA60 + support/pressure (multi-source, 5s timeout)
+    try:
+        from datetime import date as _d, timedelta as _td
+        end = _d.today()
+        start = end - _td(days=120)
+        hist = fetch_a_share_history_multi(ticker, start, end)
+        if hist:
+            closes = [float(b.get("close") or 0) for b in hist[-60:]]
+            highs  = [float(b.get("high")  or 0) for b in hist[-20:]]
+            lows   = [float(b.get("low")   or 0) for b in hist[-20:]]
+            if len(closes) >= 5:
+                out["ma5"] = round(sum(closes[-5:]) / 5, 2)
+            if len(closes) >= 20:
+                out["ma20"] = round(sum(closes[-20:]) / 20, 2)
+            if len(closes) >= 60:
+                out["ma60"] = round(sum(closes[-60:]) / 60, 2)
+            if highs and lows:
+                out["pressure_level"] = round(max(highs), 2)
+                out["support_level"]  = round(min(lows), 2)
+            out["_provenance"]["ma_series"]    = "history_multi"
+            out["_provenance"]["price_levels"] = "history_multi"
+    except Exception as e:
+        log.warning("[report.facts] history multi failed: %s", e)
 
     # 2b. SAFETY — cross-validate current_price against an independent
     # real-time source. A 301666 user reported the system recommended
@@ -181,103 +202,63 @@ def fetch_facts(ticker: str, market: str) -> dict:
         except Exception as e:
             log.warning("[report.safety] live-price cross-check failed: %s", e)
 
-    # 3. Metadata (name / sector). Try in order:
-    #    a) persistence cache (24h fresh)
-    #    b) stale cache (any age, marked stale)
-    #    c) live akshare fetch via _fetch_a_share_meta logic
+    # 4. Metadata — persistence cache (no akshare fallback; quote already
+    # gave us the name from Tencent if cache is empty)
     try:
         from . import persistence
-        meta = persistence.get_ticker_meta(ticker)
-        if not meta:
-            # No fresh cache — try a live fetch via the same path /v1/ticker/info uses.
-            try:
-                from . import main as _main
-                if hasattr(_main, "_fetch_a_share_meta"):
-                    live = _main._fetch_a_share_meta(ticker)
-                    if live:
-                        persistence.save_ticker_meta(
-                            ticker=ticker,
-                            market="a_share",
-                            name=live.get("name"),
-                            sector=live.get("sector"),
-                            industry=live.get("industry"),
-                            market_cap=live.get("market_cap"),
-                            currency="CNY",
-                            listing_date=live.get("listing_date"),
-                            source=live.get("source") or "akshare",
-                        )
-                        meta = persistence.get_ticker_meta(ticker) or live
-            except Exception as e:
-                log.warning("[report.facts] live meta fetch failed: %s", e)
-        if not meta:
-            meta = persistence.get_ticker_meta_stale_ok(ticker)
+        meta = persistence.get_ticker_meta(ticker) or persistence.get_ticker_meta_stale_ok(ticker)
         if meta:
-            out["name"] = meta.get("name") or out["name"]
-            out["sector"] = meta.get("sector")
-            out["industry"] = meta.get("industry")
+            out["name"]       = out["name"] or meta.get("name")
+            out["sector"]     = meta.get("sector")
+            out["industry"]   = meta.get("industry")
             out["market_cap"] = meta.get("market_cap") or out["market_cap"]
+            out["_provenance"]["industry"] = "persistence_cache"
+        # If we got a name from quote but cache is empty, persist it now
+        if out["name"] and not meta:
+            try:
+                persistence.save_ticker_meta(
+                    ticker=ticker, market="a_share",
+                    name=out["name"], sector=None, industry=None,
+                    market_cap=None, currency="CNY", listing_date=None,
+                    source=out["_provenance"].get("name") or "quote",
+                )
+            except Exception:
+                pass
     except Exception as e:
         log.warning("[report.facts] meta fetch failed: %s", e)
 
-    # 4. Fundamentals via adapter.get_fundamentals (Pydantic Fundamentals model)
-    if adapter is not None:
-        try:
-            f = adapter.get_fundamentals(ticker, date.today())
-            if f is not None:
-                out["pe"] = getattr(f, "pe_ratio", None)
-                out["pb"] = getattr(f, "pb_ratio", None)
-                out["net_margin"] = getattr(f, "net_margin", None)
-                out["revenue_yoy"] = getattr(f, "revenue_growth_yoy", None)
-                out["market_cap"] = getattr(f, "market_cap", None) or out["market_cap"]
-                # ROE estimate from net_margin × asset_turnover not available — leave null
-        except Exception as e:
-            log.warning("[report.facts] fundamentals fetch failed: %s", e)
-
-    # 4b. Multi-source fundamentals fallback (Xueqiu → EastMoney push2).
-    # Render's Singapore IP frequently can't reach akshare's individual-stock
-    # detail endpoints, so adapter.get_fundamentals returns nulls. The
-    # multi-source fetcher hits APIs that ARE globally reachable (Xueqiu
-    # API and EastMoney push2 are used by their mobile apps).
-    if market == "a_share" and (out["pe"] is None or out["pb"] is None):
+    # 5. Fundamentals — multi-source (Tencent → Xueqiu → EastMoney).
+    # Tencent's 50-field quote response packs PE/PB/总市值; verified
+    # working from Render Singapore.
+    if market == "a_share":
         try:
             from trading_agents.adapters.cn_stock_multi_source import (
                 fetch_a_share_fundamentals_multi,
             )
             fm = fetch_a_share_fundamentals_multi(ticker)
             if fm:
-                out["pe"] = out["pe"] or fm.get("pe")
-                out["pb"] = out["pb"] or fm.get("pb")
-                out["ps"] = out["ps"] or fm.get("ps")
+                out["pe"]             = out["pe"] or fm.get("pe")
+                out["pb"]             = out["pb"] or fm.get("pb")
+                out["ps"]             = out["ps"] or fm.get("ps")
                 out["dividend_yield"] = out["dividend_yield"] or fm.get("dividend_yield")
-                out["market_cap"] = out["market_cap"] or fm.get("market_cap")
-                out["roe"] = out["roe"] if out["roe"] is not None else fm.get("roe_ttm")
-                # Name fill-in if we still don't have it
+                out["market_cap"]     = out["market_cap"] or fm.get("market_cap")
+                out["roe"]            = out["roe"] if out["roe"] is not None else fm.get("roe_ttm")
                 if not out["name"] and fm.get("name"):
                     out["name"] = fm["name"]
-                # Record provenance so the report can audit which source served
-                out["fundamentals_source"] = fm.get("source", "multi")
-                log.info("[report.facts] fundamentals filled via %s: pe=%s pb=%s mcap=%s",
+                out["_provenance"]["pe"]         = fm.get("source")
+                out["_provenance"]["pb"]         = fm.get("source")
+                out["_provenance"]["market_cap"] = fm.get("source")
+                log.info("[report.facts] fundamentals via %s: pe=%s pb=%s mcap=%s",
                          fm.get("source"), out["pe"], out["pb"], out["market_cap"])
         except Exception as e:
-            log.warning("[report.facts] multi-source fundamentals fallback failed: %s", e)
+            log.warning("[report.facts] fundamentals multi failed: %s", e)
 
-    # 5. Technical indicators via adapter.get_technical (Pydantic TechnicalSnapshot)
-    if adapter is not None:
-        try:
-            t = adapter.get_technical(ticker, date.today())
-            if t is not None:
-                out["rsi14"] = getattr(t, "rsi_14", None)
-                out["macd"] = getattr(t, "macd", None)
-                out["macd_signal"] = getattr(t, "macd_signal", None)
-                out["kdj_k"] = getattr(t, "kdj_k", None)
-                out["kdj_d"] = getattr(t, "kdj_d", None)
-                out["kdj_j"] = getattr(t, "kdj_j", None)
-                out["atr14"] = getattr(t, "atr_14", None)
-                # sma_20 → ma20 if not already set by price history
-                if out["ma20"] is None:
-                    out["ma20"] = getattr(t, "sma_20", None)
-        except Exception as e:
-            log.warning("[report.facts] technical fetch failed: %s", e)
+    # 6. Technical indicators — we already computed MA5/MA20/MA60/support/
+    # pressure from the multi-source history above. RSI/MACD/KDJ require
+    # full OHLCV, which fetch_a_share_history_multi gives us. Defer to
+    # narrative — LLM can reason on MA trends + support/pressure even
+    # without RSI/MACD numbers. If you want them, compute inline from
+    # closes here (TODO: add lightweight inline RSI calculation).
 
     return out
 
