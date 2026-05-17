@@ -19,14 +19,33 @@ from ..llm.router import LLMRouter, Tier, extract_json
 from ..prompts.base import PromptPack
 
 
+def _is_a_share_ticker(ticker: str) -> bool:
+    """v45: A-share tickers are exactly 6 digits. yfinance / OpenBB sources
+    on the bus don't have proper A-share coverage; they may return stale
+    or wrong-stock data when queried with a 6-digit ticker. We skip the
+    bus for A-share and go straight to the cn_equity adapter."""
+    return bool(ticker and ticker.isdigit() and len(ticker) == 6)
+
+
 def _via_bus(kind: NeedKind, params: dict, fallback):
     """Bus-first fetch. Try the UniversalDataBus; if it returns None
     (no source matched / all sources failed), fall back to the supplied
     direct-adapter callable. Either way the data flows; the bus path
     additionally records telemetry that surfaces at /v1/databus/telemetry.
 
+    v45: skip the bus entirely for A-share tickers. The bus's only TECHNICAL
+    source is yfinance which has no proper A-share coverage — it can
+    silently return data from a wrong stock or a year-old window, which
+    causes the LLM to narrate bearish analysis around fake numbers
+    (verified bug: 688017 +15% but AI said SELL based on ¥114 from 2024).
+
     Wrapping in try/except so a buggy Source can never break a decision —
     the analyst gets the adapter's answer and the run continues."""
+    ticker = params.get("ticker") if isinstance(params, dict) else None
+    if ticker and _is_a_share_ticker(str(ticker)):
+        # Skip bus for A-share — go straight to cn_equity adapter which
+        # has proper Tencent/Sina fallback chain.
+        return fallback()
     try:
         result = bus.fetch(Need(kind, params))
         if result is not None:
