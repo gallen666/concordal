@@ -273,11 +273,12 @@ def fetch_facts(ticker: str, market: str) -> dict:
                 fetch_a_share_dupont_tencent,
                 fetch_a_share_dupont_xueqiu,
             )
-            dupont = fetch_a_share_dupont_tencent(ticker)
+            # v30: Xueqiu now goes through cn-proxy (Vercel HK), so it's
+            # primary again (richer data than Tencent cwzy: returns all
+            # 4 DuPont components explicitly).
+            dupont = fetch_a_share_dupont_xueqiu(ticker)
             if not dupont:
-                # Xueqiu fallback (low success rate from Singapore but kept
-                # for resilience — if China-side proxy ever gets added)
-                dupont = fetch_a_share_dupont_xueqiu(ticker)
+                dupont = fetch_a_share_dupont_tencent(ticker)
             if dupont:
                 if out.get("roe") is None and dupont.get("roe") is not None:
                     out["roe"] = dupont["roe"]

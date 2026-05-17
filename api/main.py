@@ -2397,6 +2397,45 @@ def _fetch_cn_url_via_proxy(upstream_url: str, timeout: int = 15) -> tuple[int, 
         return 0, f"proxy fetch failed: {e}"
 
 
+def _eastmoney_clist_via_proxy(
+    *,
+    fs: str,
+    fields: str,
+    fid: str = "f3",
+    po: int = 1,
+    pn: int = 1,
+    pz: int = 200,
+    extra: dict | None = None,
+) -> list[dict]:
+    """Generic EastMoney push2/api/qt/clist/get fetcher routed via cn-proxy.
+    Returns a list of raw f*-keyed dicts; caller renames fields for display.
+    """
+    params: list[str] = [
+        f"pn={pn}", f"pz={pz}", f"po={po}", "np=1",
+        "fltt=2", "invt=2",
+        f"fs={fs}", f"fid={fid}", f"fields={fields}",
+    ]
+    if extra:
+        for k, v in extra.items():
+            params.append(f"{k}={v}")
+    url = "https://push2.eastmoney.com/api/qt/clist/get?" + "&".join(params)
+    status, body = _fetch_cn_url_via_proxy(url)
+    if status != 200 or not body:
+        return []
+    try:
+        import json as _json
+        data = _json.loads(body).get("data") or {}
+        diff = data.get("diff") or []
+        if isinstance(diff, list):
+            return [item for item in diff if isinstance(item, dict)]
+        if isinstance(diff, dict):
+            return [item for item in diff.values() if isinstance(item, dict)]
+        return []
+    except Exception as e:
+        log.warning("eastmoney push2 clist parse failed: %s", e)
+        return []
+
+
 def _eastmoney_fund_flow_rank_via_proxy() -> list[dict]:
     """Direct EastMoney push2 call via Vercel HK proxy, bypassing akshare
     which calls eastmoney from-process (and gets blocked on Singapore IP).
@@ -2502,10 +2541,38 @@ def cn_fund_flow_sectors(kind: str = "industry") -> dict:
 
     kind ∈ {"industry", "concept"}.
     """
+    # Primary: Vercel HK proxy → EastMoney push2 board flow
+    # fs="m:90 t:2 f:!50" = 概念板块 ; "m:90 t:3 f:!50" = 行业板块
+    fs = "m:90+t:3+f:!50" if kind != "concept" else "m:90+t:2+f:!50"
+    fields = "f12,f14,f2,f3,f62,f184,f66,f72,f78,f84,f204,f205,f206"
+    diff = _eastmoney_clist_via_proxy(fs=fs, fields=fields, fid="f62", po=1, pz=80)
+    if diff:
+        rows = [{
+            "代码":           d.get("f12"),
+            "名称":           d.get("f14"),
+            "最新价":         d.get("f2"),
+            "涨跌幅":         d.get("f3"),
+            "主力净流入-净额": d.get("f62"),
+            "主力净流入-净占比": d.get("f184"),
+            "超大单净流入-净额": d.get("f66"),
+            "大单净流入-净额":  d.get("f72"),
+            "中单净流入-净额":  d.get("f78"),
+            "小单净流入-净额":  d.get("f84"),
+            "领涨股":         d.get("f204"),
+            "领涨股涨跌幅":   d.get("f206"),
+        } for d in diff]
+        return {
+            "status": "ok",
+            "kind": kind,
+            "rows": rows,
+            "source": "eastmoney via vercel-hk-proxy",
+        }
+
+    # Fallback: akshare direct (works locally, fails on Singapore)
     try:
         import akshare as ak
     except ImportError:
-        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+        return {"status": "unavailable", "message": "akshare not installed and proxy returned empty", "rows": []}
     try:
         if kind == "concept":
             df = ak.stock_sector_fund_flow_rank(indicator="今日", sector_type="概念资金流")
@@ -2518,7 +2585,7 @@ def cn_fund_flow_sectors(kind: str = "industry") -> dict:
             "status": "ok",
             "kind": kind,
             "rows": _rows_to_jsonable(df),
-            "source": "akshare/eastmoney",
+            "source": "akshare/eastmoney (direct fallback)",
         }
     except Exception as e:
         log.warning("fund-flow-sectors fetch failed: %s", e)
@@ -2530,10 +2597,52 @@ def cn_fund_flow_market(days: int = 30) -> dict:
     """Market-wide net inflow time series, last N days. Shows whether
     money is flowing into A-shares as a whole — leading indicator
     retail tracks every morning."""
+    # Primary: Vercel HK proxy → EastMoney push2/api/qt/dpsj/get for market flow
+    import json as _json
+    url = (
+        "https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get"
+        "?lmt=0&klt=101&secid=1.000001&secid2=0.399001"
+        "&fields1=f1,f2,f3,f7"
+        "&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65"
+    )
+    status, body = _fetch_cn_url_via_proxy(url)
+    if status == 200 and body:
+        try:
+            data = _json.loads(body).get("data") or {}
+            klines = data.get("klines") or []
+            # Each kline string: "date,主力净额,小单净额,中单净额,大单净额,超大单净额,主力净占比,..."
+            rows: list[dict] = []
+            for k in klines[-max(7, min(days, 180)):]:
+                parts = k.split(",")
+                if len(parts) < 6:
+                    continue
+                try:
+                    rows.append({
+                        "日期":            parts[0],
+                        "主力净流入-净额": float(parts[1]) if parts[1] else None,
+                        "小单净流入-净额": float(parts[2]) if parts[2] else None,
+                        "中单净流入-净额": float(parts[3]) if parts[3] else None,
+                        "大单净流入-净额": float(parts[4]) if parts[4] else None,
+                        "超大单净流入-净额": float(parts[5]) if parts[5] else None,
+                        "上证-收盘价": float(parts[11]) if len(parts) > 11 and parts[11] else None,
+                        "上证-涨跌幅": float(parts[12]) if len(parts) > 12 and parts[12] else None,
+                    })
+                except (ValueError, IndexError):
+                    continue
+            if rows:
+                return {
+                    "status": "ok",
+                    "rows": rows,
+                    "source": "eastmoney via vercel-hk-proxy",
+                }
+        except Exception as e:
+            log.warning("eastmoney market flow parse failed: %s", e)
+
+    # Fallback: akshare
     try:
         import akshare as ak
     except ImportError:
-        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+        return {"status": "unavailable", "message": "akshare not installed and proxy returned empty", "rows": []}
     try:
         df = ak.stock_market_fund_flow()
         if df is None or df.empty:
@@ -2542,7 +2651,7 @@ def cn_fund_flow_market(days: int = 30) -> dict:
         return {
             "status": "ok",
             "rows": _rows_to_jsonable(df),
-            "source": "akshare/eastmoney",
+            "source": "akshare/eastmoney (direct fallback)",
         }
     except Exception as e:
         log.warning("fund-flow-market fetch failed: %s", e)
@@ -2603,14 +2712,50 @@ def cn_zt_pool(kind: str = "zt", date_str: str | None = None) -> dict:
       - "zbgc"   炸板池          stock_zt_pool_zbgc_em
       - "qgc"    强势股池        stock_zt_pool_strong_em  (fallback)
     """
+    d = date_str or date.today().strftime("%Y%m%d")
+
+    # Primary: Vercel HK proxy → EastMoney push2 zt-pool endpoint
+    # ZT pool uses a different URL family — datacenter-web.eastmoney.com.
+    # Each kind has a different reportName parameter.
+    import json as _json
+    _kind_to_report = {
+        "zt":   "RPT_DAILYBILLBOARD_DETAILS",      # 涨停板池
+        "dt":   "RPT_DOWNLIMIT_BILLBOARD",          # 跌停板池
+        "zbgc": "RPT_FAILED_BILLBOARD",             # 炸板池
+        "qgc":  "RPT_STRONGSHOCK_BILLBOARD",        # 强势股池
+    }
+    report_name = _kind_to_report.get(kind)
+    if report_name:
+        url = (
+            f"https://datacenter-web.eastmoney.com/api/data/v1/get"
+            f"?sortColumns=SECURITY_CODE&sortTypes=1&pageSize=200&pageNumber=1"
+            f"&reportName={report_name}"
+            f"&columns=ALL&source=WEB&client=WEB"
+            f"&filter=(TRADE_DATE%3D%27{d[:4]}-{d[4:6]}-{d[6:8]}%27)"
+        )
+        status, body = _fetch_cn_url_via_proxy(url)
+        if status == 200 and body:
+            try:
+                data = _json.loads(body)
+                result = data.get("result") or {}
+                rows = result.get("data") or []
+                if rows:
+                    return {
+                        "status": "ok",
+                        "kind": kind,
+                        "date": d,
+                        "rows": rows,
+                        "source": "eastmoney via vercel-hk-proxy",
+                    }
+            except Exception as e:
+                log.warning("eastmoney zt-pool parse failed: %s", e)
+
+    # Fallback: akshare direct
     try:
         import akshare as ak
     except ImportError:
-        return {"status": "unavailable", "message": "akshare not installed", "rows": []}
+        return {"status": "unavailable", "message": "akshare not installed and proxy returned empty", "rows": []}
     try:
-        d = date_str or date.today().strftime("%Y%m%d")
-        # Map kind → akshare function lazily so we don't import unknown
-        # symbols (akshare's API surface shifts between releases).
         if kind == "zt":
             df = ak.stock_zt_pool_em(date=d)
         elif kind == "dt":

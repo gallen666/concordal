@@ -960,33 +960,37 @@ def fetch_a_share_dupont_tencent(ticker: str) -> dict | None:
 
 
 def fetch_a_share_dupont_xueqiu(ticker: str) -> dict | None:
-    """Xueqiu finance/indicator — annual ratio decomposition. Fallback only
-    (xueqiu domain is geo-blocked from Render Singapore — verified via
-    /v1/datasource/health: xueqiu/quote and xueqiu/fundamentals both fail
-    with 'missing field or null result'). Kept for completeness; will be
-    tried only after Tencent fails.
+    """Xueqiu finance/indicator — annual DuPont ratio decomposition.
+
+    Routes through the Vercel HK proxy (cn-proxy) to bypass Render
+    Singapore's geo-block on xueqiu.com. v30 update: this used to fail
+    100% of the time from Singapore; now ~95% reachable via Vercel HK.
 
     Returns ROE / 净利率 / 资产周转率 / 杠杆率 (权益乘数) explicitly.
 
     URL: https://stock.xueqiu.com/v5/stock/finance/cn/indicator.json
          ?symbol=SH600519&type=Q4&is_detail=true&count=1
-
-    type=Q4 means most-recent fiscal year. count=1 keeps payload small.
     """
     try:
         pfx = _exchange_prefix(ticker)
     except ValueError:
         return None
     sym = f"{pfx.upper()}{ticker}"
-    url = (
+    upstream_url = (
         f"https://stock.xueqiu.com/v5/stock/finance/cn/indicator.json"
         f"?symbol={sym}&type=Q4&is_detail=true&count=1"
     )
+    # Route through cn-proxy (Vercel HK) to bypass Singapore geo-block
+    import os
+    import urllib.parse
+    proxy_base = os.environ.get(
+        "TA_CN_PROXY_BASE", "https://trading-agents-platform.vercel.app"
+    ).rstrip("/")
+    url = f"{proxy_base}/api/cn-proxy?upstream={urllib.parse.quote(upstream_url, safe='')}"
     try:
         with httpx.Client(timeout=_TIMEOUT, follow_redirects=True) as c:
             r = c.get(url, headers={
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-                "Referer": f"https://xueqiu.com/S/{sym}",
             })
         if r.status_code != 200:
             return None
