@@ -616,17 +616,28 @@ def call_llm_for_narrative(facts: dict, locale: str = "zh") -> dict:
     _LAST_LLM_DIAG = {
         "sys_prompt_len": len(sys_prompt),
         "user_prompt_len": len(user_prompt),
-        "tier": "MID",
+        "tier": "FAST",
         "phase": "starting",
     }
 
     try:
-        # Tier.MID = gemini-2.5-flash. Fast (~5-15s), high quota,
-        # non-thinking model so all tokens go to visible output.
-        # max_tokens=16384 lets the ~6k-char JSON for 11 sections fit
-        # comfortably with headroom.
+        # Tier.FAST → gemini-2.5-flash-lite. Why FAST, not MID:
+        #
+        # MID on this Render deployment maps via TA_MODEL_MID env var to
+        # gemini-3.1-pro-preview, which is a thinking model. The Vercel
+        # gemini-proxy function (which all our Gemini calls go through
+        # because Render Singapore is geo-blocked from Google) has a
+        # 60s maxDuration ceiling. Pro thinking on a 9k-char prompt
+        # reliably exceeds 60s → Vercel 504 FUNCTION_INVOCATION_TIMEOUT
+        # → router fallback to flash-lite. Net: 60s wasted on the failed
+        # Pro attempt before flash-lite generates the actual report in
+        # 8s. Total: 68-121s.
+        #
+        # FAST tier maps directly to flash-lite — skip the failing Pro
+        # attempt entirely. Quality is plenty for narrative writing
+        # (verified on 600519 + 688017: 14k-char rich reports).
         resp = router.complete(
-            tier=Tier.MID,
+            tier=Tier.FAST,
             system=sys_prompt,
             user=user_prompt,
             temperature=0.35,
