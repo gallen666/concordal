@@ -2564,18 +2564,21 @@ def cn_fund_flow_individual(market: str = "沪深A股", top: int = 50) -> dict:
         except Exception as e:
             log.info("fund-flow market %s failed: %s", fs, e)
 
+    cache_key = "fund-flow/individual"
     if combined:
         # Sort by 主力净流入-净额 desc, take top N
         combined.sort(
             key=lambda r: r.get("主力净流入-净额") or 0,
             reverse=True,
         )
-        return {
+        payload = {
             "status": "ok",
             "market": market,
             "rows": combined[: max(10, min(top, 200))],
             "source": "eastmoney via cn-proxy (short-url multi-market)",
         }
+        _cache_put(cache_key, payload)
+        return payload
 
     # Fallback: try akshare directly (will likely fail with long URL too)
     try:
@@ -2583,16 +2586,27 @@ def cn_fund_flow_individual(market: str = "沪深A股", top: int = 50) -> dict:
         df = ak.stock_individual_fund_flow_rank(indicator="今日")
         if df is not None and not df.empty:
             df = df.head(max(10, min(top, 200)))
-            return {
+            payload = {
                 "status": "ok",
                 "market": market,
                 "rows": _rows_to_jsonable(df),
                 "source": "akshare/eastmoney (fallback)",
             }
+            _cache_put(cache_key, payload)
+            return payload
     except Exception as e:
         log.info("fund-flow akshare fallback failed: %s", e)
 
-    return {"status": "unavailable", "message": "no data source", "rows": []}
+    # v39: stale-while-revalidate
+    stale = _cache_get_stale(cache_key)
+    if stale:
+        age = _cache_age_min(cache_key)
+        return {
+            **stale,
+            "source": f"{stale.get('source','cached')} | stale ({age}m ago)",
+            "stale": True,
+        }
+    return {"status": "unavailable", "market": market, "message": "push2 临时不可达, 已重试 3 次", "rows": []}
 
 
 @app.get("/v1/cn/fund-flow/sectors", tags=["markets"])
@@ -2607,7 +2621,8 @@ def cn_fund_flow_sectors(kind: str = "industry") -> dict:
     # fs="m:90 t:2 f:!50" = 概念板块 ; "m:90 t:3 f:!50" = 行业板块
     fs = "m:90+t:3+f:!50" if kind != "concept" else "m:90+t:2+f:!50"
     fields = "f12,f14,f2,f3,f62,f184,f66,f72,f78,f84,f204,f205,f206"
-    diff = _eastmoney_clist_via_proxy(fs=fs, fields=fields, fid="f62", po=1, pz=80)
+    cache_key = f"fund-flow/sectors/{kind}"  # v39: separate cache per kind
+    diff = _retry_clist_via_proxy(fs=fs, fields=fields, fid="f62", po=1, pz=80, attempts=3)
     if diff:
         rows = [{
             "代码":           d.get("f12"),
@@ -2623,35 +2638,45 @@ def cn_fund_flow_sectors(kind: str = "industry") -> dict:
             "领涨股":         d.get("f204"),
             "领涨股涨跌幅":   d.get("f206"),
         } for d in diff]
-        return {
+        payload = {
             "status": "ok",
             "kind": kind,
             "rows": rows,
             "source": "eastmoney via vercel-hk-proxy",
         }
+        _cache_put(cache_key, payload)
+        return payload
 
     # Fallback: akshare direct (works locally, fails on Singapore)
     try:
         import akshare as ak
-    except ImportError:
-        return {"status": "unavailable", "message": "akshare not installed and proxy returned empty", "rows": []}
-    try:
         if kind == "concept":
             df = ak.stock_sector_fund_flow_rank(indicator="今日", sector_type="概念资金流")
         else:
             df = ak.stock_sector_fund_flow_rank(indicator="今日", sector_type="行业资金流")
-        if df is None or df.empty:
-            return {"status": "unavailable", "message": "akshare returned empty", "rows": []}
-        df = df.head(80)
-        return {
-            "status": "ok",
-            "kind": kind,
-            "rows": _rows_to_jsonable(df),
-            "source": "akshare/eastmoney (direct fallback)",
-        }
+        if df is not None and not df.empty:
+            df = df.head(80)
+            payload = {
+                "status": "ok",
+                "kind": kind,
+                "rows": _rows_to_jsonable(df),
+                "source": "akshare/eastmoney (direct fallback)",
+            }
+            _cache_put(cache_key, payload)
+            return payload
     except Exception as e:
-        log.warning("fund-flow-sectors fetch failed: %s", e)
-        return {"status": "unavailable", "message": str(e), "rows": []}
+        log.info("[fund-flow-sectors] akshare fallback failed: %s", e)
+
+    # v39: stale-while-revalidate
+    stale = _cache_get_stale(cache_key)
+    if stale:
+        age = _cache_age_min(cache_key)
+        return {
+            **stale,
+            "source": f"{stale.get('source','cached')} | stale ({age}m ago)",
+            "stale": True,
+        }
+    return {"status": "unavailable", "kind": kind, "message": "push2 临时不可达, 已重试 3 次", "rows": []}
 
 
 @app.get("/v1/cn/fund-flow/market", tags=["markets"])
@@ -2801,14 +2826,48 @@ def _retry_clist_via_proxy(*, fs: str, fields: str, fid: str = "f3", po: int = 1
     return []
 
 
+# v39: stale-while-revalidate cache for CN market endpoints. push2.eastmoney.com
+# has 10-30-min OFF windows; without cache the frontend sits at "Loading…"
+# during the entire OFF window. With 5-min stale fallback, users see slightly
+# stale data instead of an empty page during outages.
+import time as _time
+
+_CN_CACHE: dict[str, tuple[float, dict]] = {}
+_CN_CACHE_TTL_SECS = 300  # 5 min
+
+
+def _cache_get_stale(key: str) -> dict | None:
+    """Return cached value if present and < TTL old, else None."""
+    entry = _CN_CACHE.get(key)
+    if not entry:
+        return None
+    ts, data = entry
+    if _time.time() - ts > _CN_CACHE_TTL_SECS:
+        return None
+    return data
+
+
+def _cache_put(key: str, data: dict) -> None:
+    """Store value with current timestamp."""
+    _CN_CACHE[key] = (_time.time(), data)
+
+
+def _cache_age_min(key: str) -> int:
+    """Age of cache entry in minutes (rounded), 999 if missing."""
+    entry = _CN_CACHE.get(key)
+    if not entry:
+        return 999
+    return int((_time.time() - entry[0]) / 60)
+
+
 @app.get("/v1/cn/sectors/industry", tags=["markets"])
 def cn_sectors_industry() -> dict:
     """申万行业 list with current-day metrics.
 
-    v38: 3-attempt retry on push2 short-URL clist (handles intermittent
-    Vercel HK ↔ EastMoney push2 connectivity flicker). Same path as
-    cn_fund_flow_sectors which has delivered real data.
+    v39: stale-while-revalidate — when push2 is in OFF window, return
+    last good data within 5 min instead of empty page.
     """
+    cache_key = "sectors/industry"
     diff = _retry_clist_via_proxy(
         fs="m:90+t:2",
         fields="f12,f14,f2,f3,f4,f8,f20,f62,f184,f104,f105,f128",
@@ -2832,28 +2891,42 @@ def cn_sectors_industry() -> dict:
             "下跌家数": d.get("f105"),
             "领涨股": d.get("f128"),
         } for d in diff]
-        return {
+        payload = {
             "status": "ok",
             "rows": rows,
             "source": "eastmoney via cn-proxy (short-url path)",
         }
+        _cache_put(cache_key, payload)
+        return payload
 
     # Fallback: akshare (may 502 on long URLs but try in case it ever works)
     try:
         import akshare as ak
         df = ak.stock_board_industry_name_em()
         if df is not None and not df.empty:
-            return {
+            payload = {
                 "status": "ok",
                 "rows": _rows_to_jsonable(df),
                 "source": "akshare/eastmoney (fallback)",
             }
+            _cache_put(cache_key, payload)
+            return payload
     except Exception as e:
         log.info("[sectors] akshare fallback failed: %s", e)
 
+    # v39: stale-while-revalidate — both fresh paths failed; return cached if available
+    stale = _cache_get_stale(cache_key)
+    if stale:
+        age = _cache_age_min(cache_key)
+        return {
+            **stale,
+            "source": f"{stale.get('source','cached')} | stale ({age}m ago, push2 retrying)",
+            "stale": True,
+        }
+
     return {
         "status": "unavailable",
-        "message": "cn-proxy clist + akshare both empty",
+        "message": "push2 临时不可达, 已重试 3 次. 请 1 分钟后再试",
         "rows": [],
     }
 
