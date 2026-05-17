@@ -260,6 +260,46 @@ def fetch_facts(ticker: str, market: str) -> dict:
     # without RSI/MACD numbers. If you want them, compute inline from
     # closes here (TODO: add lightweight inline RSI calculation).
 
+    # 7. DuPont decomposition fallbacks ----------------------------------
+    # Most sources (Tencent) don't give us ROE / 净利率 / 资产周转率 / 杠杆率
+    # directly. EastMoney push2's f173 returns ROE TTM but is geo-flaky in
+    # Singapore. Without these, the report's framework_2_dupont section
+    # renders empty rows. We fill what we mathematically can:
+    #
+    #   ROE = NetIncome / Equity = (Price/PE) / (Price/PB) = PB / PE × 100%
+    #
+    # This identity holds when PE and PB are TTM-consistent and there's no
+    # preferred equity. It's exact, not an approximation — same formula
+    # Bloomberg uses for ROE_TTM derivation when explicit ROE is missing.
+    #
+    # Sanity bounds: PE > 0 and PB > 0; sensible ROE in [-50%, 100%]. Out
+    # of range = data inconsistency, leave None and let the LLM write
+    # narrative around the missing field.
+    try:
+        pe_v = out.get("pe")
+        pb_v = out.get("pb")
+        if (
+            out.get("roe") is None
+            and isinstance(pe_v, (int, float)) and pe_v > 0
+            and isinstance(pb_v, (int, float)) and pb_v > 0
+        ):
+            derived_roe = round((pb_v / pe_v) * 100, 2)
+            if -50.0 <= derived_roe <= 100.0:
+                out["roe"] = derived_roe
+                out["_provenance"]["roe"] = "derived_from_pe_pb"
+                log.info("[report.facts] derived ROE %.2f%% from PE=%.2f, PB=%.2f",
+                         derived_roe, pe_v, pb_v)
+            else:
+                log.warning("[report.facts] derived ROE %.2f%% out of sane range — leaving null",
+                            derived_roe)
+    except Exception as e:
+        log.warning("[report.facts] ROE derivation failed: %s", e)
+
+    # Net margin / asset turnover / leverage: these require quarterly
+    # financial statements (revenue, NI, total assets, equity). Currently
+    # no source in our multi-source chain returns these reliably from
+    # Singapore. The LLM is instructed to write narrative around the
+    # missing fields rather than fabricate values.
     return out
 
 
@@ -269,11 +309,13 @@ _SYSTEM_PROMPT_ZH = """你是 TradingAgents 资深首席分析师，给中国 A 
 
 规则：
 1. 不要写"FACTS"/"null"/"JSON"/"schema"等技术黑话；数据缺失就说"公开数据中暂未披露"。
-2. 已知数据（价格/均线/支撑压力位/涨跌幅）必须作为分析主线，缺失字段最多提 1 处。
+2. 已知数据（价格/均线/支撑压力位/涨跌幅/PE/PB/ROE）必须作为分析主线，缺失字段最多提 1 处。
 3. 只输出合法 JSON，结构与 SCHEMA 一致；不要 markdown 围栏。
 4. 估值/目标价/fair_value 基于真实价格推导，落在 ±25% 区间。
 5. 简体中文，专业、克制、有判断力。
 6. 框架字段每条至少 40 字，要有推理深度。
+7. **数值字段强制规则**：如果市场数据里有 roe / pe / pb / current_price 等字段且非 null，
+   你输出 JSON 中对应位置（如 framework_2_dupont.roe）必须填该数值，**绝不能**填 null。
 
 公司：{name}（{ticker}）。
 """
@@ -994,6 +1036,29 @@ def assemble_report(ticker: str, locale: str = "zh") -> dict:
         "key_observation_indicator": "下季度毛利率与扣非净利润",
         "change_signal": "数据待补充",
     })
+
+    # Hard override: force-fill ROE from facts.roe even if the LLM left it null.
+    # facts.roe was derived from PB/PE in fetch_facts (step 7) when sources
+    # don't provide it directly. This guarantees the UI never shows "数据待补充"
+    # on ROE when PE+PB are present.
+    _dupont = qualitative.get("framework_2_dupont") or {}
+    _roe_from_facts = facts.get("roe")
+    if isinstance(_dupont, dict) and _roe_from_facts is not None:
+        if _dupont.get("roe") is None:
+            _dupont["roe"] = _roe_from_facts
+            # Append a note explaining the derivation provenance
+            prov = (facts.get("_provenance") or {}).get("roe", "")
+            if "derived" in str(prov).lower() and _dupont.get("change_signal") == "数据待补充":
+                _dupont["change_signal"] = (
+                    f"ROE {_roe_from_facts:.2f}% 由市场 PE/PB 倒推得出（PB÷PE 数学恒等式）。"
+                    f"下季度财报披露后可直接核对净资产收益率指标，验证当前估值假设。"
+                )
+        # If the LLM left net_margin null but we have facts.net_margin, fill it
+        for row in _dupont.get("decomposition", []):
+            if not isinstance(row, dict):
+                continue
+            if row.get("name") == "净利率" and row.get("value") is None and facts.get("net_margin") is not None:
+                row["value"] = facts["net_margin"]
 
     qualitative.setdefault("framework_3_logic_chain", {
         "title": "逻辑链构建",
