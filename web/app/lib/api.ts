@@ -54,6 +54,17 @@ export interface DebateTranscript {
   synthesis: string | null;
 }
 
+// v54: TokenUsage entries are the per-LLM-call audit log. Each row is
+// one model invocation during the 7-agent pipeline. Backend ships them
+// inside the trace object so /d/[shareId] can render the audit log
+// publicly without an additional fetch.
+export interface TokenUsage {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  usd_cost: number;
+}
+
 export interface DecisionTrace {
   ticker: string;
   asof: string;
@@ -63,6 +74,7 @@ export interface DecisionTrace {
   risk_debate: DebateTranscript | null;
   trader_plan: string | null;
   manager_review: string | null;
+  usage?: TokenUsage[];
   total_cost_usd?: number;
 }
 

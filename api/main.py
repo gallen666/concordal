@@ -1433,6 +1433,84 @@ def referral_status(user: CurrentUser = Depends(get_current_user)) -> dict:
     }
 
 
+@app.get("/v1/track-record/live")
+def get_track_record_live(limit: int = 500) -> dict:
+    """v54: aggregate live decision-job stats from SQLite.
+
+    Public, no-auth. Returns:
+      - total_decisions  : # of finished jobs in window
+      - by_side          : { BUY, HOLD, SELL } counts (only finished w/ result)
+      - by_market        : market guess from ticker (US / A-share / crypto)
+      - avg_confidence   : mean across finished decisions
+      - unique_tickers   : distinct symbol count
+      - recent           : last 10 anonymised entries {ticker, side, confidence, asof}
+
+    This is the foundation for /track-record's 'live' section — proves
+    the system is actually running, not a demo. Anonymised: no user_id,
+    no shareId, no PII. Ticker + side + confidence + asof only.
+    """
+    import json as _json
+
+    rows = persistence.list_recent_decision_jobs(limit=max(10, min(1000, int(limit))))
+    by_side: dict[str, int] = {"BUY": 0, "HOLD": 0, "SELL": 0}
+    by_market: dict[str, int] = {"US": 0, "A": 0, "CRYPTO": 0, "OTHER": 0}
+    tickers: set[str] = set()
+    confs: list[float] = []
+    recent: list[dict] = []
+    finished_count = 0
+
+    for _jid, payload_json, updated_at in rows:
+        try:
+            payload = _json.loads(payload_json)
+        except Exception:
+            continue
+        if payload.get("status") != "done":
+            continue
+        result = payload.get("result") or {}
+        decision = result.get("decision") or {}
+        side = (decision.get("side") or "").upper()
+        if side not in by_side:
+            continue  # malformed / interrupted job — skip
+        finished_count += 1
+        by_side[side] += 1
+        try:
+            confs.append(float(decision.get("confidence") or 0))
+        except (TypeError, ValueError):
+            pass
+        ticker = (result.get("ticker") or "").upper()
+        if ticker:
+            tickers.add(ticker)
+            # crude market detection: 6-digit numeric → A-share,
+            # /USDT-like crypto pair → CRYPTO, else US equity. The
+            # backend has a more sophisticated `market` field elsewhere
+            # but this guess is enough for the badge.
+            if ticker.isdigit() and len(ticker) == 6:
+                by_market["A"] += 1
+            elif ticker.endswith("USDT") or ticker in {"BTC", "ETH", "SOL"}:
+                by_market["CRYPTO"] += 1
+            else:
+                by_market["US"] += 1
+        if len(recent) < 10:
+            recent.append({
+                "ticker": ticker,
+                "side": side,
+                "confidence": decision.get("confidence"),
+                "asof": result.get("asof"),
+                "updated_at": updated_at,
+            })
+
+    avg_conf = round(sum(confs) / len(confs), 3) if confs else None
+    return {
+        "total_decisions": finished_count,
+        "by_side": by_side,
+        "by_market": by_market,
+        "unique_tickers": len(tickers),
+        "avg_confidence": avg_conf,
+        "recent": recent,
+        "window_sample_size": len(rows),
+    }
+
+
 @app.get("/v1/me/usage")
 def get_usage(
     request: Request,

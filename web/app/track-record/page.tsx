@@ -134,6 +134,12 @@ export default function TrackRecordPage() {
         </p>
       </header>
 
+      {/* v54: Live activity block — pulls the system's real decision-job
+          SQLite store and shows the global pulse (how many decisions, BUY/
+          HOLD/SELL split, recent tickers). This is what makes the page
+          honest *today*, not 'once the 20×78 backtest runs'. */}
+      <LiveActivity locale={locale} />
+
       {/* Paper-backed dataset banner — added per audit. */}
       <DatasetBanner />
 
@@ -147,6 +153,180 @@ export default function TrackRecordPage() {
       {!loading && (error || !report) && <EmptyState error={error} />}
 
       {report && <ReportView report={report} locale={locale} />}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// v54: Live activity — global decision-job pulse from SQLite
+// ---------------------------------------------------------------------------
+
+interface LiveStats {
+  total_decisions: number;
+  by_side: { BUY: number; HOLD: number; SELL: number };
+  by_market: { US: number; A: number; CRYPTO: number; OTHER: number };
+  unique_tickers: number;
+  avg_confidence: number | null;
+  recent: Array<{ ticker: string; side: string; confidence: number | null; asof: string | null; updated_at: number }>;
+  window_sample_size: number;
+}
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_API ||
+  "https://trading-agents-platform.onrender.com";
+
+function LiveActivity({ locale }: { locale: string }) {
+  const [stats, setStats] = useState<LiveStats | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/v1/track-record/live`, { cache: "no-store" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return (await r.json()) as LiveStats;
+      })
+      .then(setStats)
+      .catch((e: unknown) => setError((e as Error).message));
+  }, []);
+
+  // Quietly drop the block on error or first paint — track-record top
+  // section shouldn't become a sad error banner just because /live
+  // is down. The 20×78 backtest below this still renders normally.
+  if (error || !stats) return null;
+
+  // If there are no finished decisions yet, also hide — better to show
+  // nothing than 0 / 0 / 0.
+  if (stats.total_decisions === 0) return null;
+
+  const total = stats.total_decisions;
+  const buyPct = total > 0 ? (stats.by_side.BUY / total) * 100 : 0;
+  const holdPct = total > 0 ? (stats.by_side.HOLD / total) * 100 : 0;
+  const sellPct = total > 0 ? (stats.by_side.SELL / total) * 100 : 0;
+
+  return (
+    <section className="surface p-5 md:p-6 space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <span className="label-cap inline-flex items-center gap-2">
+            <span className="status-dot bg-signal-buy animate-pulse-slow" />
+            {locale === "zh" ? "实时活动" : "Live activity"}
+          </span>
+          <h2 className="text-lg font-semibold mt-1">
+            {locale === "zh"
+              ? "系统真实跑过的决策 · 来自 SQLite jobs 表"
+              : "Real decisions the system actually ran · from the SQLite jobs table"}
+          </h2>
+        </div>
+        <div className="text-2xs font-mono uppercase tracking-wider text-ink-tertiary">
+          {locale === "zh"
+            ? `近 ${stats.window_sample_size} 行 sample · 不含 PII`
+            : `last ${stats.window_sample_size} rows sampled · no PII`}
+        </div>
+      </div>
+
+      {/* 4 big stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <BigStat
+          label={locale === "zh" ? "完成的决策" : "Finished decisions"}
+          value={total.toLocaleString()}
+        />
+        <BigStat
+          label={locale === "zh" ? "覆盖票数" : "Unique tickers"}
+          value={stats.unique_tickers.toString()}
+        />
+        <BigStat
+          label={locale === "zh" ? "平均置信度" : "Avg confidence"}
+          value={stats.avg_confidence != null ? `${(stats.avg_confidence * 100).toFixed(0)}%` : "—"}
+          accent
+        />
+        <BigStat
+          label={locale === "zh" ? "市场分布" : "Markets touched"}
+          value={
+            [
+              stats.by_market.US > 0 ? "US" : null,
+              stats.by_market.A > 0 ? "A" : null,
+              stats.by_market.CRYPTO > 0 ? "₿" : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "—"
+          }
+        />
+      </div>
+
+      {/* BUY / HOLD / SELL stacked bar */}
+      <div>
+        <div className="flex h-2 rounded overflow-hidden bg-bg-subtle">
+          <div className="bg-bull h-full" style={{ width: `${buyPct}%` }} />
+          <div className="bg-gold h-full" style={{ width: `${holdPct}%` }} />
+          <div className="bg-bear h-full" style={{ width: `${sellPct}%` }} />
+        </div>
+        <div className="flex justify-between text-2xs font-mono uppercase tracking-wider text-ink-tertiary mt-2">
+          <span className="text-bull-ink">BUY {stats.by_side.BUY} ({buyPct.toFixed(0)}%)</span>
+          <span className="text-gold">HOLD {stats.by_side.HOLD} ({holdPct.toFixed(0)}%)</span>
+          <span className="text-bear-ink">SELL {stats.by_side.SELL} ({sellPct.toFixed(0)}%)</span>
+        </div>
+      </div>
+
+      {/* Recent 10 anonymised decisions */}
+      {stats.recent.length > 0 && (
+        <div>
+          <div className="label-cap mb-2">
+            {locale === "zh" ? "最近 10 次决策" : "Last 10 decisions"}
+          </div>
+          <div className="grid sm:grid-cols-2 gap-2">
+            {stats.recent.map((r, i) => (
+              <div
+                key={i}
+                className="surface p-3 flex items-center justify-between gap-3 text-sm"
+              >
+                <div className="font-mono font-semibold">{r.ticker || "—"}</div>
+                <div className="flex items-center gap-3">
+                  <span
+                    className={cn(
+                      "text-2xs font-mono uppercase tracking-wider px-1.5 py-0.5 rounded border",
+                      r.side === "BUY"
+                        ? "bg-bull-soft text-bull-ink border-bull/40"
+                        : r.side === "SELL"
+                        ? "bg-bear-soft text-bear-ink border-bear/40"
+                        : "bg-gold-soft text-gold border-gold/40",
+                    )}
+                  >
+                    {r.side}
+                  </span>
+                  <span className="text-2xs font-mono text-ink-tertiary">
+                    {r.confidence != null ? `${(r.confidence * 100).toFixed(0)}%` : "—"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="text-2xs font-mono uppercase tracking-wider text-ink-tertiary border-t border-border-subtle pt-3">
+        {locale === "zh"
+          ? "本块从生产 SQLite 读取 · 决策内容已匿名 · 完整审计政策见 /compliance"
+          : "Sourced from production SQLite · anonymised · full audit policy at /compliance"}
+      </div>
+    </section>
+  );
+}
+
+function BigStat({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="surface p-3">
+      <div className="label-cap text-2xs">{label}</div>
+      <div className={cn("mt-1 text-2xl font-display font-medium", accent && "text-accent")}>
+        {value}
+      </div>
     </div>
   );
 }

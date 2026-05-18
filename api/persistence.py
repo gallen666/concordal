@@ -317,6 +317,23 @@ def get_decision_job(job_id: str) -> tuple[str, str] | None:
     return (row[0], row[1]) if row else None
 
 
+def list_recent_decision_jobs(limit: int = 500) -> list[tuple[str, str, float]]:
+    """v54: list recent decision-job rows for /v1/track-record/live aggregation.
+
+    Returns (job_id, payload_json, updated_at) tuples, newest first.
+    Capped at `limit` to keep the aggregation cheap. We don't filter by
+    user — this is for global anonymous track-record stats. Filters
+    happen downstream (only count rows where status='done', etc.).
+    """
+    c = _get_conn()
+    cur = c.execute(
+        "SELECT job_id, payload, updated_at FROM decision_jobs "
+        "ORDER BY updated_at DESC LIMIT ?",
+        (limit,),
+    )
+    return [(r[0], r[1], r[2]) for r in cur.fetchall()]
+
+
 # ---------------------------------------------------------------------------
 # Paid tiers (Stripe webhook target)
 # ---------------------------------------------------------------------------

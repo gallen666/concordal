@@ -177,6 +177,66 @@ export default function SharedDecisionPage() {
         </div>
       )}
 
+      {/* v54: Public audit log. The whole point of the McKinsey strategy's
+          "every LLM call audit-logged" promise — the model/tokens/cost for
+          every single inference during this decision, viewable by anyone
+          with the share link. No auth. This is what makes the SFC Type 4
+          "audit trail" claim believable in writing. */}
+      {trace.usage && trace.usage.length > 0 && (
+        <div className="surface p-5 space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div className="label-cap">
+                {locale === "zh" ? "审计日志 · 每一次 LLM 调用" : "Audit log · every LLM call"}
+              </div>
+              <div className="text-xs text-ink-tertiary mt-1">
+                {locale === "zh"
+                  ? "公开可查 · 每行 = 一次模型调用 · 费用为实际 API 计价"
+                  : "Publicly verifiable · one row = one model call · cost is metered API price"}
+              </div>
+            </div>
+            {typeof trace.total_cost_usd === "number" && (
+              <div className="font-mono text-sm">
+                <span className="text-ink-tertiary uppercase tracking-wider text-2xs mr-2">
+                  {locale === "zh" ? "总计" : "Total"}
+                </span>
+                <span className="text-accent">${trace.total_cost_usd.toFixed(4)}</span>
+              </div>
+            )}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs font-mono">
+              <thead className="text-ink-tertiary uppercase tracking-wider text-2xs">
+                <tr className="border-b border-border-subtle">
+                  <th className="text-left py-2 pr-3">#</th>
+                  <th className="text-left py-2 pr-3">{locale === "zh" ? "模型" : "Model"}</th>
+                  <th className="text-right py-2 pr-3">In</th>
+                  <th className="text-right py-2 pr-3">Out</th>
+                  <th className="text-right py-2">USD</th>
+                </tr>
+              </thead>
+              <tbody className="text-ink-secondary">
+                {trace.usage.map((u, i) => (
+                  <tr key={i} className="border-b border-border-subtle/40 hover:bg-bg-hover/40">
+                    <td className="py-1.5 pr-3 text-ink-tertiary">{i + 1}</td>
+                    <td className="py-1.5 pr-3 text-ink-primary">{u.model}</td>
+                    <td className="py-1.5 pr-3 text-right">{u.input_tokens.toLocaleString()}</td>
+                    <td className="py-1.5 pr-3 text-right">{u.output_tokens.toLocaleString()}</td>
+                    <td className="py-1.5 text-right text-accent">${u.usd_cost.toFixed(5)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Link
+            href="/compliance"
+            className="text-xs text-accent hover:underline inline-flex items-center gap-1 pt-1"
+          >
+            {locale === "zh" ? "了解我们的审计日志政策 →" : "Read the audit-log policy →"}
+          </Link>
+        </div>
+      )}
+
       {/* Footer CTA — the whole point of this page */}
       <div className="surface-elev p-6 mt-8">
         <h2 className="text-lg font-semibold mb-2">
