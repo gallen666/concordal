@@ -12,7 +12,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +257,10 @@ class DecisionTrace(BaseModel):
     manager_review: str | None = None
     usage: list[TokenUsage] = Field(default_factory=list)
 
+    # v52: was @property — Pydantic v2 doesn't serialize @property into JSON,
+    # so frontend's `trace.total_cost_usd` was always undefined → UI showed
+    # $0.0000. @computed_field tells Pydantic to include it in model_dump().
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def total_cost_usd(self) -> float:
         return round(sum(u.usd_cost for u in self.usage), 4)

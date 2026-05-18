@@ -347,10 +347,14 @@ function Hero() {
           </p>
         </div>
 
-        {/* trust strip */}
+        {/* trust strip. v52: honest LLM-provider count — only 2 actually
+            wired in production (DeepSeek V4 primary, Gemini fallback). The
+            router scaffolds 6 families (OpenAI/Anthropic/Qwen/GLM/...), but
+            only the ones with API keys set on Render count toward this
+            stat. Bumps as new keys go live. */}
         <div className="max-w-3xl mx-auto grid grid-cols-3 gap-6 text-center pt-2">
           <TrustItem n="27" l="Regression tests · zero lookahead" />
-          <TrustItem n="6"  l="LLM providers · auto-fallback" />
+          <TrustItem n="2"  l="LLM providers live · DeepSeek V4 + Gemini" />
           <TrustItem n="3"  l="Markets · US · A-share · Crypto" />
         </div>
       </div>

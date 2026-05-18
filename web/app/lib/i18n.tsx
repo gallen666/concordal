@@ -146,7 +146,7 @@ const dict = {
   "decision.trust.licensed":    { en: "Licensed · HK SFC Type 4 in progress", zh: "持牌中 · HK SFC Type 4 申请中" },
   "decision.trust.regression":  { en: "27 regression tests · zero lookahead", zh: "27 个回归测试 · 零前瞻偏差" },
   "decision.trust.audit":       { en: "Every LLM call audit-logged",          zh: "每次 LLM 调用全程留痕" },
-  "decision.trust.consensus":   { en: "Multi-LLM consensus (6 providers)",    zh: "多 LLM 共识（6 家提供商）" },
+  "decision.trust.consensus":   { en: "DeepSeek V4 primary · Gemini fallback",  zh: "DeepSeek V4 主推理 · Gemini 兜底" },
   "decision.label":             { en: "NEW DECISION",                       zh: "新建决策" },
   "decision.heading":           { en: "Run the 7-agent pipeline",           zh: "运行 7-agent 流水线" },
   "decision.subheading":        { en: "Enter a ticker. The system goes from data gathering to final approval, fully traced.", zh: "输入股票代码。系统从数据搜集到终审一气呵成，全程可追溯。" },
