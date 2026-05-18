@@ -28,11 +28,19 @@ export function Logo({ className }: { className?: string }) {
         <circle cx="14" cy="14" r="10" fill="none" stroke="rgba(237,230,216,0.15)" strokeWidth="0.5" />
       </svg>
       <div className="flex flex-col leading-none">
-        <span className="font-display font-medium tracking-tight text-ink-primary text-[17px]">
-          TradingAgents
-        </span>
+        <div className="flex items-baseline gap-2">
+          <span className="font-display font-medium tracking-tight text-ink-primary text-[17px]">
+            TradingAgents
+          </span>
+          {/* v47: Chinese double-name "协奏" (Concord) per brand strategy.
+              Symbolises 7 agents in harmony — and harmony with regulators,
+              clients, markets. Sits at smaller weight beside the wordmark. */}
+          <span className="hidden sm:inline font-display text-[13px] text-gold tracking-wide leading-none">
+            协奏
+          </span>
+        </div>
         <span className="text-[9px] tracking-kicker uppercase text-ink-tertiary mt-1 font-mono">
-          The Decision Dialectic
+          The Decision Dialectic · Concord
         </span>
       </div>
     </div>

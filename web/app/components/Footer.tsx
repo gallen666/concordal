@@ -70,7 +70,7 @@ export default function Footer() {
         {/* Top row — brand */}
         <div className="grid md:grid-cols-[1.5fr_2fr] gap-10 mb-12">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-baseline gap-2">
               {/* dialectic mark */}
               <svg width="20" height="20" viewBox="0 0 28 28" fill="none" aria-hidden="true">
                 <path d="M14 4 A10 10 0 0 0 14 24 Z" fill="#5A8A6F" />
@@ -78,12 +78,22 @@ export default function Footer() {
                 <rect x="13" y="3" width="2" height="22" fill="#C9A961" />
               </svg>
               <span className="font-display text-lg text-ink-primary">TradingAgents</span>
+              {/* v47: 中文双名 "协奏" (Concord) per brand strategy doc */}
+              <span className="font-display text-base text-gold">协奏</span>
             </div>
             <p className="text-sm text-ink-tertiary mt-3 leading-relaxed max-w-sm">
               {locale === "zh"
                 ? "把「该买还是该卖」交给一个会自我辩论的 AI 研究台。"
                 : "An AI research desk that argues with itself before telling you to buy or sell."}
             </p>
+            {/* v47: Regulatory transparency badge — SFC Type 4 application status.
+                Standard practice for HK fintech: state license posture clearly. */}
+            <div className="mt-4 inline-flex items-center gap-1.5 text-2xs font-mono tracking-wider uppercase text-gold/80 border border-gold/20 bg-gold-soft/30 rounded px-2 py-1">
+              <span className="status-dot bg-gold animate-pulse-slow" />
+              {locale === "zh"
+                ? "SFC Type 4 申请中 · 香港注册中"
+                : "SFC Type 4 in progress · HK incorporation"}
+            </div>
           </div>
 
           {/* Right grid — links */}
@@ -140,7 +150,9 @@ export default function Footer() {
             )}
           </div>
           <span className="text-2xs font-mono text-ink-tertiary tracking-wider uppercase">
-            © 2026 TradingAgents
+            {/* v47: Pre-HK-OpCo copyright. After Vistra registers TradingAgents (HK) Ltd,
+                change to "© 2026 TradingAgents (HK) Ltd. · EST. Hong Kong". */}
+            © 2026 TradingAgents · 协奏 Concord · Est. Hong Kong
           </span>
         </div>
       </div>

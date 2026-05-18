@@ -86,6 +86,24 @@ const config: Config = {
           muted:   "#2E2510",
           glow:    "#E0C480",
         },
+        // v47: McKinsey strategy doc brand tokens — additive, non-breaking.
+        // Used for: /enterprise, /research, /compliance, /benchmark pages
+        // and any pre-IPO / institutional-facing context. Existing pages
+        // continue to use the "editorial dialectic" palette (jade/brick).
+        verdict: {
+          gold:      "#D4AF37",  // brighter, more "verdict" feel
+          gold_deep: "#8B7C2A",
+          gold_soft: "#322716",
+          blue:      "#0A1F44",  // deep well blue — institutional gravitas
+          blue_soft: "#142850",
+          parchment: "#F4ECD8",  // warm cream for high-end paper-feel surfaces
+        },
+        // Concord brand color — used wherever we surface the 协奏 wordmark.
+        concord: {
+          DEFAULT: "#D4AF37",
+          dark:    "#0A1F44",
+          paper:   "#F4ECD8",
+        },
       },
       fontFamily: {
         sans:    ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
