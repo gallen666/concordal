@@ -259,6 +259,25 @@ export default function DecisionPage() {
         </p>
       </div>
 
+      {/* v48 Phase 2: Trust banner — four institutional signals stacked
+          right above the run form. Same gold pulse used in Footer + Hero
+          kicker so brand reads consistent across pages. This is the
+          highest-leverage spot for "持牌 · audit log · multi-LLM" because
+          it sits in the user's eyeline at the moment they decide whether
+          to type a ticker. */}
+      <div className="mb-6 surface p-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-2xs font-mono uppercase tracking-wider">
+        <span className="inline-flex items-center gap-1.5 text-gold/90">
+          <span className="status-dot bg-gold animate-pulse-slow" />
+          {t("decision.trust.licensed")}
+        </span>
+        <span className="text-ink-tertiary">·</span>
+        <span className="text-ink-secondary">{t("decision.trust.regression")}</span>
+        <span className="text-ink-tertiary">·</span>
+        <span className="text-ink-secondary">{t("decision.trust.consensus")}</span>
+        <span className="text-ink-tertiary">·</span>
+        <span className="text-ink-secondary">{t("decision.trust.audit")}</span>
+      </div>
+
       {/* Live quote strip — shows current price + 60-day sparkline for the
           ticker currently in the input. Defaults to AAPL on first load. */}
       {ticker && (
