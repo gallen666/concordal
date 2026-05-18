@@ -48,8 +48,13 @@ def manager_node(
     lessons = state.get("lessons") or ""
     lessons_block = f"=== LESSONS FROM PRIOR DECISIONS ===\n{lessons}\n\n" if lessons else ""
 
+    # v55: GROUND-TRUTH-QUOTE prefix — Manager 终审必须直接对照真实
+    # close, 否则前面 7 个 agent 任何一个 hallucinate 价 manager 都不知道.
+    from ._quote_block import ground_truth_quote_block
+    gt = ground_truth_quote_block(state)
     user = (
-        f"Ticker: {state['ticker']}  Asof: {state['asof']}\n"
+        gt
+        + f"Ticker: {state['ticker']}  Asof: {state['asof']}\n"
         f"Regime: {regime_blob}\n\n"
         f"{lessons_block}"
         f"=== TRADER PLAN ===\n{plan}\n\n"

@@ -244,32 +244,46 @@ wrong, and what pattern to remember next time. No platitudes; concrete only.
 @dataclass(frozen=True)
 class _USPack(PromptPack):
     def render_analyst_user(self, role: str, state: dict) -> str:
+        # v55: Every analyst user-prompt is prefixed with the
+        # GROUND-TRUTH-QUOTE block so the LLM sees the authoritative
+        # close price BEFORE it starts reasoning about its own snapshot.
+        # Eliminates the v45-style hallucination where a stale fetcher
+        # response would silently propagate into every downstream agent.
+        from ..agents._quote_block import ground_truth_quote_block
+        gt = ground_truth_quote_block(state)
+
         ticker = state["ticker"]
         asof = state["asof"]
         if role == "fundamentals":
             f = state.get("fundamentals")
-            return f"Ticker: {ticker}\nAsof: {asof}\nFundamentals: {f.model_dump_json(indent=2) if f else 'n/a'}"
+            return gt + f"Ticker: {ticker}\nAsof: {asof}\nFundamentals: {f.model_dump_json(indent=2) if f else 'n/a'}"
         if role == "sentiment":
             s = state.get("sentiment")
-            return f"Ticker: {ticker}\nAsof: {asof}\nSentiment: {s.model_dump_json(indent=2) if s else 'n/a'}"
+            return gt + f"Ticker: {ticker}\nAsof: {asof}\nSentiment: {s.model_dump_json(indent=2) if s else 'n/a'}"
         if role == "news":
             n = state.get("news") or []
             blob = "\n\n".join(
                 f"- [{i.published_at.date()}] {i.headline}\n  {i.summary}" for i in n
             )
-            return f"Ticker: {ticker}\nAsof: {asof}\nNews ({len(n)} items):\n{blob}"
+            return gt + f"Ticker: {ticker}\nAsof: {asof}\nNews ({len(n)} items):\n{blob}"
         if role == "technical":
             t = state.get("technical")
-            return f"Ticker: {ticker}\nAsof: {asof}\nTechnical: {t.model_dump_json(indent=2) if t else 'n/a'}"
+            return gt + f"Ticker: {ticker}\nAsof: {asof}\nTechnical: {t.model_dump_json(indent=2) if t else 'n/a'}"
         if role == "macro":
             m = state.get("macro")
-            return (
+            return gt + (
                 f"Ticker: {ticker}\nAsof: {asof}\n"
                 f"Macro snapshot: {m.model_dump_json(indent=2) if m else 'n/a'}"
             )
         raise KeyError(role)
 
     def render_debate_user(self, side: str, round_index: int, state: dict) -> str:
+        # v55: same GROUND-TRUTH-QUOTE prefix — bull/bear MUST see the
+        # real price, not just narrative summaries that may already be
+        # carrying upstream hallucinations.
+        from ..agents._quote_block import ground_truth_quote_block
+        gt = ground_truth_quote_block(state)
+
         reports = []
         for key in (
             "fundamentals_report",
@@ -289,7 +303,8 @@ class _USPack(PromptPack):
                 f"[round {t.round}] {t.speaker.upper()}: {t.content}" for t in debate.turns
             )
         return (
-            f"Ticker: {state['ticker']}  Asof: {state['asof']}  Round: {round_index}\n\n"
+            gt
+            + f"Ticker: {state['ticker']}  Asof: {state['asof']}  Round: {round_index}\n\n"
             f"=== ANALYST REPORTS ===\n{joined}\n\n"
             f"=== DEBATE SO FAR ===\n{history or '(none yet)'}\n\n"
             f"You are the {side.upper()} researcher. Make your contribution now."

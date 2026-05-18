@@ -25,8 +25,13 @@ def trader_node(state: DecisionState, *, pack: PromptPack, llm: LLMRouter, **_) 
             r = state.get(k)
             if r:
                 reports.append(f"### {k}\n{r.body}\nSignals: {r.signals}")
+        # v55: prefix GROUND-TRUTH-QUOTE block so trader plans an entry/exit
+        # against the real close price, not a stale narrative number.
+        from ._quote_block import ground_truth_quote_block
+        gt = ground_truth_quote_block(state)
         user = (
-            f"Ticker: {state['ticker']}  Asof: {state['asof']}\n"
+            gt
+            + f"Ticker: {state['ticker']}  Asof: {state['asof']}\n"
             f"User risk profile: {state.get('user_risk_profile', 'balanced')}\n\n"
             f"=== ANALYST REPORTS ===\n" + "\n\n".join(reports) + "\n\n"
             f"=== RESEARCHER DEBATE SYNTHESIS ===\n{syn}\n\n"

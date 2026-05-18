@@ -16,8 +16,13 @@ from ..prompts.base import PromptPack
 def risk_debate_node(state: DecisionState, *, pack: PromptPack, llm: LLMRouter, **_) -> DecisionState:
     with current_span("risk.debate", ticker=state.get("ticker"), asof=str(state.get("asof"))):
         plan = state.get("trader_plan", "")
+        # v55: GROUND-TRUTH-QUOTE prefix — risk team sizes stops/triggers
+        # against the actual close, not a number summarised by trader.
+        from ._quote_block import ground_truth_quote_block
+        gt = ground_truth_quote_block(state)
         base_user = (
-            f"Ticker: {state['ticker']}  Asof: {state['asof']}\n"
+            gt
+            + f"Ticker: {state['ticker']}  Asof: {state['asof']}\n"
             f"Trader's plan:\n{plan}\n"
         )
         transcript = DebateTranscript(topic="risk sizing", rounds=1, turns=[])
