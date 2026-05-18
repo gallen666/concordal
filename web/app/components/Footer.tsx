@@ -48,6 +48,9 @@ export default function Footer() {
     {
       heading: locale === "zh" ? "信任" : "Trust",
       links: [
+        // v53: /compliance 头条放在 Trust 列, 因为它是 SFC Type 4 + audit
+        // log + 数据政策的 single source of truth, 优先级高于 Terms.
+        { href: "/compliance",  label: locale === "zh" ? "合规透明" : "Compliance" },
         { href: "/terms",       label: locale === "zh" ? "服务条款" : "Terms" },
         { href: "/privacy",     label: locale === "zh" ? "隐私" : "Privacy" },
         { href: "/disclaimer",  label: locale === "zh" ? "免责声明" : "Disclaimer" },

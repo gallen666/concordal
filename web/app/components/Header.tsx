@@ -325,6 +325,16 @@ function buildGroups(isZh: boolean): NavGroup[] {
             icon: <ShieldCheck className="w-4 h-4" />,
           },
           {
+            // v53 Phase 3: /compliance — SFC Type 4 申请进度 + 数据政策 + audit log policy
+            href: "/compliance",
+            label: lbl("合规透明", "Compliance"),
+            desc: lbl(
+              "SFC Type 4 申请进度 · 数据保留 · audit log policy",
+              "SFC Type 4 progress · data retention · audit policy",
+            ),
+            icon: <ShieldCheck className="w-4 h-4" />,
+          },
+          {
             href: "/developers",
             label: lbl("开发者 API", "Developers API"),
             desc: lbl(
