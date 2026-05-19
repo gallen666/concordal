@@ -151,6 +151,141 @@ def validate_idea_generation(parsed: dict | None, universe_tickers: set[str]) ->
     return len(errors) == 0, errors
 
 
+# ---- v58 additional validators -------------------------------------------
+
+def validate_earnings_analysis(parsed: dict | None, gt_close: float | None) -> tuple[bool, list[str]]:
+    if not parsed or not isinstance(parsed, dict):
+        return False, ["llm output failed to parse as JSON"]
+    errors: list[str] = []
+    h = parsed.get("headline") or {}
+    if not isinstance(h, dict):
+        errors.append("headline is missing")
+    # If target_price_new present, check coherence
+    tp = parsed.get("target_price_new")
+    if gt_close and isinstance(tp, (int, float)):
+        if not (gt_close * 0.5 <= tp <= gt_close * 1.5):
+            errors.append(f"target_price_new={tp} outside ±50% of GT close={gt_close}")
+    # beat_pct math sanity
+    if isinstance(h, dict):
+        try:
+            eps_a = h.get("eps_actual")
+            eps_c = h.get("eps_consensus")
+            bp = h.get("beat_pct")
+            if all(isinstance(v, (int, float)) for v in (eps_a, eps_c, bp)) and eps_c != 0:
+                expected = (eps_a - eps_c) / eps_c
+                if abs(expected - bp) > 0.02:
+                    errors.append(f"beat_pct={bp} doesn't match (actual−consensus)/consensus={expected:.3f}")
+        except Exception:
+            pass
+    impact = parsed.get("thesis_impact")
+    if impact not in (None, "strengthened", "neutral", "weakened"):
+        errors.append(f"thesis_impact={impact!r} must be strengthened/neutral/weakened")
+    return len(errors) == 0, errors
+
+
+def validate_initiating_coverage(parsed: dict | None, gt_close: float | None) -> tuple[bool, list[str]]:
+    if not parsed or not isinstance(parsed, dict):
+        return False, ["llm output failed to parse as JSON"]
+    errors: list[str] = []
+    rating = parsed.get("rating")
+    if rating not in (None, "Overweight", "Neutral", "Underweight"):
+        errors.append(f"rating={rating!r} must be Overweight/Neutral/Underweight")
+    tp = parsed.get("target_price")
+    if gt_close and isinstance(tp, (int, float)):
+        if not (gt_close * 0.5 <= tp <= gt_close * 1.5):
+            errors.append(f"target_price={tp} outside ±50% of GT close={gt_close}")
+    risks = parsed.get("key_risks")
+    if not isinstance(risks, list) or len(risks) < 3:
+        errors.append(f"key_risks must be a list of ≥3 items, got {len(risks) if isinstance(risks, list) else 'non-list'}")
+    return len(errors) == 0, errors
+
+
+def validate_model_update(parsed: dict | None, gt_close: float | None) -> tuple[bool, list[str]]:
+    if not parsed or not isinstance(parsed, dict):
+        return False, ["llm output failed to parse as JSON"]
+    errors: list[str] = []
+    changes = parsed.get("estimate_changes")
+    if not isinstance(changes, list):
+        errors.append("estimate_changes must be a list")
+        changes = []
+    for i, c in enumerate(changes):
+        if not isinstance(c, dict):
+            continue
+        old = c.get("old_value")
+        new = c.get("new_value")
+        delta = c.get("delta_pct")
+        if all(isinstance(v, (int, float)) for v in (old, new, delta)) and old != 0:
+            expected = (new - old) / old
+            if abs(expected - delta) > 0.02:
+                errors.append(f"estimate_changes[{i}].delta_pct={delta} doesn't match (new−old)/old={expected:.3f}")
+    vi = parsed.get("valuation_impact") or {}
+    nt = vi.get("new_target") if isinstance(vi, dict) else None
+    if gt_close and isinstance(nt, (int, float)):
+        if not (gt_close * 0.5 <= nt <= gt_close * 1.5):
+            errors.append(f"valuation_impact.new_target={nt} outside ±50% of GT close={gt_close}")
+    return len(errors) == 0, errors
+
+
+def validate_morning_note(parsed: dict | None, watchlist: set[str]) -> tuple[bool, list[str]]:
+    if not parsed or not isinstance(parsed, dict):
+        return False, ["llm output failed to parse as JSON"]
+    errors: list[str] = []
+    invented: list[str] = []
+    for section in ("overnight_movers", "top_trade_ideas", "watch_list"):
+        items = parsed.get(section) or []
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict):
+                t = (item.get("ticker") or "").upper().strip()
+                if t and watchlist and t not in watchlist:
+                    invented.append(f"{section}:{t}")
+    if invented:
+        errors.append(f"LLM referenced {len(invented)} tickers not in watchlist: {invented[:10]}")
+    # size_pct ∈ [0.005, 0.05]
+    for i, idea in enumerate(parsed.get("top_trade_ideas") or []):
+        if isinstance(idea, dict):
+            sz = idea.get("size_pct")
+            if isinstance(sz, (int, float)) and not (0.005 <= sz <= 0.05):
+                errors.append(f"top_trade_ideas[{i}].size_pct={sz} outside [0.005, 0.05]")
+    return len(errors) == 0, errors
+
+
+def validate_sector_overview(parsed: dict | None) -> tuple[bool, list[str]]:
+    if not parsed or not isinstance(parsed, dict):
+        return False, ["llm output failed to parse as JSON"]
+    errors: list[str] = []
+    for req in ("key_themes", "headwinds", "long_term_drivers"):
+        v = parsed.get(req)
+        if not isinstance(v, list) or len(v) == 0:
+            errors.append(f"{req} must be a non-empty list")
+    return len(errors) == 0, errors
+
+
+def validate_catalyst_calendar(parsed: dict | None, watchlist: set[str]) -> tuple[bool, list[str]]:
+    if not parsed or not isinstance(parsed, dict):
+        return False, ["llm output failed to parse as JSON"]
+    errors: list[str] = []
+    catalysts = parsed.get("catalysts") or []
+    invented: list[str] = []
+    for c in catalysts:
+        if isinstance(c, dict):
+            t = (c.get("ticker") or "").upper().strip()
+            if t and watchlist and t not in watchlist:
+                invented.append(t)
+            r = c.get("expected_reaction_pct_range")
+            if isinstance(r, list) and len(r) == 2:
+                lo, hi = r
+                if not (-0.5 <= float(lo or 0) <= 0.5 and -0.5 <= float(hi or 0) <= 0.5):
+                    errors.append(f"catalyst {t} reaction range {r} outside [-0.5, 0.5]")
+            dte = c.get("days_to_event")
+            if isinstance(dte, (int, float)) and dte < 0:
+                errors.append(f"catalyst {t} days_to_event={dte} is negative")
+    if invented:
+        errors.append(f"LLM referenced {len(invented)} tickers not in watchlist: {invented[:10]}")
+    return len(errors) == 0, errors
+
+
 def integrity_envelope(
     skill_output: dict[str, Any],
     is_valid: bool,

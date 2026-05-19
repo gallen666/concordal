@@ -32,6 +32,22 @@ adapters and the LLM. This mirrors Anthropic's pattern: the skill is
 the *methodology*, not the *data ETL*.
 """
 
-from . import earnings_preview, thesis_tracker, idea_generation
+from . import (
+    earnings_preview,
+    thesis_tracker,
+    idea_generation,
+    # v58 — 6 additional skills covering the rest of Anthropic's
+    # equity-research vertical.
+    earnings_analysis,
+    initiating_coverage,
+    model_update,
+    morning_note,
+    sector_overview,
+    catalyst_calendar,
+)
 
-__all__ = ["earnings_preview", "thesis_tracker", "idea_generation"]
+__all__ = [
+    "earnings_preview", "thesis_tracker", "idea_generation",
+    "earnings_analysis", "initiating_coverage", "model_update",
+    "morning_note", "sector_overview", "catalyst_calendar",
+]

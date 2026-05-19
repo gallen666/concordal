@@ -4181,16 +4181,105 @@ def equity_research_thesis_tracker(
 @app.post("/v1/equity-research/screen", tags=["equity-research"])
 def equity_research_screen(payload: dict) -> dict:
     """Stock screening — applies user criteria to a candidate universe,
-    returns ranked watchlist + top-3 deep-dive thesis snippets. The
-    universe comes from a mix of /v1/cn/zt-pool, /v1/hot-rankings, and
-    any tickers in the payload['universe'] field. LLM is barred from
-    inventing tickers — the validator rejects outputs that reference
-    names outside the input universe."""
+    returns ranked watchlist + top-3 deep-dive thesis snippets. v59:
+    when payload['universe'] is empty OR has fewer than 5 tickers, we
+    auto-fill from /v1/cn/zt-pool + a curated US/HK universe so the
+    user doesn't need to maintain a list manually."""
     from trading_agents.skills import idea_generation
     criteria = payload.get("criteria") or {}
     universe = payload.get("universe") or []
     locale = payload.get("locale", "en")
+    if len(universe) < 5:
+        universe = list(universe) + _autofill_universe(criteria)
     return idea_generation.run(criteria=criteria, universe=universe, locale=locale)
+
+
+def _autofill_universe(criteria: dict) -> list[dict]:
+    """v59: heuristic universe expander. Pulls top movers from existing
+    market endpoints. Hard-coded lists are honest about being a starting
+    point — the validator will reject any LLM output that references
+    tickers outside this set, so we mark the boundary clearly."""
+    market = (criteria.get("market") or "us_equity").lower()
+    out: list[dict] = []
+    # US large-cap canonical universe — curated, not LLM-derived.
+    if market in ("us_equity", "us", "auto"):
+        sector = (criteria.get("sector") or "").lower()
+        if "semi" in sector:
+            out = [{"ticker": t, "sector": "semiconductors"} for t in
+                   ["NVDA", "AMD", "TSM", "AVGO", "QCOM", "MU", "ARM", "INTC", "AMAT", "LRCX"]]
+        elif "tech" in sector or "software" in sector:
+            out = [{"ticker": t, "sector": "tech"} for t in
+                   ["AAPL", "MSFT", "GOOGL", "META", "AMZN", "NVDA", "ORCL", "CRM", "ADBE", "NFLX"]]
+        elif "finance" in sector or "bank" in sector:
+            out = [{"ticker": t, "sector": "financials"} for t in
+                   ["JPM", "BAC", "WFC", "GS", "MS", "BLK", "SCHW", "C", "AXP", "V"]]
+        elif "energy" in sector:
+            out = [{"ticker": t, "sector": "energy"} for t in
+                   ["XOM", "CVX", "COP", "SLB", "EOG", "PSX", "MPC", "VLO"]]
+        else:
+            out = [{"ticker": t, "sector": "diversified"} for t in
+                   ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "JPM", "XOM", "JNJ"]]
+        return out
+    # A-share: pull zt-pool first (live data)
+    if market in ("a_share", "cn", "china"):
+        try:
+            from trading_agents.adapters.cn_stock_multi_source import fetch_zt_pool_multi
+            pool = fetch_zt_pool_multi(limit=20)
+            return [{"ticker": p.get("ticker"), "sector": p.get("sector") or "A-share"} for p in (pool or []) if p.get("ticker")]
+        except Exception:
+            # Fallback: hard-coded blue-chips
+            return [{"ticker": t, "sector": "A-share"} for t in
+                    ["600519", "300750", "002594", "000001", "600036", "601318", "600276", "300059"]]
+    return out
+
+
+# ---- v58: 6 additional skills --------------------------------------------
+
+@app.post("/v1/equity-research/earnings-analysis", tags=["equity-research"])
+def equity_research_earnings_analysis(ticker: str, locale: str = "en") -> dict:
+    """Post-earnings update — beat/miss decomposition + revised estimates."""
+    from trading_agents.skills import earnings_analysis
+    return earnings_analysis.run(ticker=ticker.upper(), locale=locale)
+
+
+@app.post("/v1/equity-research/initiating-coverage", tags=["equity-research"])
+def equity_research_initiating_coverage(ticker: str, locale: str = "en") -> dict:
+    """Full initiation — thesis + valuation + risks + price target + rating."""
+    from trading_agents.skills import initiating_coverage
+    return initiating_coverage.run(ticker=ticker.upper(), locale=locale)
+
+
+@app.post("/v1/equity-research/model-update", tags=["equity-research"])
+def equity_research_model_update(ticker: str, locale: str = "en") -> dict:
+    """Structured estimate changes with delta_pct + rationale per row."""
+    from trading_agents.skills import model_update
+    return model_update.run(ticker=ticker.upper(), locale=locale)
+
+
+@app.post("/v1/equity-research/morning-note", tags=["equity-research"])
+def equity_research_morning_note(payload: dict) -> dict:
+    """Trading desk morning note across a watchlist."""
+    from trading_agents.skills import morning_note
+    watchlist = payload.get("watchlist") or []
+    locale = payload.get("locale", "en")
+    return morning_note.run(watchlist=list(watchlist), locale=locale)
+
+
+@app.post("/v1/equity-research/sector-overview", tags=["equity-research"])
+def equity_research_sector_overview(sector: str, locale: str = "en") -> dict:
+    """Sector landscape + themes + headwinds + portfolio recommendations."""
+    from trading_agents.skills import sector_overview
+    return sector_overview.run(sector=sector, locale=locale)
+
+
+@app.post("/v1/equity-research/catalyst-calendar", tags=["equity-research"])
+def equity_research_catalyst_calendar(payload: dict) -> dict:
+    """Upcoming catalysts across a watchlist over a horizon."""
+    from trading_agents.skills import catalyst_calendar
+    watchlist = payload.get("watchlist") or []
+    horizon = int(payload.get("horizon_days", 90))
+    locale = payload.get("locale", "en")
+    return catalyst_calendar.run(watchlist=list(watchlist), horizon_days=horizon, locale=locale)
 
 
 @app.get("/v1/quote")
