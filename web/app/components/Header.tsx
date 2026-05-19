@@ -307,6 +307,19 @@ function buildGroups(isZh: boolean): NavGroup[] {
             icon: <BookOpen className="w-4 h-4" />,
           },
           {
+            // v57: Equity-research workbench wrapping the v56 skill endpoints
+            // (earnings-preview / thesis-tracker / idea-generation). Each
+            // skill output passes three-layer data-integrity gate.
+            href: "/equity-research",
+            label: lbl("投研工作台 · v56", "Equity-research workbench"),
+            desc: lbl(
+              "Anthropic 移植: 财报前情景 · 投资论点 · 股票筛选 · 数据精准三重守门",
+              "Ported from Anthropic: earnings preview · thesis tracker · idea generation · triple data-integrity gate",
+            ),
+            icon: <BookOpen className="w-4 h-4" />,
+            badge: lbl("新", "New"),
+          },
+          {
             href: "/track-record",
             label: lbl("回测战绩", "Track record"),
             desc: lbl(
