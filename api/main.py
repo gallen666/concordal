@@ -4136,6 +4136,63 @@ def _fetch_crypto_meta(ticker: str) -> dict | None:
     }
 
 
+# ---- v56: Equity-research skills (ported from anthropics/financial-services-plugins) ----
+
+@app.post("/v1/equity-research/earnings-preview", tags=["equity-research"])
+def equity_research_earnings_preview(ticker: str, locale: str = "en") -> dict:
+    """Pre-earnings scenario analysis (4 scenarios + key metrics + trade
+    idea). Methodology ported from Anthropic's equity-research/skills/
+    earnings-preview. Output is data-integrity gated — every numeric
+    field is cross-checked against the ground-truth quote before
+    return, and a fabricated price triggers a `data_integrity_passed=
+    false` envelope rather than a hallucinated report."""
+    from trading_agents.skills import earnings_preview
+    return earnings_preview.run(ticker=ticker.upper(), locale=locale)
+
+
+@app.post("/v1/equity-research/thesis-tracker", tags=["equity-research"])
+def equity_research_thesis_tracker(
+    ticker: str,
+    locale: str = "en",
+    user: CurrentUser = Depends(get_optional_user),
+) -> dict:
+    """Investment thesis with thesis-breakers + catalyst pipeline +
+    health score. Anchored to the user's prior decision history on
+    this ticker (if any) so the thesis evolves with their narrative."""
+    from trading_agents.skills import thesis_tracker
+    # Pull user's prior decisions on this ticker (defensive — empty list if no history)
+    prior: list[dict] = []
+    try:
+        history = memory.user_history(user_id=user.id, limit=200)
+        for d in history:
+            if (getattr(d, "ticker", "") or "").upper() == ticker.upper():
+                prior.append({
+                    "asof": str(getattr(d, "asof", "")),
+                    "side": getattr(d, "side", ""),
+                    "confidence": getattr(d, "confidence", None),
+                    "target_weight": getattr(d, "target_weight", None),
+                    "rationale": (getattr(d, "rationale", "") or "")[:200],
+                })
+    except Exception:
+        pass
+    return thesis_tracker.run(ticker=ticker.upper(), prior_decisions=prior, locale=locale)
+
+
+@app.post("/v1/equity-research/screen", tags=["equity-research"])
+def equity_research_screen(payload: dict) -> dict:
+    """Stock screening — applies user criteria to a candidate universe,
+    returns ranked watchlist + top-3 deep-dive thesis snippets. The
+    universe comes from a mix of /v1/cn/zt-pool, /v1/hot-rankings, and
+    any tickers in the payload['universe'] field. LLM is barred from
+    inventing tickers — the validator rejects outputs that reference
+    names outside the input universe."""
+    from trading_agents.skills import idea_generation
+    criteria = payload.get("criteria") or {}
+    universe = payload.get("universe") or []
+    locale = payload.get("locale", "en")
+    return idea_generation.run(criteria=criteria, universe=universe, locale=locale)
+
+
 @app.get("/v1/quote")
 def get_quote(ticker: str, days: int = 30) -> dict:
     """Tiny quote endpoint for the /decision page's MarketHeader strip.
