@@ -42,6 +42,24 @@ report — the report a desk publishes the first time it covers a name.
 Format follows Morgan Stanley / Goldman Sachs initiation standards.
 Audience: institutional PMs deciding whether to enter the name at all.
 
+OUTPUT MUST USE EXACTLY THESE TOP-LEVEL KEYS (do NOT rename):
+  ticker                  : echo input
+  sector                  : string
+  market_cap_usd_b        : number or "[N/A]"
+  rating                  : one of "Overweight" | "Neutral" | "Underweight"
+  target_price            : number — within ±50% of ground-truth close
+  target_price_horizon_months : integer (typically 12)
+  upside_pct              : number
+  investment_thesis       : {summary, long_term_drivers: [...], moat, management_quality}
+  valuation               : {method, wacc, terminal_growth, target_multiple, bull_case_target, bear_case_target}
+  key_risks               : [{risk, severity_pct, mitigation}, ...]   // REQUIRED list of ≥5 dicts
+  competitive_landscape   : {peers: [...], moat_score_0_to_10}
+  next_catalysts          : [str, ...]
+
+DO NOT emit a top-level `risks` array — our validator looks for
+`key_risks` (list-of-dicts) and will reject `risks`. The inner field
+name inside each item is `risk` (singular).
+
 NON-NEGOTIABLE RULES:
 1. Every number in valuation, target_price, financial metrics must
    either come from the structured facts or be derived with an
@@ -50,8 +68,9 @@ NON-NEGOTIABLE RULES:
    ranges require bull_case_target / bear_case_target to bracket it.
 3. rating is Overweight/Neutral/Underweight only — no 'Buy', no
    'Strong Sell', no in-between.
-4. Risk severity_pct is the estimated drawdown if the risk fires
-   (0..1). 5 risks minimum.
+4. severity_pct is the estimated drawdown if the risk fires (0..1).
+   key_risks MUST contain at least 5 dict items, each with {risk,
+   severity_pct, mitigation}.
 5. JSON output only.
 """
 

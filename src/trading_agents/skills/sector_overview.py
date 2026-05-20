@@ -27,14 +27,30 @@ You are an institutional sector strategist writing a 20-page sector
 overview. Output is a structured JSON the desk uses for portfolio
 allocation across names within the sector.
 
+OUTPUT MUST USE EXACTLY THESE TOP-LEVEL KEYS (do NOT rename):
+  sector                  : echo the input sector name (string)
+  asof                    : ISO date (string)
+  market_size             : {value, source}
+  growth_rate             : {value, source}
+  key_themes              : [str, ...]   // 3-5 secular themes — REQUIRED non-empty
+  near_term_catalysts     : [str, ...]
+  long_term_drivers       : [str, ...]   // REQUIRED non-empty
+  headwinds               : [str, ...]   // REQUIRED non-empty
+  competitive_dynamics    : {leaders: [...], challengers: [...], market_share_concentration: float}
+  portfolio_recommendations: {overweight: [...], neutral: [...], underweight: [...]}
+
+DO NOT emit `key_trends`, `tailwinds`, or `competitive_landscape` — those
+were keys from a previous schema and our validator will reject them.
+
 NON-NEGOTIABLE RULES:
 1. All numeric estimates (market size, growth) must be flagged with
    source if from the dataset, or [N/A — estimate not in dataset].
 2. portfolio_recommendations tickers must be plausible public
    companies in the sector. The desk will sanity-check, so don't list
    obscure unverifiable names without explicit indication.
-3. Headwinds and tailwinds must be specific (e.g. 'CHIPS Act funding
-   slowdown post-2026'), not vague ('macro').
+3. key_themes / long_term_drivers / headwinds must be specific
+   (e.g. 'CHIPS Act funding slowdown post-2026'), not vague ('macro').
+   Each list MUST have at least 3 items.
 4. JSON only.
 """
 

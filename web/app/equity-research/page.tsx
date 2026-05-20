@@ -236,7 +236,7 @@ function EarningsPreviewPanel({ locale }: { locale: string }) {
   }
 
   const p = (result?.parsed as Record<string, unknown>) || null;
-  const scenarios = (p?.scenarios as Array<Record<string, unknown>>) || [];
+  const scenarios = arr(p?.scenarios);
 
   return (
     <div className="space-y-4">
@@ -297,7 +297,7 @@ function EarningsAnalysisPanel({ locale }: { locale: string }) {
 
   const p = (result?.parsed as Record<string, unknown>) || null;
   const h = (p?.headline as Record<string, unknown>) || null;
-  const segments = (p?.segments as Array<Record<string, unknown>>) || [];
+  const segments = arr(p?.segments);
   const impact = (p?.thesis_impact as string) || "";
 
   return (
@@ -380,8 +380,8 @@ function ThesisTrackerPanel({ locale }: { locale: string }) {
   }
 
   const p = (result?.parsed as Record<string, unknown>) || null;
-  const breakers = (p?.thesis_breakers as Array<Record<string, unknown>>) || [];
-  const catalysts = (p?.catalyst_pipeline as Array<Record<string, unknown>>) || [];
+  const breakers = arr(p?.thesis_breakers);
+  const catalysts = arr(p?.catalyst_pipeline);
   const health = (p?.thesis_health as Record<string, unknown>) || null;
   const thesis = (p?.current_thesis as Record<string, unknown>) || null;
 
@@ -471,7 +471,7 @@ function InitiatingCoveragePanel({ locale }: { locale: string }) {
   const rating = (p?.rating as string) || "";
   const it = (p?.investment_thesis as Record<string, unknown>) || null;
   const val = (p?.valuation as Record<string, unknown>) || null;
-  const risks = (p?.key_risks as Array<Record<string, unknown>>) || [];
+  const risks = arr(p?.key_risks);
 
   const ratingColor = rating === "Overweight" ? "text-bull-ink bg-bull-soft border-bull/40"
     : rating === "Underweight" ? "text-bear-ink bg-bear-soft border-bear/40"
@@ -567,7 +567,7 @@ function ModelUpdatePanel({ locale }: { locale: string }) {
   }
 
   const p = (result?.parsed as Record<string, unknown>) || null;
-  const changes = (p?.estimate_changes as Array<Record<string, unknown>>) || [];
+  const changes = arr(p?.estimate_changes);
   const vi = (p?.valuation_impact as Record<string, unknown>) || null;
 
   return (
@@ -637,8 +637,8 @@ function MorningNotePanel({ locale }: { locale: string }) {
       renderResult={(result, locale) => {
         const p = (result.parsed as Record<string, unknown>) || null;
         if (!p) return null;
-        const movers = (p.overnight_movers as Array<Record<string, unknown>>) || [];
-        const ideas = (p.top_trade_ideas as Array<Record<string, unknown>>) || [];
+        const movers = arr(p?.overnight_movers);
+        const ideas = arr(p?.top_trade_ideas);
         return (
           <div className="space-y-4">
             <div className="surface p-5">
@@ -708,7 +708,7 @@ function CatalystCalendarPanel({ locale }: { locale: string }) {
   }
 
   const p = (result?.parsed as Record<string, unknown>) || null;
-  const catalysts = (p?.catalysts as Array<Record<string, unknown>>) || [];
+  const catalysts = arr(p?.catalysts);
 
   return (
     <div className="space-y-4">
@@ -788,8 +788,8 @@ function SectorOverviewPanel({ locale }: { locale: string }) {
             <div className="surface p-5 space-y-2">
               <div className="label-cap">{locale === "zh" ? "竞争格局" : "Competitive dynamics"}</div>
               <div className="text-xs">
-                <div><strong>{locale === "zh" ? "领导者: " : "Leaders: "}</strong>{(cd.leaders as string[] || []).join(", ")}</div>
-                <div><strong>{locale === "zh" ? "挑战者: " : "Challengers: "}</strong>{(cd.challengers as string[] || []).join(", ")}</div>
+                <div><strong>{locale === "zh" ? "领导者: " : "Leaders: "}</strong>{strs(cd.leaders).join(", ")}</div>
+                <div><strong>{locale === "zh" ? "挑战者: " : "Challengers: "}</strong>{strs(cd.challengers).join(", ")}</div>
                 <div><strong>{locale === "zh" ? "市场集中度: " : "Concentration: "}</strong>{fmtPct(cd.market_share_concentration)}</div>
               </div>
             </div>
@@ -798,9 +798,9 @@ function SectorOverviewPanel({ locale }: { locale: string }) {
             <div className="surface p-5 space-y-2">
               <div className="label-cap">{locale === "zh" ? "组合推荐" : "Portfolio recommendations"}</div>
               <div className="grid sm:grid-cols-3 gap-3 text-xs">
-                <div><div className="text-bull-ink font-mono mb-1">OVERWEIGHT</div><div>{(recs.overweight as string[] || []).join(", ")}</div></div>
-                <div><div className="text-gold font-mono mb-1">NEUTRAL</div><div>{(recs.neutral as string[] || []).join(", ")}</div></div>
-                <div><div className="text-bear-ink font-mono mb-1">UNDERWEIGHT</div><div>{(recs.underweight as string[] || []).join(", ")}</div></div>
+                <div><div className="text-bull-ink font-mono mb-1">OVERWEIGHT</div><div>{strs(recs.overweight).join(", ")}</div></div>
+                <div><div className="text-gold font-mono mb-1">NEUTRAL</div><div>{strs(recs.neutral).join(", ")}</div></div>
+                <div><div className="text-bear-ink font-mono mb-1">UNDERWEIGHT</div><div>{strs(recs.underweight).join(", ")}</div></div>
               </div>
             </div>
           )}
@@ -835,8 +835,8 @@ function ScreenPanel({ locale }: { locale: string }) {
   }
 
   const p = (result?.parsed as Record<string, unknown>) || null;
-  const candidates = (p?.candidates as Array<Record<string, unknown>>) || [];
-  const topPicks = (p?.top_picks as Array<Record<string, unknown>>) || [];
+  const candidates = arr(p?.candidates);
+  const topPicks = arr(p?.top_picks);
 
   return (
     <div className="space-y-4">
@@ -1056,12 +1056,22 @@ function Stat({ label, value }: { label: string; value: string }) {
   return <div><div className="label-cap">{label}</div><div className="mt-1 font-mono text-base">{value}</div></div>;
 }
 
-function ListPanel({ title, items, icon }: { title: string; items: string[]; icon: React.ReactNode }) {
+function ListPanel({ title, items, icon }: { title: string; items: unknown; icon: React.ReactNode }) {
+  // v62: harden against LLM emitting a string instead of an array — TypeScript
+  // `as string[]` casts at call-sites are runtime no-ops, so we defend here.
+  // If `items` is a string, render it as a single paragraph; otherwise fall
+  // back to [N/A]. This prevents `items.map is not a function` from killing
+  // the whole React tree (real bug found in v61 smoke test, task #184).
+  const safe: string[] = Array.isArray(items)
+    ? (items as unknown[]).filter((x) => x != null).map((x) => (typeof x === "string" ? x : JSON.stringify(x)))
+    : typeof items === "string" && items.trim()
+      ? [items as string]
+      : [];
   return (
     <div className="surface p-5">
       <div className="label-cap inline-flex items-center gap-2">{icon}{title}</div>
       <ul className="mt-3 space-y-2">
-        {items.length === 0 ? <li className="text-xs text-ink-tertiary">[N/A]</li> : items.map((it, i) => (
+        {safe.length === 0 ? <li className="text-xs text-ink-tertiary">[N/A]</li> : safe.map((it, i) => (
           <li key={i} className="text-sm text-ink-secondary flex items-start gap-2">
             <ChevronRight className="w-3 h-3 mt-1 text-ink-tertiary shrink-0" />
             <span>{it}</span>
@@ -1122,3 +1132,17 @@ function fmtPct(v: unknown): string {
 }
 function fmtNum(v: unknown): string { return v != null && typeof v === "number" ? String(v) : "[N/A]"; }
 function fmtMoney(v: unknown): string { return typeof v === "number" ? `$${v.toLocaleString()}` : "[N/A]"; }
+
+// v62 hardening: TypeScript `as Array<T>` casts are runtime no-ops, so if
+// the LLM emits a string where we expect an array (e.g. key_takeaways as
+// a single paragraph), `(p.foo as Array<T>) || []` returns the truthy
+// string and the next `.map(...)` crashes the React tree. This helper
+// enforces the array-ness at runtime.
+function arr<T = Record<string, unknown>>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : [];
+}
+function strs(v: unknown): string[] {
+  if (Array.isArray(v)) return (v as unknown[]).filter((x) => x != null).map((x) => String(x));
+  if (typeof v === "string" && v.trim()) return [v];
+  return [];
+}

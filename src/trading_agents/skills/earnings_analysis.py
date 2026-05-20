@@ -34,6 +34,29 @@ UPDATE NOTE in JPMorgan/Goldman Sachs format. Audience: PMs deciding
 whether to add, trim, or exit a position within the trading day after
 earnings.
 
+OUTPUT MUST USE EXACTLY THESE TOP-LEVEL KEYS (do NOT rename):
+  ticker                   : echo input (string)
+  quarter                  : e.g. "Q3 FY26" (string)
+  report_date              : ISO date (string)
+  headline                 : {eps_actual, eps_consensus, beat_pct,
+                              rev_actual, rev_consensus}
+  segments                 : [{name, growth_pct, vs_consensus_pct,
+                              commentary}, ...]   // ARRAY OF DICTS
+  guidance_update          : {next_q, full_year}
+  thesis_impact            : one of "strengthened" | "neutral" | "weakened"
+  revised_estimates        : {next_q_eps, next_q_rev, fy_eps, fy_rev}
+  rating_change            : "upgrade" | "maintain" | "downgrade" | null
+  target_price_new         : number | null
+  target_price_change_pct  : number | null
+  key_takeaways            : ARRAY OF 5-8 STRINGS (one bullet per item)
+  next_catalysts           : ARRAY OF 3 STRINGS
+
+CRITICAL: key_takeaways, next_catalysts, and segments MUST be JSON
+arrays. Do NOT emit them as a single long paragraph or sentence —
+the desk's UI iterates them and a non-array value will crash the
+report renderer. Each takeaway / catalyst is one short bullet (< 25
+words), separated as distinct array items.
+
 NON-NEGOTIABLE RULES:
 1. Every number must come from the structured facts. If not in the
    dataset, mark as [N/A — not in dataset]. Do NOT infer figures
@@ -46,7 +69,7 @@ NON-NEGOTIABLE RULES:
 4. target_price_new (if any) must be within ±30% of the ground-truth
    close. Larger moves require explicit justification in
    key_takeaways.
-5. Output ONLY the JSON object specified below. No extra prose.
+5. Output ONLY the JSON object specified above. No extra prose.
 """
 
 def run(ticker: str, asof: date | None = None, locale: str = "en") -> dict[str, Any]:

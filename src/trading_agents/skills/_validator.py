@@ -180,6 +180,15 @@ def validate_earnings_analysis(parsed: dict | None, gt_close: float | None) -> t
     impact = parsed.get("thesis_impact")
     if impact not in (None, "strengthened", "neutral", "weakened"):
         errors.append(f"thesis_impact={impact!r} must be strengthened/neutral/weakened")
+    # v62: enforce list types for fields the UI iterates — bare strings here
+    # crash the renderer (TypeError: items.map is not a function). Bug
+    # surfaced in P0-A 9-tab smoke test (task #184).
+    for list_field in ("key_takeaways", "next_catalysts", "segments"):
+        v = parsed.get(list_field)
+        if v is not None and not isinstance(v, list):
+            errors.append(
+                f"{list_field} must be a JSON array, got {type(v).__name__}"
+            )
     return len(errors) == 0, errors
 
 
