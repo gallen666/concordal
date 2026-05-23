@@ -600,14 +600,19 @@ function DecisionView({
                 <span>{d.risk_notes}</span>
               </div>
             )}
-            {d.flags && d.flags.length > 0 && (
+            {Array.isArray(d.flags) && d.flags.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-1.5">
+                {/* v63: Array.isArray guard above. The Decision TypeScript
+                    interface declares flags: string[], but a misbehaving
+                    backend / LLM-shaped payload could send a bare string,
+                    and `d.flags.length > 0` would let it through to crash
+                    .map(). Runtime guard prevents the white-screen. */}
                 {d.flags.map((f) => (
                   <span
-                    key={f}
+                    key={typeof f === "string" ? f : JSON.stringify(f)}
                     className="pill bg-signal-warn_soft text-signal-warn"
                   >
-                    {f}
+                    {typeof f === "string" ? f : JSON.stringify(f)}
                   </span>
                 ))}
               </div>

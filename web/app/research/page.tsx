@@ -1,897 +1,717 @@
 "use client";
 
 /**
- * /research — 学术页：把论文的方法论、定理、10 个 Need 映射、对比表
- * 全部摆在一个页面上，作为系统的「为什么我们这样做」的权威说明。
+ * /research — Equity-research workbench (v57).
  *
- * 这个页面回答四个问题（按第一性原理排序）：
- *   1. 系统的核心论断是什么？— 角色分离假说 + 形式化定理
- *   2. 这个论断怎么落地？— 7-agent 流水线 + UniversalDataBus
- *   3. 怎么知道它真的成立？— 78 周 20 票回测 + 校准指标
- *   4. 它和别的系统差在哪？— Bloomberg / ChatGPT / FinGPT 对比矩阵
+ * Three tabs, each driving one of the v56 skill endpoints:
+ *   - Earnings Preview      → POST /v1/equity-research/earnings-preview?ticker=X
+ *   - Thesis Tracker        → POST /v1/equity-research/thesis-tracker?ticker=X
+ *   - Idea Generation       → POST /v1/equity-research/screen (body: criteria + universe)
  *
- * 风格：editorial / 学术，不卖萌、不夸张、不商业话术。
- * 信息密度高，给真懂的人看的。
+ * Methodology ported from anthropics/financial-services-plugins.
+ * Data-integrity gate: every response carries `data_integrity.passed`.
+ * If false, this page renders a BIG RED banner with the list of
+ * validator errors and DOES NOT show the report body. That's the
+ * 数据要正确精准 promise made visible.
  */
 
-import Link from "next/link";
+import { useState } from "react";
 import {
-  ArrowRight, Download, Github, FileText, GitBranch, Sparkles,
-  Database, MessageSquare, TrendingUp, ShieldCheck, Network,
-  Trophy, BookOpen, Layers, Cpu, Activity, Zap, Calendar,
-  Building2, Flame, BarChart3, Star, Microscope, History,
-  Quote as QuoteIcon,
+  AlertTriangle,
+  Calendar,
+  CheckCircle2,
+  ChevronRight,
+  Loader2,
+  Plus,
+  ScrollText,
+  Search,
+  Sparkles,
+  Target,
+  TrendingUp,
+  X,
 } from "lucide-react";
 import { useT } from "../lib/i18n";
+import { cn } from "../lib/cn";
 
-const API_DOCS = "https://github.com/gallen666/trading-agents-platform";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API ||
+  "https://trading-agents-platform.onrender.com";
+
+type SkillId = "earnings-preview" | "thesis-tracker" | "screen";
+
+interface IntegrityEnvelope {
+  passed: boolean;
+  errors: string[];
+  note: string;
+}
+
+interface SkillResult {
+  skill: string;
+  ticker?: string;
+  criteria?: Record<string, unknown>;
+  asof?: string;
+  raw_body?: string;
+  parsed?: unknown;
+  ground_truth_close?: number | null;
+  universe_size?: number;
+  usage?: Array<{ model: string; input_tokens: number; output_tokens: number; usd_cost: number }>;
+  model?: string;
+  data_integrity?: IntegrityEnvelope;
+}
 
 export default function ResearchPage() {
   const { locale } = useT();
-  const isZh = locale === "zh";
+  const [tab, setTab] = useState<SkillId>("earnings-preview");
 
   return (
-    <div className="min-h-screen">
-      <Hero isZh={isZh} />
-      <PaperDownload isZh={isZh} />
-      <CoreThesis isZh={isZh} />
-      <TheoremPanel isZh={isZh} />
-      <SevenAgentPipeline isZh={isZh} />
-      <BusArchitecture isZh={isZh} />
-      <TenNeedsMatrix isZh={isZh} />
-      <BusWebsiteOneLiner isZh={isZh} />
-      <ComparisonMatrix isZh={isZh} />
-      <EmpiricalResults isZh={isZh} />
-      <CiteThisWork isZh={isZh} />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// HERO — 标题 + 一句话定位
-// ---------------------------------------------------------------------------
-
-function Hero({ isZh }: { isZh: boolean }) {
-  return (
-    <section className="relative border-b border-border-subtle">
-      <div className="paper absolute inset-0 opacity-60 pointer-events-none" />
-      <div className="relative max-w-6xl mx-auto px-6 py-20">
-        <div className="kicker mb-6">
-          {isZh ? "学术论文 · 方法论 · 系统设计" : "Paper · Methodology · System Design"}
-        </div>
-        <h1 className="display text-display-md md:text-display-lg leading-[1.05] tracking-tighter text-ink-primary max-w-4xl">
-          {isZh
-            ? "超越单一提示式大语言模型"
-            : "Beyond Single-Prompt LLMs"}
+    <div className="max-w-6xl mx-auto px-6 py-10 space-y-6">
+      <header className="space-y-2">
+        <span className="label-cap inline-flex items-center gap-2">
+          <ScrollText className="w-3.5 h-3.5 text-accent" />
+          {locale === "zh" ? "投研工作台 · v56" : "Equity Research Workbench · v56"}
+        </span>
+        <h1 className="text-3xl md:text-4xl font-display font-medium">
+          {locale === "zh"
+            ? "机构级研究 skill · 数据精准三重守门"
+            : "Institutional research skills · Triple data-integrity gate"}
         </h1>
-        <p className="display text-2xl md:text-3xl text-ink-primary/70 italic mt-6 leading-snug max-w-4xl">
-          {isZh
-            ? "面向金融决策的对抗式多 Agent 架构，及一项 78 周三市场校准研究。"
-            : "An Adversarial Multi-Agent Architecture for Financial Decisions, with a 78-Week Three-Market Calibration Study."}
+        <p className="text-sm text-ink-secondary leading-relaxed max-w-3xl">
+          {locale === "zh"
+            ? "三个 skill 源自 Anthropic 官方 financial-services-plugins (4.5k stars), 转译到我们的 DeepSeek V4 后端. 每次输出都过 (1) prompt 禁止编造规则 + (2) v55 GROUND TRUTH QUOTE block + (3) 程序化 validator 三层校验. 校验失败 → 红色告警, 不渲染报告."
+            : "Three skills ported from Anthropic's official financial-services-plugins repo (4.5k stars). Every output passes through three layers: (1) prompt-level fabrication ban, (2) v55 GROUND TRUTH QUOTE injection, (3) programmatic validator. On failure: red banner, report body suppressed."}
         </p>
-        <p className="text-ink-secondary leading-relaxed mt-8 max-w-3xl text-lg">
-          {isZh
-            ? "本页总结整个系统所基于的方法论：为什么单一提示式 LLM 在金融决策上系统性失校准，为什么角色分离 + 对抗式辩论 + 风险否决能解决，以及 UniversalDataBus 类型化数据总线如何让这一切在生产环境跑通。"
-            : "This page summarizes the methodology behind the entire system: why single-prompt LLMs are systematically miscalibrated on financial decisions, why role separation + adversarial debate + risk veto solves it, and how the UniversalDataBus type-safe data spine makes it all work in production."}
-        </p>
+      </header>
 
-        <div className="flex flex-wrap items-center gap-3 mt-10">
-          <Link href="#download" className="btn-primary">
-            <Download className="w-4 h-4" />
-            {isZh ? "下载论文（中英文版）" : "Download paper (EN + ZH)"}
-          </Link>
-          <a
-            href={API_DOCS}
-            target="_blank"
-            rel="noopener"
-            className="btn-secondary"
-          >
-            <Github className="w-4 h-4" />
-            {isZh ? "代码仓库" : "Source code"}
-          </a>
-          <Link href="/chain" className="text-sm text-gold hover:underline underline-offset-4 ml-2 inline-flex items-center gap-1.5">
-            {isZh ? "看数据脊柱演示" : "See the data spine demo"}
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
+      <div className="flex flex-wrap gap-2 border-b border-border-subtle pb-2">
+        <TabBtn id="earnings-preview" active={tab === "earnings-preview"} setActive={setTab}
+          icon={<Calendar className="w-3.5 h-3.5" />}
+          label={locale === "zh" ? "财报前情景" : "Earnings Preview"} />
+        <TabBtn id="thesis-tracker" active={tab === "thesis-tracker"} setActive={setTab}
+          icon={<Target className="w-3.5 h-3.5" />}
+          label={locale === "zh" ? "投资论点" : "Thesis Tracker"} />
+        <TabBtn id="screen" active={tab === "screen"} setActive={setTab}
+          icon={<Search className="w-3.5 h-3.5" />}
+          label={locale === "zh" ? "股票筛选" : "Idea Generation"} />
       </div>
-    </section>
-  );
-}
 
-// ---------------------------------------------------------------------------
-// PAPER DOWNLOAD — 两个版本 + 引用方式
-// ---------------------------------------------------------------------------
-
-function PaperDownload({ isZh }: { isZh: boolean }) {
-  return (
-    <section id="download" className="border-b border-border-subtle">
-      <div className="max-w-6xl mx-auto px-6 py-16">
-        <div className="kicker mb-6">{isZh ? "下载" : "Download"}</div>
-        <h2 className="display text-3xl md:text-4xl text-ink-primary tracking-tighter mb-8">
-          {isZh ? "论文全文 · 两个语言版本" : "Full paper · two language versions"}
-        </h2>
-
-        <div className="grid md:grid-cols-2 gap-5">
-          <PaperCard
-            kicker={isZh ? "国际会议版" : "International venue version"}
-            title="Beyond Single-Prompt LLMs in Financial Decision-Making"
-            sub="A Role-Separated Multi-Agent Architecture with a Type-Safe Composable Data Bus"
-            meta={isZh
-              ? "英文 · A4 · 22,000 词 · 115 篇引用 · 12 节 + 3 附录"
-              : "English · A4 · 22,000 words · 115 references · 12 sections + 3 appendices"}
-            href="https://github.com/gallen666/trading-agents-platform/releases/v1.0/paper-en.docx"
-            cta={isZh ? "下载英文版（.docx）" : "Download (English .docx)"}
-          />
-          <PaperCard
-            kicker={isZh ? "国内学术规范版" : "GB/T 7714 standard version"}
-            title="超越单一提示式大语言模型"
-            sub="面向金融决策的对抗式多 Agent 架构与通用数据总线"
-            meta={isZh
-              ? "中文 · 宋体 + 黑体 · 24,000 字 · 中国国标 GB/T 7714 格式"
-              : "Chinese · SimSun + SimHei · 24,000 characters · GB/T 7714 format"}
-            href="https://github.com/gallen666/trading-agents-platform/releases/v1.0/paper-zh.docx"
-            cta={isZh ? "下载中文版（.docx）" : "Download (Chinese .docx)"}
-          />
-        </div>
-
-        <p className="text-2xs text-ink-tertiary font-mono mt-6">
-          {isZh
-            ? "MIT 许可证 · 评估数据集随论文一并发布 · TradingAgents-20×78 · 1,560 个决策含完整 LLM 追溯"
-            : "MIT License · Evaluation dataset released alongside paper · TradingAgents-20×78 · 1,560 decisions with full LLM traces"}
-        </p>
+      <div className="pt-2">
+        {tab === "earnings-preview" && <EarningsPreviewPanel locale={locale} />}
+        {tab === "thesis-tracker" && <ThesisTrackerPanel locale={locale} />}
+        {tab === "screen" && <ScreenPanel locale={locale} />}
       </div>
-    </section>
-  );
-}
-
-function PaperCard({
-  kicker, title, sub, meta, href, cta,
-}: { kicker: string; title: string; sub: string; meta: string; href: string; cta: string }) {
-  return (
-    <div className="surface-elev p-6 flex flex-col">
-      <div className="kicker text-2xs mb-3">{kicker}</div>
-      <h3 className="display text-2xl text-ink-primary leading-tight tracking-tight">{title}</h3>
-      <p className="text-ink-secondary italic text-base mt-2 leading-snug">{sub}</p>
-      <p className="text-2xs text-ink-tertiary font-mono mt-4">{meta}</p>
-      <a
-        href={href}
-        className="btn-primary mt-6 self-start text-sm py-1.5"
-        download
-      >
-        <Download className="w-3.5 h-3.5" />
-        {cta}
-      </a>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// CORE THESIS — 核心论断（散户与机构都该看的一段）
-// ---------------------------------------------------------------------------
-
-function CoreThesis({ isZh }: { isZh: boolean }) {
+function TabBtn({
+  id,
+  active,
+  setActive,
+  icon,
+  label,
+}: {
+  id: SkillId;
+  active: boolean;
+  setActive: (t: SkillId) => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
   return (
-    <section className="border-b border-border-subtle">
-      <div className="max-w-3xl mx-auto px-6 py-24">
-        <div className="kicker mb-6">{isZh ? "核心论断" : "Core thesis"}</div>
-        <h2 className="display text-4xl md:text-5xl text-ink-primary leading-[1.05] tracking-tighter">
-          {isZh
-            ? "单一提示式 LLM 在金融决策上系统性过自信。"
-            : "Single-prompt LLMs are systematically over-confident on financial decisions."}
-        </h2>
-        <p className="display text-2xl md:text-3xl text-ink-primary/65 italic mt-4 leading-snug">
-          {isZh
-            ? "80% 的置信度，55% 的命中率。这不是模型缺陷，是架构后果。"
-            : "80% confidence, 55% accuracy. Not a model defect — an architectural consequence."}
-        </p>
-
-        <div className="space-y-6 text-ink-secondary leading-relaxed mt-12 text-lg">
-          <p>
-            {isZh
-              ? "在我们的 20 票 × 78 周历史评估中，前沿模型（Claude 3.5 Sonnet）对其 BUY/SELL/HOLD 判断标注平均置信度 0.806，但实际命中率 55.4%。期望校准误差（ECE）= 28.1%。"
-              : "In our 20-ticker × 78-week historical evaluation, a frontier model (Claude 3.5 Sonnet) labeled its BUY/SELL/HOLD calls with mean confidence 0.806 but realized accuracy 55.4%. Expected Calibration Error = 28.1%."}
-          </p>
-          <p>
-            {isZh
-              ? "测试了 GPT-4o、Gemini 2.0 Pro、DeepSeek-V3、Qwen-Max、GLM-4.5 — 六个前沿模型 ECE 全部落在 ±2 个百分点内。失校准不是任何模型的具体缺陷。"
-              : "We tested GPT-4o, Gemini 2.0 Pro, DeepSeek-V3, Qwen-Max, GLM-4.5 — all six frontier models fall within ±2 percentage points of this ECE figure. The miscalibration is not a specific-model defect."}
-          </p>
-          <p>
-            {isZh
-              ? "原因可追溯到 Simon 1956 年的有限理性论证：注意力是有限资源。当模型在单次前向传递中被迫整合 5 条以上独立证据流（基本面、技术、情绪、新闻、宏观），输出向输入质心漂移，极端但正确的信号被丢弃。这是 Tishby 信息瓶颈理论的金融场景实例。"
-              : "The cause traces to Simon's 1956 bounded-rationality argument: attention is a finite resource. When the model is forced to integrate 5+ independent evidence streams (fundamentals, technical, sentiment, news, macro) in a single forward pass, the output drifts toward the centroid of inputs — extremal but correct signals are discarded. This is the financial-domain specialization of Tishby's information bottleneck."}
-          </p>
-          <p className="border-l-4 border-l-accent pl-6 italic text-ink-primary">
-            {isZh
-              ? "解决方案不是更强的模型，是把证据流跨多次独立调用分开处理、再用对抗式辩论合成。这就是「角色分离假说」。"
-              : "The solution is not a stronger model. It is to separate evidence streams across independent calls, then synthesize via adversarial debate. This is the role-separation hypothesis."}
-          </p>
-        </div>
-
-        <div className="mt-12 grid grid-cols-3 gap-6">
-          <Stat n="7.6×" l={isZh ? "ECE 缩小" : "ECE reduction"} />
-          <Stat n="71.2%" l={isZh ? "70% 置信度的实际命中率" : "Hit rate at 70% confidence"} />
-          <Stat n="2.80" l={isZh ? "Sharpe（基线 1.34）" : "Sharpe (baseline 1.34)"} />
-        </div>
-      </div>
-    </section>
+    <button
+      onClick={() => setActive(id)}
+      className={cn(
+        "px-3 py-2 text-sm font-medium inline-flex items-center gap-2 rounded border transition-colors",
+        active
+          ? "bg-accent-muted text-accent border-accent/40"
+          : "border-border-subtle text-ink-secondary hover:text-ink-primary hover:bg-bg-hover/40",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 
-function Stat({ n, l }: { n: string; l: string }) {
+// ---- Earnings Preview ----------------------------------------------------
+
+function EarningsPreviewPanel({ locale }: { locale: string }) {
+  const [ticker, setTicker] = useState("AAPL");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<SkillResult | null>(null);
+
+  async function run() {
+    if (!ticker.trim()) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const url = `${API_BASE}/v1/equity-research/earnings-preview?ticker=${encodeURIComponent(ticker.toUpperCase())}&locale=${locale}`;
+      const r = await fetch(url, { method: "POST", cache: "no-store" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setResult(await r.json());
+    } catch (e: unknown) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const parsed = (result?.parsed as Record<string, unknown>) || null;
+  const scenarios = arr(parsed?.scenarios);
+
   return (
-    <div className="border-t border-border-subtle pt-4">
-      <div className="font-mono text-3xl text-gold tabular-nums">{n}</div>
-      <div className="label-cap mt-2 leading-snug">{l}</div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// THEOREM PANEL — 形式化定理
-// ---------------------------------------------------------------------------
-
-function TheoremPanel({ isZh }: { isZh: boolean }) {
-  return (
-    <section className="border-b border-border-subtle">
-      <div className="max-w-4xl mx-auto px-6 py-24">
-        <div className="kicker mb-6">{isZh ? "形式化定理" : "Formal theorem"}</div>
-        <h2 className="display text-3xl md:text-4xl text-ink-primary tracking-tighter leading-tight">
-          {isZh ? "角色分离定理" : "The Role-Separation Theorem"}
-        </h2>
-
-        <div className="surface-elev p-8 mt-8 border-l-4 border-l-gold">
-          <div className="label-cap text-2xs mb-4">{isZh ? "定理 1" : "Theorem 1"}</div>
-          <p className="text-ink-primary leading-relaxed italic font-serif">
-            {isZh
-              ? "若证据流总长度 L > B / log k（B 为 LLM 注意力预算、k 为证据流数），则 ECE(P_RS) < ECE(P_SP)，差距随整合式前向传递中损失的剩余互信息单调放大。"
-              : "If the total evidence length L > B / log k (where B is the LLM's attention budget and k the number of evidence streams), then ECE(P_RS) < ECE(P_SP), with the gap monotonic in the residual mutual information lost in the integrated forward pass."}
-          </p>
-          <p className="text-xs text-ink-tertiary mt-4 font-mono">
-            {isZh
-              ? "P_SP = 单一提示后验。P_RS = 角色分离后验。证明组合 Tishby-Pereira-Bialek 信息瓶颈、Jacobs-Jordan-Nowlan-Hinton MoE 分解、Fano 不等式三个结果。"
-              : "P_SP = single-prompt posterior. P_RS = role-separated posterior. Proof combines Tishby-Pereira-Bialek information bottleneck, Jacobs-Jordan-Nowlan-Hinton MoE decomposition, and Fano's inequality."}
-          </p>
-        </div>
-
-        <div className="mt-12">
-          <h3 className="display text-2xl text-ink-primary tracking-tighter mb-6">
-            {isZh ? "为什么这个定理成立 — 直觉" : "Why the theorem holds — intuition"}
-          </h3>
-          <div className="grid md:grid-cols-3 gap-5">
-            <IntuitionCard
-              num="1"
-              title={isZh ? "注意力有限" : "Finite attention"}
-              body={isZh
-                ? "单次前向传递的有效注意上下文是 O(B) 词元（Simon 1956 / Tay 2022）。证据流总长超过 B / log k 时，每条流被稀释。"
-                : "Effective attention per forward pass is O(B) tokens (Simon 1956 / Tay 2022). When evidence total length exceeds B / log k, each stream gets diluted."}
-            />
-            <IntuitionCard
-              num="2"
-              title={isZh ? "专家分解定理" : "MoE decomposition"}
-              body={isZh
-                ? "Jacobs-Jordan-Nowlan-Hinton 1991：当证据有自然分解，k 个专家组合统计上比同参数量整合学习器更高效。"
-                : "Jacobs-Jordan-Nowlan-Hinton 1991: when evidence has a natural decomposition, k specialists outperform same-parameter integrated learners."}
-            />
-            <IntuitionCard
-              num="3"
-              title={isZh ? "校准与互信息" : "Calibration ↔ MI"}
-              body={isZh
-                ? "Fano 不等式：校准误差由 1 - I(预测; 真值) / H(真值) 上界。互信息保留越多，校准越好。"
-                : "Fano's inequality: calibration error upper-bounded by 1 - I(pred; truth) / H(truth). More mutual information preserved means better calibration."}
-            />
+    <div className="space-y-4">
+      <SkillForm ticker={ticker} setTicker={setTicker} loading={loading} onRun={run} locale={locale} />
+      {error && <ErrorBanner msg={error} />}
+      {result && <IntegrityHeader integ={result.data_integrity} locale={locale} />}
+      {result && result.data_integrity?.passed === false && (
+        <IntegrityFailedBody result={result} locale={locale} />
+      )}
+      {result && result.data_integrity?.passed && parsed && (
+        <div className="space-y-4">
+          <div className="surface p-5">
+            <div className="flex flex-wrap items-baseline gap-3 mb-3">
+              <span className="label-cap">{result.ticker}</span>
+              <span className="text-sm text-ink-tertiary font-mono">
+                {locale === "zh" ? "下次财报: " : "Next earnings: "}
+                {(parsed.next_earnings_date as string) || "—"}
+              </span>
+              {result.ground_truth_close != null && (
+                <span className="text-sm font-mono text-accent">
+                  {locale === "zh" ? "真实收盘: " : "Ground-truth close: "}
+                  {result.ground_truth_close}
+                </span>
+              )}
+            </div>
+            <div className="grid sm:grid-cols-2 gap-3 text-sm">
+              <Stat label={locale === "zh" ? "共识 EPS" : "Consensus EPS"}
+                value={parsed.consensus_eps != null ? String(parsed.consensus_eps) : "[N/A]"} />
+              <Stat label={locale === "zh" ? "共识收入" : "Consensus revenue"}
+                value={parsed.consensus_rev_usd != null
+                  ? `$${(parsed.consensus_rev_usd as number).toLocaleString()}` : "[N/A]"} />
+            </div>
           </div>
-        </div>
 
-        <div className="surface p-6 mt-8 border-l-4 border-l-accent">
-          <div className="kicker mb-2 text-2xs">{isZh ? "扩展：为什么必须有对抗式辩论" : "Extension: why adversarial debate is necessary"}</div>
-          <p className="text-ink-secondary leading-relaxed">
-            {isZh
-              ? "朴素「五分析师 → 经理平均」组合器仍受质心偏倚约束（综述倾向输入均值，极端意见被压缩）。引入 Irving-Christiano-Amodei 2018 意义的多空对抗辩护，从架构上强制极端化的反向理由，经理转为「裁判两个对立立场」而非「综述五条同向意见」— 在我们的消融中贡献 7.2 个百分点命中率提升。"
-              : "Naive 'five-analysts → Manager-average' is still subject to centroid bias (summarization compresses opinions toward the mean). Adding Irving-Christiano-Amodei 2018 style adversarial bull/bear advocacy forces structurally extremalized opposite rationales; the Manager becomes a judge between two positions rather than a summarizer of five same-direction opinions — contributes 7.2 pp hit-rate improvement in our ablation."}
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
+          {scenarios.length > 0 && (
+            <div className="surface p-5 space-y-3">
+              <div className="label-cap">{locale === "zh" ? "4 种情景" : "4 scenarios"}</div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {scenarios.map((s, i) => (
+                  <div key={i} className="surface p-3 text-xs">
+                    <div className="font-mono text-ink-primary text-sm">{s.name as string}</div>
+                    <div className="text-ink-tertiary mt-1">
+                      Beat %: <span className="text-ink-primary font-mono">{fmtPct(s.beat_pct)}</span>
+                    </div>
+                    <div className="text-ink-tertiary">
+                      {locale === "zh" ? "目标价: " : "Target: "}
+                      <span className="font-mono text-accent">{s.target_price as number}</span>
+                    </div>
+                    <div className="text-ink-tertiary">
+                      {locale === "zh" ? "概率: " : "Probability: "}
+                      <span className="font-mono">{fmtPct(s.probability)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-function IntuitionCard({ num, title, body }: { num: string; title: string; body: string }) {
-  return (
-    <div className="surface p-5">
-      <div className="font-mono text-2xl text-accent tabular-nums">{num}</div>
-      <h4 className="text-base font-semibold text-ink-primary mt-2">{title}</h4>
-      <p className="text-sm text-ink-secondary leading-relaxed mt-2">{body}</p>
+          <div className="grid md:grid-cols-2 gap-3">
+            <ListPanel title={locale === "zh" ? "关键观察指标" : "Key metrics to watch"}
+              items={parsed.key_metrics_to_watch}
+              icon={<TrendingUp className="w-4 h-4 text-bull-ink" />} />
+            <ListPanel title={locale === "zh" ? "风险标记" : "Risk flags"}
+              items={parsed.risk_flags}
+              icon={<AlertTriangle className="w-4 h-4 text-bear-ink" />} />
+          </div>
+
+          {parsed.trade_idea ? (
+            <TradeIdeaCard trade={parsed.trade_idea as Record<string, unknown>} locale={locale} />
+          ) : null}
+
+          <DebugFooter result={result} />
+        </div>
+      )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// SEVEN-AGENT PIPELINE — 视觉化 4 轮流水线
-// ---------------------------------------------------------------------------
+// ---- Thesis Tracker ------------------------------------------------------
 
-function SevenAgentPipeline({ isZh }: { isZh: boolean }) {
+function ThesisTrackerPanel({ locale }: { locale: string }) {
+  const [ticker, setTicker] = useState("600519");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<SkillResult | null>(null);
+
+  async function run() {
+    if (!ticker.trim()) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const url = `${API_BASE}/v1/equity-research/thesis-tracker?ticker=${encodeURIComponent(ticker.toUpperCase())}&locale=${locale}`;
+      const r = await fetch(url, { method: "POST", cache: "no-store" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setResult(await r.json());
+    } catch (e: unknown) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const parsed = (result?.parsed as Record<string, unknown>) || null;
+  const breakers = arr(parsed?.thesis_breakers);
+  const catalysts = arr(parsed?.catalyst_pipeline);
+  const health = (parsed?.thesis_health as Record<string, unknown>) || null;
+  const thesis = (parsed?.current_thesis as Record<string, unknown>) || null;
+
   return (
-    <section className="border-b border-border-subtle">
-      <div className="max-w-6xl mx-auto px-6 py-24">
-        <div className="kicker mb-6">{isZh ? "系统架构 · 第一部分" : "System architecture · part 1"}</div>
-        <h2 className="display text-3xl md:text-4xl text-ink-primary tracking-tighter">
-          {isZh ? "7-Agent 流水线 · 4 轮信息流" : "The 7-Agent Pipeline · 4-round information flow"}
-        </h2>
-        <p className="text-ink-secondary leading-relaxed mt-4 max-w-3xl">
-          {isZh
-            ? "证据隔离的 5 位专业分析师 → 多空对抗辩护人 → 三角色风险面板 → 经理综合。每位 Agent 的上下文与其他 Agent 隔离，除非通过显式前轮输出。"
-            : "Five evidentially-isolated specialist analysts → bull/bear adversarial advocates → three-role risk panel → managerial synthesis. Each agent's context is isolated except via explicit prior-round outputs."}
-        </p>
+    <div className="space-y-4">
+      <SkillForm ticker={ticker} setTicker={setTicker} loading={loading} onRun={run} locale={locale} />
+      {error && <ErrorBanner msg={error} />}
+      {result && <IntegrityHeader integ={result.data_integrity} locale={locale} />}
+      {result && result.data_integrity?.passed === false && (
+        <IntegrityFailedBody result={result} locale={locale} />
+      )}
+      {result && result.data_integrity?.passed && parsed && (
+        <div className="space-y-4">
+          {health && (
+            <div className="surface p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="label-cap">{locale === "zh" ? "论点健康度" : "Thesis health"}</div>
+                  <div className="text-3xl font-display font-medium mt-1 text-accent">
+                    {(((health.score as number) || 0) * 100).toFixed(0)}%
+                  </div>
+                </div>
+                <div className="text-xs text-ink-secondary text-right max-w-xs">
+                  {(health.narrative as string) || ""}
+                </div>
+              </div>
+              <div className="flex gap-3 text-xs font-mono text-ink-tertiary">
+                <span>fired={String(health.breakers_fired ?? 0)}</span>
+                <span>pos={String(health.positive_catalysts ?? 0)}</span>
+                <span>neg={String(health.negative_catalysts ?? 0)}</span>
+              </div>
+            </div>
+          )}
 
-        {/* 流程图 — 4 轮 */}
-        <div className="surface-elev p-8 mt-10 overflow-x-auto">
-          <PipelineDiagram isZh={isZh} />
+          {thesis && (
+            <div className="surface p-5 space-y-2">
+              <div className="label-cap">{locale === "zh" ? "当前论点" : "Current thesis"}</div>
+              <p className="text-sm text-ink-primary leading-relaxed">{(thesis.summary as string) || ""}</p>
+              {Array.isArray(thesis.key_drivers) && (
+                <ul className="text-sm text-ink-secondary list-disc list-inside mt-2 space-y-1">
+                  {(thesis.key_drivers as string[]).map((d, i) => <li key={i}>{d}</li>)}
+                </ul>
+              )}
+              <div className="text-xs text-ink-tertiary mt-2">
+                {locale === "zh" ? "时间窗口: " : "Time horizon: "}
+                {String(thesis.time_horizon_months ?? "—")} {locale === "zh" ? "个月" : "months"}
+              </div>
+            </div>
+          )}
+
+          {breakers.length > 0 && (
+            <div className="surface p-5 space-y-3">
+              <div className="label-cap">
+                {locale === "zh" ? "论点破坏者 (按风险分排序)" : "Thesis-breakers (by risk_score)"}
+              </div>
+              <table className="w-full text-xs font-mono">
+                <thead className="text-ink-tertiary uppercase tracking-wider text-2xs">
+                  <tr className="border-b border-border-subtle">
+                    <th className="text-left py-2 pr-3">#</th>
+                    <th className="text-left py-2 pr-3">Trigger</th>
+                    <th className="text-right py-2 pr-3">P</th>
+                    <th className="text-right py-2 pr-3">Sev</th>
+                    <th className="text-right py-2">Risk</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {breakers.map((b, i) => (
+                    <tr key={i} className="border-b border-border-subtle/40">
+                      <td className="py-1.5 pr-3 text-ink-tertiary">{i + 1}</td>
+                      <td className="py-1.5 pr-3 text-ink-primary">{b.trigger as string}</td>
+                      <td className="py-1.5 pr-3 text-right">{fmtPct(b.probability)}</td>
+                      <td className="py-1.5 pr-3 text-right">{fmtPct(b.severity_pct_loss)}</td>
+                      <td className="py-1.5 text-right text-bear-ink">
+                        {((b.risk_score as number) || 0).toFixed(3)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {catalysts.length > 0 && (
+            <div className="surface p-5 space-y-2">
+              <div className="label-cap">{locale === "zh" ? "催化剂日历" : "Catalyst pipeline"}</div>
+              <div className="grid md:grid-cols-3 gap-2">
+                {catalysts.map((c, i) => (
+                  <div key={i} className="surface p-3 text-xs space-y-1">
+                    <div className="font-mono text-ink-primary">{c.event as string}</div>
+                    <div className="text-ink-tertiary">{c.date_estimate as string}</div>
+                    <div className={cn(
+                      "inline-block px-1.5 py-0.5 rounded text-2xs",
+                      c.skew === "positive" ? "bg-bull-soft text-bull-ink"
+                        : c.skew === "negative" ? "bg-bear-soft text-bear-ink"
+                        : "bg-bg-subtle text-ink-tertiary",
+                    )}>{c.skew as string}</div>
+                    <p className="text-ink-secondary">{c.expected_outcome as string}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <DebugFooter result={result} />
         </div>
-
-        <p className="text-2xs text-ink-tertiary font-mono mt-4">
-          {isZh
-            ? "图 1：7-Agent 流水线。实线 = 证据路由；虚线 = 前轮输出依赖。证据隔离是结构性强制。"
-            : "Figure 1: 7-Agent pipeline. Solid lines = evidence routing; dashed = prior-output dependencies. Evidential isolation is structurally enforced."}
-        </p>
-      </div>
-    </section>
+      )}
+    </div>
   );
 }
 
-function PipelineDiagram({ isZh }: { isZh: boolean }) {
-  const rounds = [
-    {
-      title: isZh ? "第 1 轮 · 5 位专业分析师（并行）" : "Round 1 · 5 specialist analysts (parallel)",
-      items: [
-        { name: "Fundamentals", icon: <Database className="w-3 h-3" />, need: "FUNDAMENTALS" },
-        { name: "Technical",    icon: <Activity className="w-3 h-3" />, need: "TECHNICAL + FACTOR" },
-        { name: "Sentiment",    icon: <MessageSquare className="w-3 h-3" />, need: "SENTIMENT" },
-        { name: "News",         icon: <FileText className="w-3 h-3" />, need: "NEWS" },
-        { name: "Macro",        icon: <TrendingUp className="w-3 h-3" />, need: "MACRO" },
-      ],
-      tone: "accent" as const,
-    },
-    {
-      title: isZh ? "第 2 轮 · 对抗式辩护人（并行）" : "Round 2 · adversarial advocates (parallel)",
-      items: [
-        { name: isZh ? "Bull 多头辩护" : "Bull advocate", icon: <TrendingUp className="w-3 h-3" />, need: isZh ? "读 5 个分析师输出" : "reads 5 analyst outputs" },
-        { name: isZh ? "Bear 空头辩护" : "Bear advocate", icon: <TrendingUp className="w-3 h-3 rotate-180" />, need: isZh ? "读 5 个分析师输出" : "reads 5 analyst outputs" },
-      ],
-      tone: "bull" as const,
-    },
-    {
-      title: isZh ? "第 3 轮 · 三角色风险面板（并行）" : "Round 3 · three-role risk panel (parallel)",
-      items: [
-        { name: "Conservative-Risk", icon: <ShieldCheck className="w-3 h-3" />, need: "CVaR-90" },
-        { name: "Neutral-Risk",      icon: <ShieldCheck className="w-3 h-3" />, need: isZh ? "均值-方差" : "mean-variance" },
-        { name: "Aggressive-Risk",   icon: <ShieldCheck className="w-3 h-3" />, need: "Kelly" },
-      ],
-      tone: "gold" as const,
-    },
-    {
-      title: isZh ? "第 4 轮 · 经理综合（含反思记忆）" : "Round 4 · Manager synthesis (with reflection)",
-      items: [
-        { name: "Manager", icon: <Sparkles className="w-3 h-3" />, need: isZh ? "+ 反思记忆 + 双 LLM 共识" : "+ reflection memory + dual-LLM consensus" },
-      ],
-      tone: "neutral" as const,
-    },
-  ];
+// ---- Idea Generation -----------------------------------------------------
+
+function ScreenPanel({ locale }: { locale: string }) {
+  const [sector, setSector] = useState("semiconductors");
+  const [tilt, setTilt] = useState("growth");
+  const [universe, setUniverse] = useState<string[]>([
+    "NVDA", "AMD", "TSM", "AVGO", "QCOM", "MU", "ARM", "INTC",
+  ]);
+  const [newTicker, setNewTicker] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<SkillResult | null>(null);
+
+  async function run() {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const url = `${API_BASE}/v1/equity-research/screen`;
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          criteria: { sector, tilt },
+          universe: universe.map((t) => ({ ticker: t })),
+          locale,
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setResult(await r.json());
+    } catch (e: unknown) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function addTicker() {
+    const t = newTicker.trim().toUpperCase();
+    if (t && !universe.includes(t)) {
+      setUniverse([...universe, t]);
+      setNewTicker("");
+    }
+  }
+  function removeTicker(t: string) {
+    setUniverse(universe.filter((x) => x !== t));
+  }
+
+  const parsed = (result?.parsed as Record<string, unknown>) || null;
+  const candidates = arr(parsed?.candidates);
+  const topPicks = arr(parsed?.top_picks);
 
   return (
-    <div className="space-y-6">
-      {rounds.map((r, i) => (
-        <div key={i}>
-          <div className="kicker text-2xs mb-3">{r.title}</div>
-          <div className="flex flex-wrap gap-2">
-            {r.items.map((it) => (
-              <div
-                key={it.name}
-                className={`px-3 py-2 rounded border flex items-center gap-2 text-xs ${
-                  r.tone === "accent" ? "border-accent/40 bg-accent/5" :
-                  r.tone === "bull"   ? "border-signal-buy/40 bg-signal-buy_soft/5" :
-                  r.tone === "gold"   ? "border-gold/40 bg-gold/5" :
-                                         "border-border bg-bg-hover/30"
-                }`}
-              >
-                <span className={
-                  r.tone === "accent" ? "text-accent" :
-                  r.tone === "bull"   ? "text-signal-buy" :
-                  r.tone === "gold"   ? "text-gold" :
-                                         "text-ink-secondary"
-                }>{it.icon}</span>
-                <span className="font-medium text-ink-primary">{it.name}</span>
-                <span className="text-2xs text-ink-tertiary font-mono">{it.need}</span>
-              </div>
+    <div className="space-y-4">
+      <div className="surface p-5 space-y-3">
+        <div className="grid md:grid-cols-2 gap-3">
+          <label className="block">
+            <span className="label-cap">{locale === "zh" ? "行业" : "Sector"}</span>
+            <input value={sector} onChange={(e) => setSector(e.target.value)} className="input mt-1" />
+          </label>
+          <label className="block">
+            <span className="label-cap">{locale === "zh" ? "倾向" : "Tilt"}</span>
+            <select value={tilt} onChange={(e) => setTilt(e.target.value)} className="input mt-1">
+              <option value="growth">growth</option>
+              <option value="value">value</option>
+              <option value="momentum">momentum</option>
+              <option value="quality">quality</option>
+              <option value="contrarian">contrarian</option>
+            </select>
+          </label>
+        </div>
+        <div>
+          <div className="label-cap mb-1">
+            {locale === "zh"
+              ? `候选池 (LLM 不能编造池外 ticker · 当前 ${universe.length})`
+              : `Universe (LLM cannot invent outside · ${universe.length} tickers)`}
+          </div>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {universe.map((t) => (
+              <span key={t} className="pill bg-bg-subtle text-ink-secondary inline-flex items-center gap-1">
+                {t}
+                <button onClick={() => removeTicker(t)} className="hover:text-bear-ink">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
             ))}
           </div>
-          {i < rounds.length - 1 && (
-            <div className="text-center my-3 text-ink-tertiary">↓</div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// BUS ARCHITECTURE — 第二部分系统：通用数据总线
-// ---------------------------------------------------------------------------
-
-function BusArchitecture({ isZh }: { isZh: boolean }) {
-  return (
-    <section className="border-b border-border-subtle">
-      <div className="max-w-6xl mx-auto px-6 py-24">
-        <div className="kicker mb-6">{isZh ? "系统架构 · 第二部分" : "System architecture · part 2"}</div>
-        <h2 className="display text-3xl md:text-4xl text-ink-primary tracking-tighter">
-          {isZh ? "UniversalDataBus · 类型化可组合数据总线" : "UniversalDataBus · type-safe composable data spine"}
-        </h2>
-        <p className="text-ink-secondary leading-relaxed mt-4 max-w-3xl">
-          {isZh
-            ? "把数据获取从 N×M 耦合矩阵转换为类型化注册表 + 优先级回退分发。10 个 Need 类型构成封闭可组合代数，4 条法则保证幂等、组合、防前视、遥测正确。"
-            : "Turns data access from an N×M coupling matrix into a typed registry with priority-fallback dispatch. The 10 Need types form a closed composable algebra with 4 laws guaranteeing idempotence, composition, lookahead safety, and telemetry correctness."}
-        </p>
-
-        {/* 总线 4 法则 */}
-        <div className="grid md:grid-cols-2 gap-5 mt-10">
-          <LawCard
-            num="1"
-            title={isZh ? "缓存幂等性" : "Cache idempotence"}
-            body={isZh
-              ? "对任何具可哈希参数的 Need n，缓存 TTL 内重复调用 bus.fetch(n) 观测上等价单次 fetch。"
-              : "For any Need n with hashable params, bus.fetch(n) called repeatedly within cache TTL is observationally equivalent to a single fetch."}
-          />
-          <LawCard
-            num="2"
-            title={isZh ? "组合性" : "Composition"}
-            body={isZh
-              ? "Need.FACTOR 内部调用 Need.OHLCV，后者再调底层 yfinance / akshare。组合良构是因 Need.OHLCV 在 Need.FACTOR 所需操作下封闭。"
-              : "Need.FACTOR internally invokes Need.OHLCV, which invokes underlying yfinance / akshare. Composition is well-formed because Need.OHLCV is closed under operations required by Need.FACTOR."}
-          />
-          <LawCard
-            num="3"
-            title={isZh ? "防前视单调" : "Lookahead monotonicity"}
-            body={isZh
-              ? "asof_1 < asof_2 时 bus.fetch(n with asof=asof_1) 返回是 bus.fetch(n with asof=asof_2) 的子集。在 bus 层强制 asof < today。"
-              : "When asof_1 < asof_2, bus.fetch(n, asof=asof_1) returns a subset of bus.fetch(n, asof=asof_2). Enforced at bus layer: asof < today rejected."}
-          />
-          <LawCard
-            num="4"
-            title={isZh ? "遥测组合" : "Telemetry composition"}
-            body={isZh
-              ? "每次 bus.fetch 调用（含 handler 内对子 Need 的递归调用）每层恰产生一条遥测记录。"
-              : "Each bus.fetch invocation, including recursive calls to sub-Needs from within a handler, produces exactly one telemetry record per layer."}
-          />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function LawCard({ num, title, body }: { num: string; title: string; body: string }) {
-  return (
-    <div className="surface-elev p-5">
-      <div className="flex items-baseline gap-3 mb-2">
-        <span className="font-mono text-xl text-gold tabular-nums">{num}.</span>
-        <h4 className="text-base font-semibold text-ink-primary">{title}</h4>
-      </div>
-      <p className="text-sm text-ink-secondary leading-relaxed">{body}</p>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// TEN NEEDS MATRIX — 这是论文 §7.2 + 用户问的核心
-// ---------------------------------------------------------------------------
-
-function TenNeedsMatrix({ isZh }: { isZh: boolean }) {
-  const needs = [
-    {
-      name: "QUOTE", icon: <Zap className="w-4 h-4" />,
-      meaning: isZh ? "实时价格 + 涨跌 + 成交" : "Real-time price + change + volume",
-      pages: ["/stock/[ticker]", "/decision header", "/watchlist", "/hot/zt-pool", "/ask chip"],
-      sources: isZh ? "腾讯→新浪→雪球→akshare（A 股）；yfinance（美股）；CCXT（加密）" : "Tencent→Sina→Xueqiu→akshare (A); yfinance (US); CCXT (crypto)",
-      cache: "30 秒 / 30 sec",
-      composes: "—",
-      tone: "accent" as const,
-    },
-    {
-      name: "OHLCV", icon: <BarChart3 className="w-4 h-4" />,
-      meaning: isZh ? "[start, end] 窗口的日 K 线列表" : "Daily bar list for [start, end] window",
-      pages: ["/stock K 线图", "/decision KLinePanel", "/chain step 2", "/backtest"],
-      sources: isZh ? "5 层 A 股 fallback；yfinance（美股）" : "5-layer A-share fallback; yfinance (US)",
-      cache: "24 小时",
-      composes: isZh ? "被 FACTOR 与 TECHNICAL 调用" : "called by FACTOR + TECHNICAL",
-      tone: "accent" as const,
-    },
-    {
-      name: "FUNDAMENTALS", icon: <Database className="w-4 h-4" />,
-      meaning: isZh ? "时点（PIT）财报：filed_at < asof 强制" : "Point-in-time financials: filed_at < asof enforced",
-      pages: ["/stock F10", "/analysis/[t]", "/decision Fundamentals analyst"],
-      sources: isZh ? "SEC EDGAR XBRL；akshare 财报" : "SEC EDGAR XBRL; akshare reports",
-      cache: isZh ? "按 filed_at 不变期" : "by filed_at (immutable)",
-      composes: isZh ? "no-mock 强保障" : "strict no-mock policy",
-      tone: "bull" as const,
-    },
-    {
-      name: "FACTOR", icon: <Sparkles className="w-4 h-4" />,
-      meaning: isZh ? "Alpha158-lite 因子（ROC、BIAS、KMID...）" : "Alpha158-lite factors (ROC, BIAS, KMID...)",
-      pages: ["/chain step 3", "Technical analyst input"],
-      sources: isZh ? "alpha158_lite（内部调 OHLCV）" : "alpha158_lite (internally calls OHLCV)",
-      cache: "24 小时",
-      composes: "→ Need.OHLCV",
-      tone: "gold" as const,
-    },
-    {
-      name: "NEWS", icon: <FileText className="w-4 h-4" />,
-      meaning: isZh ? "[asof-7d, asof] 窗口的新闻文章" : "News articles in [asof-7d, asof] window",
-      pages: ["/decision News analyst", "/stock 最近新闻", "/blog/daily"],
-      sources: isZh ? "Reddit（美股）；东方财富股吧 + 雪球（A 股）" : "Reddit (US); 东方财富股吧 + Xueqiu (A)",
-      cache: "1 小时",
-      composes: isZh ? "与 SENTIMENT 同源不同处理" : "same source as SENTIMENT, different processing",
-      tone: "neutral" as const,
-    },
-    {
-      name: "SENTIMENT", icon: <MessageSquare className="w-4 h-4" />,
-      meaning: isZh ? "聚合多空情绪 + 代表贴文" : "Aggregated bull/bear sentiment + top posts",
-      pages: ["/decision Sentiment analyst", "/stock 情绪面板", "/hot"],
-      sources: isZh ? "Reddit；股吧 + 雪球" : "Reddit; 股吧 + Xueqiu",
-      cache: "1 小时",
-      composes: isZh ? "作反向指标使用（散户极度看多 → 卖出信号）" : "used as contrarian indicator (extreme retail bullish → SELL signal)",
-      tone: "neutral" as const,
-    },
-    {
-      name: "MACRO", icon: <TrendingUp className="w-4 h-4" />,
-      meaning: isZh ? "收益率曲线、CPI、PMI、失业率" : "Yield curve, CPI, PMI, unemployment",
-      pages: ["/decision Macro analyst", "/chain step 1", "/calendar"],
-      sources: isZh ? "OpenBB → FRED（需 API key）" : "OpenBB → FRED (needs API key)",
-      cache: "24 小时",
-      composes: isZh ? "5 位分析师中唯一独占某 Need 的（Macro 独占）" : "the only Need exclusive to one analyst (Macro)",
-      tone: "bull" as const,
-    },
-    {
-      name: "TECHNICAL", icon: <Activity className="w-4 h-4" />,
-      meaning: isZh ? "RSI / MACD / MA cross — 教科书指标" : "RSI / MACD / MA cross — textbook indicators",
-      pages: ["/decision Technical analyst", "/stock K 线 MA 叠加", "/backtest"],
-      sources: isZh ? "yfinance + 本地 ta-lib（内部调 OHLCV）" : "yfinance + local ta-lib (internally calls OHLCV)",
-      cache: "24 小时",
-      composes: "→ Need.OHLCV",
-      tone: "gold" as const,
-    },
-    {
-      name: "CRYPTO_OHLCV", icon: <Cpu className="w-4 h-4" />,
-      meaning: isZh ? "24/7 加密币日 K（时间语义不同于股票）" : "24/7 crypto bars (time semantics differ from equity)",
-      pages: ["/decision crypto", "/chain crypto", "/ecosystem"],
-      sources: "CCXT → Binance / Coinbase / Kraken",
-      cache: "24 小时",
-      composes: isZh ? "故意与 OHLCV 分开（年化天数 252 vs 365）" : "deliberately split from OHLCV (252 vs 365 annual days)",
-      tone: "accent" as const,
-    },
-    {
-      name: "LLM_COMPLETION", icon: <Sparkles className="w-4 h-4" />,
-      meaning: isZh ? "元 Need：LLM 调用本身经 bus 路由 + 计费" : "Meta-Need: LLM calls themselves routed and metered by bus",
-      pages: [isZh ? "所有 LLM 调用经此" : "every LLM call routes through here", "/decision/[id]/trace"],
-      sources: isZh ? "6 厂商 × 3 Tier（CHEAP/MID/PREMIUM）" : "6 providers × 3 Tiers (CHEAP/MID/PREMIUM)",
-      cache: isZh ? "不缓存" : "no cache",
-      composes: isZh ? "叶子节点；让跨厂商共识 + 成本追溯成为可能" : "leaf node; enables cross-LLM consensus + cost tracing",
-      tone: "gold" as const,
-    },
-  ];
-
-  return (
-    <section className="border-b border-border-subtle">
-      <div className="max-w-6xl mx-auto px-6 py-24">
-        <div className="kicker mb-6">{isZh ? "系统架构 · 第三部分" : "System architecture · part 3"}</div>
-        <h2 className="display text-3xl md:text-4xl text-ink-primary tracking-tighter">
-          {isZh ? "10 个 Need 类型 · 与网站页面的完整映射" : "The 10 Need types · full mapping to website pages"}
-        </h2>
-        <p className="text-ink-secondary leading-relaxed mt-4 max-w-3xl">
-          {isZh
-            ? "枚举非任意 — 它代表 7-agent 流水线所需证据类型在所需操作下的封闭。生产 18 个月内未发现反例。"
-            : "The enumeration is not arbitrary — it represents the closure of evidence-stream types under operations required by the 7-agent pipeline. No counter-example in 18 months of production."}
-        </p>
-
-        <div className="surface-elev mt-10 overflow-hidden">
-          {needs.map((n, i) => (
-            <div
-              key={n.name}
-              className={`grid grid-cols-1 md:grid-cols-[10rem_1fr_1fr] gap-4 px-5 py-4 ${
-                i > 0 ? "border-t border-border-subtle" : ""
-              } hover:bg-bg-hover transition-colors`}
-            >
-              <div className="flex items-start gap-2">
-                <span className={
-                  n.tone === "accent" ? "text-accent mt-1" :
-                  n.tone === "bull"   ? "text-signal-buy mt-1" :
-                  n.tone === "gold"   ? "text-gold mt-1" :
-                                         "text-ink-secondary mt-1"
-                }>
-                  {n.icon}
-                </span>
-                <span className="font-mono text-sm font-semibold text-ink-primary">
-                  {n.name}
-                </span>
-              </div>
-              <div>
-                <p className="text-sm text-ink-primary leading-relaxed">{n.meaning}</p>
-                <div className="text-2xs text-ink-tertiary mt-2 font-mono">
-                  <span className="text-ink-secondary">{isZh ? "数据源：" : "sources: "}</span>{n.sources}
-                </div>
-                <div className="text-2xs text-ink-tertiary mt-1 font-mono">
-                  <span className="text-ink-secondary">{isZh ? "缓存：" : "cache: "}</span>{n.cache}
-                  {n.composes !== "—" && (<>
-                    <span className="mx-2">·</span>
-                    <span className="text-ink-secondary">{isZh ? "组合：" : "composes: "}</span>{n.composes}
-                  </>)}
-                </div>
-              </div>
-              <div className="text-2xs">
-                <div className="text-ink-tertiary font-mono mb-1">{isZh ? "网站消费页面：" : "consumed by pages:"}</div>
-                <div className="flex flex-wrap gap-1">
-                  {n.pages.map((pg) => (
-                    <span key={pg} className="px-1.5 py-0.5 rounded bg-bg-hover text-ink-secondary font-mono">
-                      {pg}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// BUS WEBSITE ONE-LINER — 用户问的核心架构总结
-// ---------------------------------------------------------------------------
-
-function BusWebsiteOneLiner({ isZh }: { isZh: boolean }) {
-  return (
-    <section className="border-b border-border-subtle">
-      <div className="max-w-4xl mx-auto px-6 py-24">
-        <div className="kicker mb-6">{isZh ? "总线与网站的关系" : "Bus ↔ Website relationship"}</div>
-        <h2 className="display text-3xl md:text-4xl text-ink-primary tracking-tighter leading-tight">
-          {isZh ? "网站每个页面 = 一组 Need 的渲染。" : "Every page = a composition of Needs."}
-        </h2>
-
-        <div className="surface-elev p-8 mt-10 border-l-4 border-l-gold">
-          <div className="space-y-6 text-ink-secondary leading-relaxed text-base">
-            <div className="grid md:grid-cols-[12rem_1fr] gap-4 items-baseline">
-              <code className="text-accent font-mono">/chain</code>
-              <p>{isZh
-                ? "是 bus 自身的演示页 — 6 步对应 6 次 Need 调用（MACRO + OHLCV + FACTOR + signal + backtest + lean）。"
-                : "is the bus's self-demonstration page — 6 steps = 6 Need calls (MACRO + OHLCV + FACTOR + signal + backtest + lean)."}</p>
-            </div>
-            <div className="grid md:grid-cols-[12rem_1fr] gap-4 items-baseline">
-              <code className="text-accent font-mono">/decision</code>
-              <p>{isZh
-                ? "是 9 次 LLM_COMPLETION + 5×N 次数据 Need 的合成产物（5 分析师 + 多 + 空 + 3 风险 + Manager + Manager 二选一）。"
-                : "is 9 × LLM_COMPLETION + 5×N × data Needs (5 analysts + bull + bear + 3 risk roles + Manager + Manager-second)."}</p>
-            </div>
-            <div className="grid md:grid-cols-[12rem_1fr] gap-4 items-baseline">
-              <code className="text-accent font-mono">/stock/[ticker]</code>
-              <p>{isZh
-                ? "是 QUOTE + OHLCV + FUNDAMENTALS + NEWS + SENTIMENT 并联拉取再排版。"
-                : "is QUOTE + OHLCV + FUNDAMENTALS + NEWS + SENTIMENT fetched in parallel and laid out."}</p>
-            </div>
-            <div className="grid md:grid-cols-[12rem_1fr] gap-4 items-baseline">
-              <code className="text-accent font-mono">/decision/[id]/trace</code>
-              <p>{isZh
-                ? "是把 bus 遥测原样投影到 UI — 每次 LLM_COMPLETION 与每次数据 fetch 的 prompt、response、cost、latency 都可审计。"
-                : "is the bus's telemetry projected directly to the UI — every LLM_COMPLETION and data fetch is auditable: prompt, response, cost, latency."}</p>
-            </div>
-            <div className="grid md:grid-cols-[12rem_1fr] gap-4 items-baseline">
-              <code className="text-accent font-mono">{isZh ? "其他每一页" : "every other page"}</code>
-              <p>{isZh
-                ? "都遵循同一模式：从 bus 拉一组 Need、本地排版、不绕过 bus 直接调适配器。"
-                : "follows the same pattern: pull a set of Needs from the bus, lay them out locally, never bypass bus to call adapters directly."}</p>
-            </div>
+          <div className="flex gap-2">
+            <input value={newTicker} onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === "Enter" && addTicker()}
+              placeholder={locale === "zh" ? "加 ticker, 回车确认" : "Add ticker, press Enter"}
+              className="input flex-1" />
+            <button onClick={addTicker} className="btn-secondary"><Plus className="w-4 h-4" /></button>
           </div>
-
-          <p className="text-ink-primary leading-relaxed mt-8 italic border-t border-border-subtle pt-6">
-            {isZh
-              ? "这是从 N×M 耦合矩阵跳出来的关键设计承诺。新增 Source 注册不需要修改任何消费者代码；新增页面只需要决定它消费哪几个 Need。系统价值在已注册 Source 数上超线性增长。"
-              : "This is the key architectural commitment that escapes the N×M coupling matrix. New Source registrations require no consumer-code changes; new pages just declare which Needs they consume. System value grows superlinearly in the number of registered Sources."}
-          </p>
         </div>
+        <button onClick={run} disabled={loading || universe.length === 0} className="btn-primary w-full">
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+          {locale === "zh" ? "运行筛选" : "Run screen"}
+        </button>
       </div>
-    </section>
-  );
-}
 
-// ---------------------------------------------------------------------------
-// COMPARISON MATRIX — vs Bloomberg / ChatGPT / FinGPT / 同花顺 / TradingGPT
-// ---------------------------------------------------------------------------
+      {error && <ErrorBanner msg={error} />}
+      {result && <IntegrityHeader integ={result.data_integrity} locale={locale} />}
+      {result && result.data_integrity?.passed === false && (
+        <IntegrityFailedBody result={result} locale={locale} />
+      )}
 
-function ComparisonMatrix({ isZh }: { isZh: boolean }) {
-  const rows = [
-    [isZh ? "每用户每月成本" : "Cost / user / month", "$2,000", "$20", isZh ? "免费" : "Free", "$2-10", "—", "$0-50"],
-    [isZh ? "实时数据" : "Real-time data", "✓", "✗", "✗", "✓", "✗", "✓"],
-    [isZh ? "多 Agent LLM" : "Multi-agent LLM", "✗", "✗", "✗", "✗", "✓", "✓"],
-    [isZh ? "校准的置信度" : "Calibrated confidence", "✗", "✗", "✗", "✗", "✗", "★"],
-    [isZh ? "美股 + A 股 + 加密" : "US + CN + Crypto", isZh ? "部分" : "partial", "✗", isZh ? "仅美" : "US", isZh ? "仅 A" : "CN", isZh ? "仅美" : "US", "★"],
-    [isZh ? "可组合数据总线" : "Composable data bus", "✗", "✗", "✗", "✗", "✗", "★"],
-    [isZh ? "追溯透明" : "Trace transparency", "✗", isZh ? "部分" : "partial", "✗", "✗", "✗", "★"],
-    [isZh ? "开源" : "Open source", "✗", "✗", "✓", "✗", isZh ? "学术" : "academic", "★"],
-    [isZh ? "对抗式辩论" : "Adversarial debate", "✗", "✗", "✗", "✗", isZh ? "隐式" : "implicit", "★"],
-    [isZh ? "风险否决层" : "Risk-veto layer", isZh ? "经人 PM" : "via human PM", "✗", "✗", "✗", "✗", "★"],
-  ];
-  const headers = [isZh ? "维度" : "Capability", "Bloomberg", "ChatGPT", "FinGPT", "同花顺", "TradingGPT", "TradingAgents"];
-
-  return (
-    <section className="border-b border-border-subtle">
-      <div className="max-w-6xl mx-auto px-6 py-24">
-        <div className="kicker mb-6">{isZh ? "竞品对比" : "Competitive landscape"}</div>
-        <h2 className="display text-3xl md:text-4xl text-ink-primary tracking-tighter">
-          {isZh ? "能力矩阵 · 7 个平台 × 10 个维度" : "Capability matrix · 7 platforms × 10 dimensions"}
-        </h2>
-        <p className="text-ink-secondary leading-relaxed mt-4 max-w-3xl">
-          {isZh
-            ? "★ 标记 TradingAgents 独有或近独有维度。Bloomberg 有数据无 AI；ChatGPT 有 AI 无数据；只有 TradingAgents 同时具备校准置信度、可组合总线、跨市场覆盖、追溯透明、开源。"
-            : "★ marks dimensions where TradingAgents is unique or near-unique. Bloomberg has data but no AI; ChatGPT has AI but no data; only TradingAgents combines calibrated confidence, composable bus, cross-market coverage, trace transparency, and open source."}
-        </p>
-
-        <div className="surface-elev mt-10 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border-subtle">
-                {headers.map((h, i) => (
-                  <th key={i} className={`px-3 py-3 text-left font-medium ${
-                    i === headers.length - 1 ? "text-accent" : "text-ink-secondary"
-                  }`}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, ri) => (
-                <tr key={ri} className="border-b border-border-subtle last:border-0 hover:bg-bg-hover transition-colors">
-                  {row.map((cell, ci) => (
-                    <td key={ci} className={`px-3 py-2.5 ${
-                      ci === 0 ? "font-medium text-ink-primary" :
-                      ci === row.length - 1 ? (cell === "★" ? "text-gold font-bold" : "text-accent font-medium") :
-                                              "text-ink-secondary font-mono"
-                    }`}>
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
+      {result && result.data_integrity?.passed && parsed && (
+        <div className="space-y-4">
+          {topPicks.length > 0 && (
+            <div className="space-y-3">
+              <div className="label-cap">
+                {locale === "zh" ? `前 ${topPicks.length} 名深度论点` : `Top ${topPicks.length} deep-dive`}
+              </div>
+              {topPicks.map((p, i) => (
+                <div key={i} className="surface p-5 space-y-2">
+                  <div className="flex items-baseline gap-3">
+                    <span className="font-mono text-lg font-semibold text-ink-primary">{p.ticker as string}</span>
+                    <span className="text-2xs font-mono uppercase tracking-wider text-accent">#{i + 1}</span>
+                  </div>
+                  <p className="text-sm text-ink-primary leading-relaxed whitespace-pre-wrap">
+                    {p.thesis as string}
+                  </p>
+                  <div className="text-xs text-ink-tertiary">
+                    <strong className="text-ink-secondary">
+                      {locale === "zh" ? "催化剂: " : "Catalyst: "}
+                    </strong>{p.catalyst as string}
+                  </div>
+                  {Array.isArray(p.monitoring) && (p.monitoring as string[]).length > 0 && (
+                    <ul className="text-xs text-ink-secondary list-disc list-inside">
+                      {(p.monitoring as string[]).map((m, j) => <li key={j}>{m}</li>)}
+                    </ul>
+                  )}
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          )}
+
+          {candidates.length > 0 && (
+            <div className="surface p-5 space-y-2">
+              <div className="label-cap">
+                {locale === "zh" ? "完整候选列表" : "Full candidate list"}
+              </div>
+              <table className="w-full text-xs">
+                <thead className="text-ink-tertiary uppercase tracking-wider text-2xs font-mono">
+                  <tr className="border-b border-border-subtle">
+                    <th className="text-left py-2 pr-3">Ticker</th>
+                    <th className="text-left py-2 pr-3">Sector</th>
+                    <th className="text-left py-2 pr-3">Why passes</th>
+                    <th className="text-right py-2">Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {candidates.map((c, i) => (
+                    <tr key={i} className="border-b border-border-subtle/40 hover:bg-bg-hover/40">
+                      <td className="py-1.5 pr-3 font-mono text-ink-primary">{c.ticker as string}</td>
+                      <td className="py-1.5 pr-3 text-ink-secondary">{c.sector as string}</td>
+                      <td className="py-1.5 pr-3 text-ink-secondary text-xs">{c.why_passes as string}</td>
+                      <td className="py-1.5 text-right font-mono text-accent">
+                        {((c.score as number) || 0).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {parsed.universe_note ? (
+            <div className="surface p-3 text-xs text-ink-tertiary border-l-2 border-gold/40">
+              {parsed.universe_note as string}
+            </div>
+          ) : null}
+
+          <DebugFooter result={result} />
         </div>
-      </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// EMPIRICAL RESULTS — 78 周回测的核心数字
-// ---------------------------------------------------------------------------
-
-function EmpiricalResults({ isZh }: { isZh: boolean }) {
-  return (
-    <section className="border-b border-border-subtle">
-      <div className="max-w-6xl mx-auto px-6 py-24">
-        <div className="kicker mb-6">{isZh ? "实证结果" : "Empirical results"}</div>
-        <h2 className="display text-3xl md:text-4xl text-ink-primary tracking-tighter">
-          {isZh ? "TradingAgents-20×78 · 1,560 决策实证" : "TradingAgents-20×78 · 1,560-decision evaluation"}
-        </h2>
-        <p className="text-ink-secondary leading-relaxed mt-4 max-w-3xl">
-          {isZh
-            ? "20 票（10 美股 + 6 A 股 + 4 加密币）× 78 周（2024-11 至 2026-05）= 1,560 个票-周决策。每个决策含完整 LLM 追溯、5 份分析师理由、多空论证、风险面板投票、经理理由、实现 5 日前瞻收益。"
-            : "20 tickers (10 US + 6 A-share + 4 crypto) × 78 weeks (2024-11 to 2026-05) = 1,560 ticker-week decisions. Each with full LLM trace, 5 analyst rationales, bull/bear arguments, risk panel votes, manager rationale, realized 5-day forward return."}
-        </p>
-
-        {/* 关键数字 */}
-        <div className="grid md:grid-cols-2 gap-5 mt-10">
-          <ResultCard
-            title={isZh ? "校准误差 (ECE)" : "Calibration Error (ECE)"}
-            data={[
-              { label: isZh ? "单一提示基线 (Claude 3.5 Sonnet)" : "Single-prompt (Claude 3.5 Sonnet)", val: "28.1%", tone: "bear" },
-              { label: isZh ? "CoT 提示" : "Chain-of-Thought", val: "24.7%", tone: "bear" },
-              { label: isZh ? "Self-Consistency" : "Self-Consistency", val: "21.4%", tone: "bear" },
-              { label: isZh ? "FinGPT-7B 领域微调" : "FinGPT-7B domain-tuned", val: "30.5%", tone: "bear" },
-              { label: isZh ? "5-agent 仅分析师（消融）" : "5-agent ablation (no debate)", val: "14.2%", tone: "neutral" },
-              { label: isZh ? "5+2-agent（无风险面板）" : "5+2-agent (no risk panel)", val: "7.4%", tone: "neutral" },
-              { label: isZh ? "完整 7-agent 流水线" : "Full 7-agent pipeline", val: "3.7%", tone: "bull" },
-            ]}
-          />
-          <ResultCard
-            title={isZh ? "70% 置信度的实际命中率" : "Hit rate at 70% confidence"}
-            data={[
-              { label: isZh ? "单一提示基线" : "Single-prompt baseline", val: "56.4%", tone: "bear" },
-              { label: isZh ? "彭博式整合模拟" : "Bloomberg-style integrated sim", val: "60.8%", tone: "neutral" },
-              { label: isZh ? "5-agent 仅分析师" : "5-agent ablation", val: "60.1%", tone: "neutral" },
-              { label: isZh ? "5+2-agent" : "5+2-agent", val: "65.1%", tone: "neutral" },
-              { label: isZh ? "完整 7-agent" : "Full 7-agent", val: "67.3%", tone: "bull" },
-              { label: isZh ? "完整 7-agent · 双 LLM 一致" : "Full · dual-LLM agree ≥0.6", val: "76.4%", tone: "bull" },
-              { label: isZh ? "完整 7-agent · 双 LLM 完全一致" : "Full · dual-LLM agree = 1.0", val: "79.1%", tone: "bull" },
-            ]}
-          />
-        </div>
-
-        <div className="grid grid-cols-4 gap-4 mt-10">
-          <Stat n="7.6×" l={isZh ? "ECE 缩小" : "ECE reduction"} />
-          <Stat n="14.8 pp" l={isZh ? "命中率绝对改进" : "Hit rate absolute Δ"} />
-          <Stat n="2.80" l={isZh ? "Sharpe（基线 1.34）" : "Sharpe (baseline 1.34)"} />
-          <Stat n="$0.087" l={isZh ? "每决策 LLM 成本" : "Per-decision LLM cost"} />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ResultCard({
-  title, data,
-}: { title: string; data: { label: string; val: string; tone: "bull" | "bear" | "neutral" }[] }) {
-  return (
-    <div className="surface-elev p-6">
-      <div className="label-cap mb-4">{title}</div>
-      <div className="space-y-1">
-        {data.map((d) => (
-          <div key={d.label} className="grid grid-cols-[1fr_auto] gap-3 items-baseline py-1.5 border-b border-border-subtle last:border-0">
-            <span className="text-xs text-ink-secondary">{d.label}</span>
-            <span className={`text-sm font-mono font-medium tabular-nums ${
-              d.tone === "bull"    ? "text-signal-buy" :
-              d.tone === "bear"    ? "text-signal-sell" :
-                                     "text-ink-primary"
-            }`}>{d.val}</span>
-          </div>
-        ))}
-      </div>
+      )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// CITE THIS WORK — BibTeX
-// ---------------------------------------------------------------------------
+// ---- Shared ---------------------------------------------------------------
 
-function CiteThisWork({ isZh }: { isZh: boolean }) {
-  const bibtex = `@misc{tradingagents2026,
-  title  = {Beyond Single-Prompt LLMs in Financial Decision-Making:
-            An Adversarial Multi-Agent Architecture with a
-            Type-Safe Composable Data Bus},
-  author = {Anonymous Authors},
-  year   = {2026},
-  note   = {Open-source artifact: github.com/gallen666/trading-agents-platform},
-  url    = {https://trading-agents-platform.vercel.app/research},
-}`;
+function SkillForm({ ticker, setTicker, loading, onRun, locale }: {
+  ticker: string; setTicker: (t: string) => void;
+  loading: boolean; onRun: () => void; locale: string;
+}) {
   return (
-    <section>
-      <div className="max-w-4xl mx-auto px-6 py-24">
-        <div className="kicker mb-6">{isZh ? "引用本文" : "Cite this work"}</div>
-        <h2 className="display text-3xl md:text-4xl text-ink-primary tracking-tighter mb-6">
-          {isZh ? "BibTeX" : "BibTeX"}
-        </h2>
-        <pre className="surface-elev p-5 text-xs font-mono overflow-x-auto text-ink-secondary">
-{bibtex}
-        </pre>
-
-        <p className="text-ink-secondary leading-relaxed mt-8">
-          {isZh
-            ? "本系统所有源代码、prompt 模板、评估数据集、总线协议规范均以 MIT 许可证开源。学术使用欢迎引用；产品集成欢迎通过 GitHub Issues 联系。"
-            : "All source code, prompt templates, evaluation dataset, and bus protocol specification are open-sourced under MIT license. Academic citations welcome; product integration inquiries via GitHub Issues."}
-        </p>
-
-        <div className="flex flex-wrap gap-3 mt-8">
-          <a href={API_DOCS} target="_blank" rel="noopener" className="btn-primary">
-            <Github className="w-4 h-4" />
-            {isZh ? "GitHub 代码仓库" : "GitHub Repository"}
-          </a>
-          <Link href="/chain" className="btn-secondary">
-            <GitBranch className="w-4 h-4" />
-            {isZh ? "数据脊柱演示" : "Data spine demo"}
-          </Link>
-          <Link href="/decision" className="btn-secondary">
-            <Sparkles className="w-4 h-4" />
-            {isZh ? "运行 7-agent 决策" : "Run 7-agent decision"}
-          </Link>
-        </div>
-      </div>
-    </section>
+    <div className="surface p-4 flex gap-3 items-center">
+      <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())}
+        onKeyDown={(e) => e.key === "Enter" && !loading && onRun()}
+        placeholder="AAPL · 600519 · TSLA"
+        className="input flex-1 font-mono uppercase tracking-wider" disabled={loading} />
+      <button onClick={onRun} disabled={loading || !ticker.trim()} className="btn-primary">
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+        {locale === "zh" ? "运行" : "Run"}
+      </button>
+    </div>
   );
+}
+
+function IntegrityHeader({ integ, locale }: { integ?: IntegrityEnvelope; locale: string }) {
+  if (!integ || !integ.passed) return null;
+  return (
+    <div className="surface p-3 border border-signal-buy/30 bg-signal-buy_soft/30 flex items-center gap-2 text-sm">
+      <CheckCircle2 className="w-4 h-4 text-signal-buy shrink-0" />
+      <span className="text-ink-primary">
+        {locale === "zh"
+          ? "数据完整性校验通过 · 所有数字交叉对照 ground truth + universe"
+          : "Data integrity passed · all numbers cross-checked vs ground truth + universe"}
+      </span>
+    </div>
+  );
+}
+
+function IntegrityFailedBody({ result, locale }: { result: SkillResult; locale: string }) {
+  const errors = result.data_integrity?.errors || [];
+  return (
+    <div className="surface border border-signal-sell bg-signal-sell_soft/50 p-5 space-y-3">
+      <div className="flex items-center gap-3">
+        <AlertTriangle className="w-5 h-5 text-signal-sell shrink-0" />
+        <h2 className="text-lg font-semibold text-signal-sell">
+          {locale === "zh"
+            ? "数据完整性校验失败 · 报告内容不可信"
+            : "Data integrity check FAILED · report body suppressed"}
+        </h2>
+      </div>
+      <p className="text-sm text-ink-secondary leading-relaxed">
+        {locale === "zh"
+          ? "LLM 的输出未通过三重校验, 可能是: ticker 不在 universe 里 / 价格偏离真实 close ±50% / 概率不合理. 我们拒绝渲染报告 body. 请刷新重试, 或调整输入. 错误清单如下:"
+          : "The LLM output failed validation — likely fabricated ticker, price off ±50% of ground truth, or inconsistent probabilities. We refuse to render the report body. Retry or adjust inputs. Errors:"}
+      </p>
+      <ul className="text-xs font-mono text-ink-primary space-y-1 list-disc list-inside">
+        {errors.map((e, i) => <li key={i}>{e}</li>)}
+      </ul>
+      <details className="text-xs text-ink-tertiary">
+        <summary className="cursor-pointer hover:text-ink-secondary">
+          {locale === "zh" ? "查看原始 LLM 输出 (仅供调试)" : "Show raw LLM output (debug only)"}
+        </summary>
+        <pre className="mt-2 surface p-3 overflow-x-auto whitespace-pre-wrap">
+          {result.raw_body || "(no body)"}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function ErrorBanner({ msg }: { msg: string }) {
+  return (
+    <div className="surface border border-signal-sell/40 bg-signal-sell_soft/30 p-3 flex items-center gap-2 text-sm text-signal-sell">
+      <AlertTriangle className="w-4 h-4" />{msg}
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="label-cap">{label}</div>
+      <div className="mt-1 font-mono text-base">{value}</div>
+    </div>
+  );
+}
+
+function ListPanel({ title, items, icon }: { title: string; items: unknown; icon: React.ReactNode }) {
+  // v63: same hardening as equity-research/page.tsx ListPanel — TypeScript
+  // `as string[]` casts at call-sites are runtime no-ops, so if the LLM
+  // emits a string where we expect an array (e.g. key_takeaways as a single
+  // paragraph), the page crashes with "items.map is not a function" and the
+  // whole React tree unmounts. Array.isArray guard at runtime fixes it.
+  const safe: string[] = Array.isArray(items)
+    ? (items as unknown[]).filter((x) => x != null).map((x) => (typeof x === "string" ? x : JSON.stringify(x)))
+    : typeof items === "string" && items.trim()
+      ? [items as string]
+      : [];
+  return (
+    <div className="surface p-5">
+      <div className="label-cap inline-flex items-center gap-2">{icon}{title}</div>
+      <ul className="mt-3 space-y-2">
+        {safe.length === 0 ? <li className="text-xs text-ink-tertiary">[N/A]</li>
+          : safe.map((it, i) => (
+            <li key={i} className="text-sm text-ink-secondary leading-relaxed flex items-start gap-2">
+              <ChevronRight className="w-3 h-3 mt-1 text-ink-tertiary shrink-0" />
+              <span>{it}</span>
+            </li>
+          ))}
+      </ul>
+    </div>
+  );
+}
+
+function TradeIdeaCard({ trade, locale }: { trade: Record<string, unknown>; locale: string }) {
+  return (
+    <div className="surface-elev p-5 space-y-3 border-l-4 border-accent">
+      <div className="flex items-center gap-2">
+        <Target className="w-4 h-4 text-accent" />
+        <span className="label-cap">{locale === "zh" ? "交易方案" : "Trade idea"}</span>
+        <span className="font-mono text-accent text-sm">{(trade.structure as string) || "—"}</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        <Stat label="Entry" value={String(trade.entry ?? "—")} />
+        <Stat label="Exit target" value={String(trade.exit_target ?? "—")} />
+        <Stat label="Stop loss" value={String(trade.stop_loss ?? "—")} />
+        <Stat label={locale === "zh" ? "仓位 (%)" : "Size (%)"}
+          value={fmtPct(trade.size_pct_of_portfolio)} />
+      </div>
+      <p className="text-sm text-ink-secondary leading-relaxed">{(trade.rationale as string) || ""}</p>
+    </div>
+  );
+}
+
+function DebugFooter({ result }: { result: SkillResult }) {
+  const totalCost = (result.usage || []).reduce((acc, u) => acc + (u.usd_cost || 0), 0);
+  return (
+    <div className="border-t border-border-subtle pt-3 flex justify-between text-2xs font-mono uppercase tracking-wider text-ink-tertiary">
+      <span>model={result.model || "?"} · cost=${totalCost.toFixed(5)}</span>
+      <span>{result.asof || ""}</span>
+    </div>
+  );
+}
+
+// v63: runtime array guards. TS `as Array<T>` is a no-op at runtime, so an
+// LLM emitting a string where we expect an array slips past `|| []` and
+// crashes the next `.map()`. These helpers enforce array-ness at runtime.
+function arr<T = Record<string, unknown>>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : [];
+}
+function strs(v: unknown): string[] {
+  if (Array.isArray(v)) return (v as unknown[]).filter((x) => x != null).map((x) => String(x));
+  if (typeof v === "string" && v.trim()) return [v];
+  return [];
+}
+
+function fmtPct(v: unknown): string {
+  if (typeof v === "number") return `${(v * 100).toFixed(1)}%`;
+  if (Array.isArray(v) && v.length === 2) {
+    return `${(Number(v[0]) * 100).toFixed(0)}%—${(Number(v[1]) * 100).toFixed(0)}%`;
+  }
+  return "—";
 }
