@@ -19,6 +19,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { AlertTriangle, Home, RotateCcw } from "lucide-react";
 import { useT } from "./lib/i18n";
+import { reportClientError } from "./lib/safe";
 
 export default function Error({
   error,
@@ -30,10 +31,12 @@ export default function Error({
   const { locale } = useT();
 
   useEffect(() => {
-    // Local trail now; tech-item #3 (Sentry) will forward this remotely so
-    // we learn about production crashes without waiting to hit them by hand.
     // eslint-disable-next-line no-console
     console.error("[route error boundary]", error);
+    // Tech-item #3: forward to backend → Sentry so production crashes page us
+    // automatically (this is the boundary that would have caught v62's
+    // earnings-analysis white-screen).
+    reportClientError(error, "route");
   }, [error]);
 
   const zh = locale === "zh";

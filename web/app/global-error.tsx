@@ -14,6 +14,7 @@
  */
 
 import { useEffect } from "react";
+import { reportClientError } from "./lib/safe";
 
 export default function GlobalError({
   error,
@@ -25,6 +26,7 @@ export default function GlobalError({
   useEffect(() => {
     // eslint-disable-next-line no-console
     console.error("[global error boundary]", error);
+    reportClientError(error, "global");
   }, [error]);
 
   return (

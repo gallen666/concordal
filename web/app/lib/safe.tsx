@@ -26,6 +26,43 @@
 
 import { Component, type ReactNode } from "react";
 
+const API_BASE =
+  process.env.NEXT_PUBLIC_API ||
+  "https://trading-agents-platform.onrender.com";
+
+// ── Frontend error reporting (tech-item #3) ────────────────────────────────
+
+/**
+ * Forward a frontend render/runtime error to the backend, which relays it to
+ * Sentry (already initialised server-side). This is how a white-screen-class
+ * bug — like the v62 earnings-analysis crash — now pages us automatically
+ * instead of waiting to be reproduced by hand. Deliberately dependency-free
+ * (no @sentry/nextjs): the error boundaries are the capture points, and a
+ * single fire-and-forget fetch does the rest. Never throws.
+ */
+export function reportClientError(error: unknown, context?: string): void {
+  try {
+    const err = error as { message?: string; stack?: string; digest?: string };
+    const body = JSON.stringify({
+      message: String(err?.message ?? error).slice(0, 2000),
+      stack: String(err?.stack ?? "").slice(0, 8000),
+      url: typeof location !== "undefined" ? location.href : "",
+      digest: err?.digest,
+      context: context ?? "frontend",
+      user_agent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+    });
+    // keepalive lets the POST survive a page navigation/unmount.
+    fetch(`${API_BASE}/v1/client-error`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* error reporting must never itself throw */
+  }
+}
+
 // ── Value coercion ────────────────────────────────────────────────────────
 
 /**
@@ -123,10 +160,10 @@ export class SafeBoundary extends Component<SafeBoundaryProps, SafeBoundaryState
   }
 
   componentDidCatch(error: Error) {
-    // Keep a console trail for local debugging; tech-item #3 (Sentry) will
-    // forward this to remote error reporting.
     // eslint-disable-next-line no-console
     console.error(`[SafeBoundary${this.props.label ? ` · ${this.props.label}` : ""}]`, error);
+    // Tech-item #3: forward to backend → Sentry.
+    reportClientError(error, `SafeBoundary:${this.props.label ?? "?"}`);
     this.props.onError?.(error);
   }
 

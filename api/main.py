@@ -956,6 +956,75 @@ def _observability_shutdown() -> None:
         pass
 
 
+class ClientError(BaseModel):
+    """A render/runtime error captured by a frontend error boundary."""
+
+    message: str
+    stack: str | None = None
+    url: str | None = None
+    digest: str | None = None
+    context: str | None = None  # which boundary / component caught it
+    user_agent: str | None = None
+
+
+# Crude in-process rate cap so a crash-looping client can't flood us /
+# Sentry. Resets on redeploy, which is fine for a beta.
+_client_err_count = {"n": 0, "window_start": 0.0}
+
+
+@app.post("/v1/client-error", tags=["observability"])
+async def client_error(payload: ClientError) -> dict:
+    """Tech-item #3: frontend observability without a heavyweight client SDK.
+
+    The frontend error boundaries (app/error.tsx, global-error.tsx, and the
+    <SafeBoundary> component) POST here when a render throws. We forward to
+    Sentry — which is ALREADY initialised server-side via _maybe_init_sentry()
+    — so a white-screen-class bug (like the v62 earnings-analysis crash) now
+    pages us automatically instead of waiting to be reproduced by hand. If
+    Sentry isn't configured, we still log it so it shows in Render logs.
+
+    No PII is forwarded beyond what the boundary sends (message/stack/url).
+    """
+    import time as _t
+
+    now = _t.time()
+    # 60-event-per-5-min cap across all clients.
+    if now - _client_err_count["window_start"] > 300:
+        _client_err_count["window_start"] = now
+        _client_err_count["n"] = 0
+    _client_err_count["n"] += 1
+    if _client_err_count["n"] > 60:
+        return {"ok": True, "throttled": True}
+
+    msg = (payload.message or "")[:2000]
+    stack = (payload.stack or "")[:8000]
+    where = (payload.context or "frontend")[:120]
+    log.warning("client-error [%s] %s | url=%s", where, msg, payload.url)
+
+    try:
+        import sentry_sdk  # already init'd if SENTRY_DSN set
+
+        with sentry_sdk.push_scope() as scope:
+            scope.set_tag("source", "frontend")
+            scope.set_tag("boundary", where)
+            scope.set_context(
+                "client",
+                {
+                    "url": payload.url,
+                    "digest": payload.digest,
+                    "user_agent": payload.user_agent,
+                    "stack": stack,
+                },
+            )
+            sentry_sdk.capture_message(f"[frontend] {msg}", level="error")
+    except Exception:
+        # Sentry not installed/initialised — the log.warning above is the
+        # fallback record. Never let error-reporting throw.
+        pass
+
+    return {"ok": True}
+
+
 @app.get("/v1/health")
 def health() -> dict:
     """Health + capability report.
