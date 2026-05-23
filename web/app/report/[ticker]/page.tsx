@@ -28,6 +28,7 @@ import {
   Share2, ShieldCheck, Sparkles, TrendingDown, TrendingUp, Users,
 } from "lucide-react";
 import { cn } from "../../lib/cn";
+import { arr } from "../../lib/safe";
 import { SAMPLE_600418 } from "../_data/sample-600418";
 import type { ReportData } from "../_types";
 
@@ -40,6 +41,12 @@ function classifyTicker(ticker: string): "a_share" | "hk_equity" | "unsupported"
   if (/^\d{4,5}(\.HK)?$/.test(t)) return "hk_equity";
   return "unsupported";
 }
+
+// v64/v65: runtime array guard for LLM nested arrays now lives in
+// app/lib/safe.tsx (single source of truth). Its overloaded signature
+// PRESERVES the element type when the field is already typed (e.g.
+// DupontRow[]), so `arr(rows).map((r) => r.name)` stays type-safe — while
+// still returning [] at runtime if the LLM ever sends a non-array.
 
 /** Fetch with timeout. 240s covers Render-free-tier cold-start (~60s)
  * + multi-source quote/fundamentals (~5s) + Gemini Flash LLM (~30s) +
@@ -530,14 +537,14 @@ function QualitativeAnalysis({ data }: { data: ReportData }) {
         {/* Framework 1 */}
         <FrameworkCard num="框架 1" title={q.framework_1_three_step_valuation.title}>
           <StepBlock num="步骤 1" title={q.framework_1_three_step_valuation.step_1_comparison.title}>
-            {q.framework_1_three_step_valuation.step_1_comparison.items.map((it) => (
+            {arr(q.framework_1_three_step_valuation.step_1_comparison.items).map((it) => (
               <BulletItem key={it.label} label={it.label} body={it.body} />
             ))}
           </StepBlock>
           <StepBlock num="步骤 2" title={q.framework_1_three_step_valuation.step_2_attribution.title}>
             <div className="mb-3">
               <div className="text-2xs text-ink-tertiary mb-1.5">市场在担心什么？</div>
-              {q.framework_1_three_step_valuation.step_2_attribution.market_concerns.map((it) => (
+              {arr(q.framework_1_three_step_valuation.step_2_attribution.market_concerns).map((it) => (
                 <BulletItem key={it.label} label={it.label} body={it.body} sub />
               ))}
             </div>
@@ -545,13 +552,13 @@ function QualitativeAnalysis({ data }: { data: ReportData }) {
               <span className="font-semibold">担忧是否合理？</span> {q.framework_1_three_step_valuation.step_2_attribution.are_concerns_reasonable}
             </div>
             <div className="text-2xs text-ink-tertiary mb-1.5">哪些因素可能改变这些担忧？</div>
-            {q.framework_1_three_step_valuation.step_2_attribution.catalysts_to_change_concerns.map((it) => (
+            {arr(q.framework_1_three_step_valuation.step_2_attribution.catalysts_to_change_concerns).map((it) => (
               <BulletItem key={it.label} label={it.label} body={it.body} sub />
             ))}
           </StepBlock>
           <StepBlock num="步骤 3" title={q.framework_1_three_step_valuation.step_3_scenarios.title}>
             <div className="grid md:grid-cols-3 gap-3">
-              {q.framework_1_three_step_valuation.step_3_scenarios.scenarios.map((sc, i) => (
+              {arr(q.framework_1_three_step_valuation.step_3_scenarios.scenarios).map((sc, i) => (
                 <div key={sc.label} className={cn(
                   "surface p-3 border-l-4",
                   i === 0 ? "border-l-signal-sell" : i === 1 ? "border-l-ink-tertiary" : "border-l-signal-buy"
@@ -579,7 +586,7 @@ function QualitativeAnalysis({ data }: { data: ReportData }) {
             <span className="text-ink-tertiary"> 变化来源：</span>
           </div>
           <div className="space-y-2">
-            {q.framework_2_dupont.decomposition.map((d) => (
+            {arr(q.framework_2_dupont.decomposition).map((d) => (
               <div key={d.name} className="grid grid-cols-[8rem_5rem_1fr] gap-3 items-baseline text-xs">
                 <span className="font-medium text-ink-primary">· {d.name}</span>
                 <span className={`font-mono tabular-nums ${d.value !== null ? "text-signal-sell" : "text-ink-tertiary"}`}>
@@ -591,7 +598,7 @@ function QualitativeAnalysis({ data }: { data: ReportData }) {
           </div>
           <div className="mt-4">
             <div className="kicker text-2xs mb-2">判断变化性质</div>
-            {q.framework_2_dupont.nature_of_change.map((it) => (
+            {arr(q.framework_2_dupont.nature_of_change).map((it) => (
               <BulletItem key={it.label} label={it.label} body={it.body} sub />
             ))}
           </div>
@@ -606,7 +613,7 @@ function QualitativeAnalysis({ data }: { data: ReportData }) {
         <FrameworkCard num="框架 3" title={q.framework_3_logic_chain.title}>
           <div className="kicker text-2xs mb-3">当前核心投资逻辑链</div>
           <div className="flex flex-wrap items-center gap-1.5 mb-4">
-            {q.framework_3_logic_chain.chain.map((link, i) => (
+            {arr(q.framework_3_logic_chain.chain).map((link, i) => (
               <span key={i} className="inline-flex items-center gap-1">
                 <span className="text-xs px-2 py-1 rounded bg-bg-hover text-ink-primary border border-border-subtle">「{link}」</span>
                 {i < q.framework_3_logic_chain.chain.length - 1 && <span className="text-accent">→</span>}
@@ -617,7 +624,7 @@ function QualitativeAnalysis({ data }: { data: ReportData }) {
             <div className="text-2xs text-ink-tertiary uppercase mb-1">链条中最脆弱的环节</div>
             <div className="text-sm font-semibold text-ink-primary">「{q.framework_3_logic_chain.weakest_link.link}」</div>
             <ul className="text-xs text-ink-secondary mt-2 space-y-1 list-disc list-inside leading-relaxed">
-              {q.framework_3_logic_chain.weakest_link.fragility.map((f, i) => <li key={i}>{f}</li>)}
+              {arr(q.framework_3_logic_chain.weakest_link.fragility).map((f, i) => <li key={i}>{f}</li>)}
             </ul>
           </div>
           <div className="mt-4 grid md:grid-cols-3 gap-3 text-xs">
@@ -631,7 +638,7 @@ function QualitativeAnalysis({ data }: { data: ReportData }) {
         <div>
           <div className="kicker mb-3">如何回答投资指挥官的问题</div>
           <div className="space-y-2">
-            {q.six_questions.map((qa, i) => (
+            {arr(q.six_questions).map((qa, i) => (
               <details key={i} className="surface p-3 group" open={i < 2}>
                 <summary className="cursor-pointer text-sm font-medium text-ink-primary flex items-center gap-2">
                   <span className="font-mono text-accent">{i + 1}.</span>
@@ -739,7 +746,7 @@ function QuantitativeVerification({ data }: { data: ReportData }) {
               <th className="py-2 text-left text-ink-tertiary font-medium">股息率</th>
             </tr></thead>
             <tbody>
-              {q.shareholder_return.rows.map((r) => (
+              {arr(q.shareholder_return.rows).map((r) => (
                 <tr key={r.year} className="border-b border-border-subtle last:border-0">
                   <td className="py-2 font-mono text-ink-primary">{r.year}</td>
                   <td className="py-2 text-ink-secondary">{r.dividend_ratio}</td>
@@ -789,7 +796,7 @@ function ProfessionalValuation({ data }: { data: ReportData }) {
             <th className="py-2 px-2 text-left text-ink-tertiary font-medium">评估</th>
           </tr></thead>
           <tbody>
-            {v.rows.map((r) => (
+            {arr(v.rows).map((r) => (
               <tr key={r.metric} className="border-b border-border-subtle last:border-0">
                 <td className="py-2 px-2 font-medium text-ink-primary">{r.metric}</td>
                 <td className="py-2 px-2 font-mono text-ink-primary">{r.current}</td>
@@ -806,7 +813,7 @@ function ProfessionalValuation({ data }: { data: ReportData }) {
         <div>
           <div className="kicker mb-3">（情景分析）合理价值区间</div>
           <div className="grid md:grid-cols-3 gap-3">
-            {v.fair_value_ranges.map((s, i) => (
+            {arr(v.fair_value_ranges).map((s, i) => (
               <div key={s.scenario} className={cn(
                 "surface p-4 border-l-4",
                 i === 0 ? "border-l-signal-sell" : i === 1 ? "border-l-ink-tertiary" : "border-l-signal-buy"
@@ -895,7 +902,7 @@ function TechnicalAnalysis({ data }: { data: ReportData }) {
 
         <FrameworkCard num="框架 2" title={t.framework_2_momentum.title}>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {t.framework_2_momentum.indicators.map((ind) => (
+            {arr(t.framework_2_momentum.indicators).map((ind) => (
               <div key={ind.name} className="surface p-2">
                 <div className="text-2xs text-ink-tertiary">{ind.name}</div>
                 <div className="font-mono text-base text-ink-primary tabular-nums mt-0.5">
@@ -939,7 +946,7 @@ function TechnicalAnalysis({ data }: { data: ReportData }) {
         <div>
           <div className="kicker mb-2">对核心问题的回答</div>
           <div className="space-y-2">
-            {t.answers_to_questions.map((qa, i) => (
+            {arr(t.answers_to_questions).map((qa, i) => (
               <details key={i} className="surface p-3 text-xs" open>
                 <summary className="cursor-pointer font-medium text-ink-primary">{i + 1}. {qa.q}</summary>
                 <p className="text-ink-secondary mt-2 leading-relaxed">{qa.a}</p>
@@ -951,7 +958,7 @@ function TechnicalAnalysis({ data }: { data: ReportData }) {
         <div>
           <div className="kicker mb-2">对情境问题的回答</div>
           <div className="space-y-2">
-            {t.answers_to_situational.map((qa, i) => (
+            {arr(t.answers_to_situational).map((qa, i) => (
               <BulletItem key={i} label={qa.q} body={qa.a} />
             ))}
           </div>
@@ -960,7 +967,7 @@ function TechnicalAnalysis({ data }: { data: ReportData }) {
         <div className="surface p-4 border-l-4 border-l-accent">
           <div className="kicker text-2xs mb-2">关键验证信号与失效条件</div>
           <div className="space-y-2 text-xs">
-            {t.validation_and_falsification.map((it) => (
+            {arr(t.validation_and_falsification).map((it) => (
               <BulletItem key={it.label} label={it.label} body={it.body} />
             ))}
           </div>
@@ -985,7 +992,7 @@ function BullBearDebate({ data }: { data: ReportData }) {
               <TrendingUp className="w-3 h-3" /> 看涨观点 · Bull Case
             </div>
             <ul className="space-y-2 text-xs text-ink-primary list-decimal list-inside leading-relaxed">
-              {data.debate.bull_case.map((b, i) => <li key={i}>{b}</li>)}
+              {arr(data.debate.bull_case).map((b, i) => <li key={i}>{b}</li>)}
             </ul>
           </div>
           <div className="surface p-4 border-l-4 border-l-signal-sell">
@@ -993,7 +1000,7 @@ function BullBearDebate({ data }: { data: ReportData }) {
               <TrendingDown className="w-3 h-3" /> 看跌观点 · Bear Case
             </div>
             <ul className="space-y-2 text-xs text-ink-primary list-decimal list-inside leading-relaxed">
-              {data.debate.bear_case.map((b, i) => <li key={i}>{b}</li>)}
+              {arr(data.debate.bear_case).map((b, i) => <li key={i}>{b}</li>)}
             </ul>
           </div>
         </div>
@@ -1016,7 +1023,7 @@ function RiskDisclosure({ data }: { data: ReportData }) {
       <Sub num="4.2" title="主要风险提示" />
       <div className="surface-elev p-6">
         <ol className="space-y-2 text-xs list-decimal list-inside text-ink-primary leading-relaxed">
-          {data.risks.map((r, i) => (
+          {arr(data.risks).map((r, i) => (
             <li key={i}>
               <span className="font-semibold">{r.label}：</span>
               <span className="text-ink-secondary">{r.body}</span>
@@ -1077,7 +1084,7 @@ function FollowUpChecklist({ data }: { data: ReportData }) {
             <th className="py-2 px-3 text-left text-ink-tertiary font-medium">对逻辑的影响</th>
           </tr></thead>
           <tbody>
-            {data.follow_up.map((r, i) => (
+            {arr(data.follow_up).map((r, i) => (
               <tr key={i} className="border-b border-border-subtle last:border-0">
                 <td className="py-2 px-3 font-medium text-ink-primary">{r.item}</td>
                 <td className="py-2 px-3 text-ink-secondary">{r.indicator}</td>
@@ -1104,7 +1111,7 @@ function TeamContribution({ data }: { data: ReportData }) {
       </div>
       <p className="text-xs text-ink-secondary mb-4">本报告由 TradingAgents v3.1 多智能体系统协作完成：</p>
       <div className="grid sm:grid-cols-2 gap-3">
-        {data.team.teams.map((t) => (
+        {arr(data.team.teams).map((t) => (
           <div key={t.name} className="surface p-3">
             <div className="flex items-baseline justify-between gap-2 mb-1">
               <span className="text-sm font-semibold text-ink-primary">{t.name}</span>
@@ -1148,7 +1155,7 @@ function BusTelemetryAudit({ data }: { data: ReportData }) {
             <th className="py-2 px-3 text-right text-ink-tertiary font-medium">延迟</th>
           </tr></thead>
           <tbody>
-            {data.bus_telemetry.map((r, i) => (
+            {arr(data.bus_telemetry).map((r, i) => (
               <tr key={i} className="border-b border-border-subtle last:border-0">
                 <td className="py-2 px-3 font-mono text-ink-tertiary">{String(i + 1).padStart(2, "0")}</td>
                 <td className="py-2 px-3 font-mono text-2xs uppercase text-ink-primary">{r.need_kind}</td>
@@ -1242,7 +1249,7 @@ function SystemDisclaimer({ data }: { data: ReportData }) {
       <div>
         <div className="font-semibold text-ink-primary mb-1">数据来源</div>
         <ul className="list-disc list-inside space-y-0.5">
-          {data.team.data_sources.map((s) => <li key={s}>{s}</li>)}
+          {arr(data.team.data_sources).map((s) => <li key={s}>{s}</li>)}
         </ul>
       </div>
       <div className="border-t border-border-subtle pt-3 font-mono text-2xs text-ink-tertiary">
