@@ -30,6 +30,11 @@ api = [
     "PyJWT>=2.8",
     "pydantic[email]>=2.6",
     "sentry-sdk>=2.0",
+    # v65 tech-#2: managed-Postgres persistence (e.g. Supabase) when
+    # DATABASE_URL is set. Import is lazy in api/db.py, so SQLite-only
+    # deploys never touch it — but shipping it means flipping DATABASE_URL
+    # needs no rebuild-with-new-deps.
+    "psycopg[binary]>=3.1",
     # Langfuse is a hard requirement for the API service so traces start
     # the moment Render boots — without it the @current_span decorators
     # silently no-op and the user has no idea why nothing shows up in

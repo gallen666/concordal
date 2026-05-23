@@ -1031,13 +1031,23 @@ def health() -> dict:
         ),
     }
 
-    # Persistence
+    # Persistence. v65 tech-#2: when DATABASE_URL points at a managed Postgres
+    # (e.g. Supabase), state survives redeploys and the ephemeral-disk warning
+    # no longer applies. Only the SQLite-on-/app case is ephemeral.
     data_dir = os.getenv("TA_DATA_DIR", "/app/.tradingagents")
+    _pg = bool(os.getenv("DATABASE_URL", "").strip())
     features["persistence"] = {
-        "data_dir": data_dir,
+        "backend": "postgres" if _pg else "sqlite",
+        "data_dir": None if _pg else data_dir,
         "warning": (
-            "ephemeral filesystem detected — decisions wiped on redeploy"
-            if data_dir.startswith("/app") else ""
+            ""
+            if _pg
+            else (
+                "ephemeral filesystem detected — decisions wiped on redeploy "
+                "(set DATABASE_URL to a managed Postgres to persist)"
+                if data_dir.startswith("/app")
+                else ""
+            )
         ),
     }
 

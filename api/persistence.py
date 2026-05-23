@@ -23,47 +23,29 @@ ephemeral storage so the operator knows when to upgrade.
 from __future__ import annotations
 
 import logging
-import os
-import sqlite3
-import threading
 import time
-from pathlib import Path
 from typing import Any
+
+from . import db
 
 log = logging.getLogger(__name__)
 
-
-def _db_path() -> Path:
-    base = Path(os.environ.get("TA_DATA_DIR", "/app/.tradingagents"))
-    base.mkdir(parents=True, exist_ok=True)
-    return base / "platform.db"
-
-
-_lock = threading.Lock()
-_conn: sqlite3.Connection | None = None
+# v65 tech-#2: the backend (SQLite vs Postgres) now lives in api/db.py, chosen
+# by DATABASE_URL. This module is unchanged at the call sites — every function
+# still does `c = _get_conn(); c.execute("... ?", (...))`. The db.Conn wrapper
+# translates `?`→`%s` and the schema's REAL→DOUBLE PRECISION for Postgres.
+# IntegrityError is re-exported from db so `except sqlite3.IntegrityError`
+# call-sites become backend-agnostic.
+IntegrityError = db.IntegrityError
 
 
-def _get_conn() -> sqlite3.Connection:
-    """Open the SQLite file lazily. WAL mode allows concurrent reads
-    while a single writer is active — important for FastAPI's threadpool."""
-    global _conn
-    if _conn is not None:
-        return _conn
-    with _lock:
-        if _conn is not None:
-            return _conn
-        path = _db_path()
-        conn = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        _init_schema(conn)
-        _conn = conn
-        log.info("SQLite persistence initialised at %s", path)
-        return conn
+def _get_conn() -> db.Conn:
+    """Return the shared backend connection (SQLite or Postgres). Lazily
+    opened and schema-initialised on first call by api/db.py."""
+    return db.connect(init_schema=_init_schema)
 
 
-def _init_schema(conn: sqlite3.Connection) -> None:
+def _init_schema(conn: "db.Conn") -> None:
     """Create the six tables we need. All idempotent — safe to call
     repeatedly. Add new tables here; never drop columns."""
     conn.executescript("""
@@ -176,7 +158,8 @@ def remember_user(email: str) -> None:
         return
     c = _get_conn()
     c.execute(
-        "INSERT OR IGNORE INTO known_users (email, first_seen) VALUES (?, ?)",
+        "INSERT INTO known_users (email, first_seen) VALUES (?, ?) "
+        "ON CONFLICT(email) DO NOTHING",
         (email, time.time()),
     )
 
@@ -201,7 +184,7 @@ def record_referral(referee_email: str, inviter_email: str) -> bool:
             (referee_email, inviter_email, time.time()),
         )
         return True
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         return False
 
 
@@ -230,8 +213,15 @@ def grant_bonus(email: str, ttl_seconds: int) -> None:
     c = _get_conn()
     new_exp = time.time() + ttl_seconds
     c.execute(
+        # Portable "keep the later expiry" upsert. SQLite's scalar MAX(a, b)
+        # does NOT exist in Postgres (MAX is aggregate-only there) and PG's
+        # GREATEST does not exist in SQLite — so neither is portable. CASE WHEN
+        # works in both. Reference the existing row by table name (valid in
+        # both dialects inside ON CONFLICT DO UPDATE).
         """INSERT INTO referral_bonus (email, expires_at) VALUES (?, ?)
-           ON CONFLICT(email) DO UPDATE SET expires_at = MAX(expires_at, excluded.expires_at)""",
+           ON CONFLICT(email) DO UPDATE SET expires_at =
+             CASE WHEN excluded.expires_at > referral_bonus.expires_at
+                  THEN excluded.expires_at ELSE referral_bonus.expires_at END""",
         (email, new_exp),
     )
 
@@ -251,7 +241,8 @@ def bonus_expires_at(email: str) -> float:
 def put_magic_token(token: str, email: str, ttl_seconds: int) -> None:
     c = _get_conn()
     c.execute(
-        "INSERT OR REPLACE INTO magic_tokens (token, email, expires_at) VALUES (?, ?, ?)",
+        "INSERT INTO magic_tokens (token, email, expires_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(token) DO UPDATE SET email=excluded.email, expires_at=excluded.expires_at",
         (token, email, time.time() + ttl_seconds),
     )
     # Opportunistic GC every time we add a token — keeps the table tiny.
@@ -282,7 +273,8 @@ def consume_magic_token(token: str) -> str | None:
 def put_shared_decision(share_id: str, payload_json: str) -> None:
     c = _get_conn()
     c.execute(
-        "INSERT OR REPLACE INTO shared_decisions (share_id, payload, shared_at) VALUES (?, ?, ?)",
+        "INSERT INTO shared_decisions (share_id, payload, shared_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(share_id) DO UPDATE SET payload=excluded.payload, shared_at=excluded.shared_at",
         (share_id, payload_json, time.time()),
     )
 
@@ -304,7 +296,9 @@ def put_decision_job(job_id: str, user_id: str, payload_json: str) -> None:
     changes — status, progress, result. Idempotent."""
     c = _get_conn()
     c.execute(
-        "INSERT OR REPLACE INTO decision_jobs (job_id, user_id, payload, updated_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO decision_jobs (job_id, user_id, payload, updated_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(job_id) DO UPDATE SET user_id=excluded.user_id, "
+        "payload=excluded.payload, updated_at=excluded.updated_at",
         (job_id, user_id, payload_json, time.time()),
     )
 
@@ -383,9 +377,13 @@ def save_daily_brief(
     Re-running the cron for the same day overwrites — useful for fixing typos."""
     c = _get_conn()
     c.execute(
-        """INSERT OR REPLACE INTO daily_briefs
+        """INSERT INTO daily_briefs
            (date_str, title, body_md, locale, generated_at, model)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(date_str) DO UPDATE SET
+             title=excluded.title, body_md=excluded.body_md,
+             locale=excluded.locale, generated_at=excluded.generated_at,
+             model=excluded.model""",
         (date_str, title, body_md, locale, time.time(), model),
     )
 
@@ -478,9 +476,13 @@ def cache_put(
     import json
     c = _get_conn()
     c.execute(
-        "INSERT OR REPLACE INTO analyst_cache "
+        "INSERT INTO analyst_cache "
         "(cache_key, output_json, model, cost_usd, cached_at, ttl_seconds) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(cache_key) DO UPDATE SET "
+        "output_json=excluded.output_json, model=excluded.model, "
+        "cost_usd=excluded.cost_usd, cached_at=excluded.cached_at, "
+        "ttl_seconds=excluded.ttl_seconds",
         (cache_key, json.dumps(output, default=str), model, cost_usd, time.time(), int(ttl_seconds)),
     )
 
@@ -518,9 +520,12 @@ def save_seed_run(
 ) -> None:
     c = _get_conn()
     c.execute(
-        "INSERT OR REPLACE INTO seed_runs "
+        "INSERT INTO seed_runs "
         "(ticker, decision_date, seed, action, confidence, generated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(ticker, decision_date, seed) DO UPDATE SET "
+        "action=excluded.action, confidence=excluded.confidence, "
+        "generated_at=excluded.generated_at",
         (ticker, decision_date, int(seed), action, float(confidence), time.time()),
     )
 
@@ -617,10 +622,15 @@ def save_ticker_meta(
 ) -> None:
     c = _get_conn()
     c.execute(
-        "INSERT OR REPLACE INTO ticker_meta "
+        "INSERT INTO ticker_meta "
         "(ticker, market, name, sector, industry, market_cap, currency, "
         " listing_date, source, fetched_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(ticker) DO UPDATE SET "
+        "market=excluded.market, name=excluded.name, sector=excluded.sector, "
+        "industry=excluded.industry, market_cap=excluded.market_cap, "
+        "currency=excluded.currency, listing_date=excluded.listing_date, "
+        "source=excluded.source, fetched_at=excluded.fetched_at",
         (ticker, market, name, sector, industry, market_cap,
          currency, listing_date, source, time.time()),
     )
@@ -649,5 +659,5 @@ def stats() -> dict[str, Any]:
         "daily_briefs":     c.execute("SELECT COUNT(*) FROM daily_briefs").fetchone()[0],
         "analyst_cache":    c.execute("SELECT COUNT(*) FROM analyst_cache").fetchone()[0],
         "seed_runs":        c.execute("SELECT COUNT(*) FROM seed_runs").fetchone()[0],
-        "db_path":          str(_db_path()),
+        "backend":          db.backend_name(),
     }
