@@ -66,7 +66,7 @@ export default function DevelopersPage() {
       <section className="grid sm:grid-cols-3 gap-3">
         <Tile icon={<Code2 className="w-4 h-4" />} title="JSON REST API" body="Same endpoints as our frontend uses. POST /v1/decisions returns a job id; poll /v1/decisions/job/{id} until done." />
         <Tile icon={<KeyRound className="w-4 h-4" />} title="Bearer token auth" body="One key per app. Rate-limited per key. Revocable. Self-serve console (coming) shows usage + remaining quota." />
-        <Tile icon={<Sparkles className="w-4 h-4" />} title="Real LLM" body="Gemini 3.1 Pro / DeepSeek-R1 / Claude Sonnet auto-fallback. Cached repeats are free — re-asking the same ticker on the same day costs you 0 credits." />
+        <Tile icon={<Sparkles className="w-4 h-4" />} title="Real LLM" body="Gemini 3.1 Pro / DeepSeek V4 / Claude Sonnet auto-fallback. Cached repeats are free — re-asking the same ticker on the same day costs you 0 credits." />
       </section>
 
       {/* Quick-start code */}

@@ -143,7 +143,7 @@ const dict = {
 
   // ---- Decision page (form + status) --------------------------------------
   // v48 Phase 2: trust banner above the decision form
-  "decision.trust.licensed":    { en: "HK SFC Type 4 — license application in progress", zh: "HK SFC Type 4 持牌申请中" },
+  "decision.trust.licensed":    { en: "HK SFC Type 4 — application in preparation", zh: "HK SFC Type 4 申请筹备中" },
   "decision.trust.regression":  { en: "27 regression tests · zero lookahead", zh: "27 个回归测试 · 零前瞻偏差" },
   "decision.trust.audit":       { en: "Every LLM call audit-logged",          zh: "每次 LLM 调用全程留痕" },
   "decision.trust.consensus":   { en: "DeepSeek V4 primary · Gemini fallback",  zh: "DeepSeek V4 主推理 · Gemini 兜底" },

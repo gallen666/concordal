@@ -258,7 +258,7 @@ function Hero() {
             = the three pillars that distinguish us from 同花顺/雪球/Bloomberg.
             "SFC 申请中" is the regulatory honesty signal that builds trust. */}
         <div className="kicker mb-6 text-center">
-          持牌申请中 · HK SFC Type 4 · 多 agent 辩证 · 完整 audit log
+          牌照申请筹备中 · HK SFC Type 4 · 多 agent 辩证 · 完整 audit log
         </div>
 
         {/* v47: Hero strap — what we are in one bilingual line.

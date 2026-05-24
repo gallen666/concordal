@@ -95,8 +95,8 @@ export default function CompliancePage() {
           </span>
           <p className="mt-1">
             {isZh
-              ? "在牌照获批前，TradingAgents 仅提供 决策支持工具 (decision-support tool)，不构成投资建议。任何 marketing 文案中提到 '持牌'、'licensed' 均明示为 '申请中 / in progress'。每个决策结果页底部都附 '不构成投资建议' 红色横幅。"
-              : "Until license grant, TradingAgents provides a decision-support tool only — not investment advice. All marketing copy referring to 'licensed' is qualified with 'in progress'. Every decision result includes a red disclaimer banner."}
+              ? "在牌照获批前，TradingAgents 仅提供 决策支持工具 (decision-support tool)，不构成投资建议。任何 marketing 文案中提到 '持牌'、'licensed' 均明示为 '申请筹备中 / in preparation'。每个决策结果页底部都附 '不构成投资建议' 红色横幅。"
+              : "Until license grant, TradingAgents provides a decision-support tool only — not investment advice. All marketing copy referring to 'licensed' is qualified with 'in preparation'. Every decision result includes a red disclaimer banner."}
           </p>
         </div>
       </section>

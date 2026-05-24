@@ -94,8 +94,8 @@ export default function Footer() {
             <div className="mt-4 inline-flex items-center gap-1.5 text-2xs font-mono tracking-wider uppercase text-gold/80 border border-gold/20 bg-gold-soft/30 rounded px-2 py-1">
               <span className="status-dot bg-gold animate-pulse-slow" />
               {locale === "zh"
-                ? "SFC Type 4 申请中 · 香港注册中"
-                : "SFC Type 4 in progress · HK incorporation"}
+                ? "SFC Type 4 申请筹备中 · 香港注册中"
+                : "SFC Type 4 in preparation · HK incorporation"}
             </div>
           </div>
 
