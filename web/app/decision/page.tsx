@@ -136,6 +136,17 @@ export default function DecisionPage() {
   const [usage, setUsage] = useState<{ used: number; cap: number | null; tier: string } | null>(null);
   // Set when a 402 comes back so we can render a paywall modal.
   const [paywall, setPaywall] = useState<PaywallError["detail"] | null>(null);
+  // v71 hydration fix: auth.isLoggedIn() reads localStorage, so it returns
+  // false during SSR and true on the client for a logged-in user. Gating any
+  // render directly on it makes the server and the client's first paint
+  // disagree (DemoBanner present on the server, absent on the client) → React
+  // #418 on every /decision load. Defer auth-dependent rendering until after
+  // mount, when server and client agree.
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!auth.isLoggedIn()) return;
@@ -247,7 +258,7 @@ export default function DecisionPage() {
           the homepage CTA can deep-link them straight here. Real-only
           mode: every user (including anon) gets the real LLM pipeline,
           so we no longer show the "you're in mock" banner. */}
-      {!auth.isLoggedIn() && <DemoBanner />}
+      {mounted && !auth.isLoggedIn() && <DemoBanner />}
       {usage && usage.cap !== null && <UsageBadge usage={usage} />}
       <div className="mb-6">
         <span className="label-cap">{t("decision.label")}</span>
