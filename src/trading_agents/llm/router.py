@@ -245,7 +245,7 @@ class OpenAIProvider(_ProviderBase):
         self._client = OpenAI(api_key=api_key)
 
     def complete(self, system: str, user: str, model: str, **kw) -> LLMResponse:
-        resp = self._client.chat.completions.create(
+        create_kw: dict = dict(
             model=model,
             messages=[
                 {"role": "system", "content": system},
@@ -253,6 +253,9 @@ class OpenAIProvider(_ProviderBase):
             ],
             temperature=kw.get("temperature", 0.3),
         )
+        if kw.get("json_mode"):
+            create_kw["response_format"] = {"type": "json_object"}
+        resp = self._client.chat.completions.create(**create_kw)
         text = resp.choices[0].message.content or ""
         in_tok = resp.usage.prompt_tokens if resp.usage else 0
         out_tok = resp.usage.completion_tokens if resp.usage else 0
@@ -295,6 +298,12 @@ class OpenAICompatProvider(_ProviderBase):
             "temperature": kw.get("temperature", 0.3),
             "max_tokens": kw.get("max_tokens", 2048),
         }
+        # DeepSeek/Qwen/GLM are OpenAI-compatible and accept this; it forces
+        # the response body to be a single valid JSON object. (DeepSeek also
+        # requires the word "json" in the prompt — our agent prompts already
+        # say "JSON".)
+        if kw.get("json_mode"):
+            body["response_format"] = {"type": "json_object"}
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
@@ -384,13 +393,16 @@ class GeminiProvider(_ProviderBase):
         if self._client is None:
             self._client = genai.Client(api_key=self._api_key)
 
+        cfg_kw: dict = dict(
+            system_instruction=system,
+            temperature=kw.get("temperature", 0.3),
+            max_output_tokens=kw.get("max_tokens", 4096),
+        )
+        if kw.get("json_mode"):
+            cfg_kw["response_mime_type"] = "application/json"
         resp = self._client.models.generate_content(
             model=model,
-            config=types.GenerateContentConfig(
-                system_instruction=system,
-                temperature=kw.get("temperature", 0.3),
-                max_output_tokens=kw.get("max_tokens", 4096),
-            ),
+            config=types.GenerateContentConfig(**cfg_kw),
             contents=user,
         )
         text = resp.text or ""
@@ -672,7 +684,18 @@ class LLMRouter:
         temperature: float = 0.3,
         force_model: str | None = None,
         max_tokens: int | None = None,
+        json_mode: bool = False,
     ) -> LLMResponse:
+        # json_mode (v69, ported from upstream TradingAgents v0.2.4
+        # "structured-output agents"): ask the provider for guaranteed-valid
+        # JSON via its NATIVE structured-output mode (OpenAI/DeepSeek/Qwen/GLM
+        # `response_format={"type":"json_object"}`, Gemini
+        # `response_mime_type`). This eliminates the failure mode where the
+        # model wraps JSON in prose or ```fences```, `extract_json` returns
+        # {}, and the manager silently defaults to HOLD/0.5. Defensive:
+        # providers that don't support it (Anthropic, mock) just ignore the
+        # flag, and the prompt still asks for JSON, so behaviour only ever
+        # gets stricter, never broken.
         # When the caller passes force_model (used by the manager
         # consensus-check), bypass the tier→model map and use that model
         # as the chain starter. Same fallback family + mock-last logic
@@ -723,6 +746,8 @@ class LLMRouter:
                     extra_kw: dict = {"temperature": temperature}
                     if max_tokens is not None:
                         extra_kw["max_tokens"] = max_tokens
+                    if json_mode:
+                        extra_kw["json_mode"] = True
                     resp = provider.complete(sys_with_lang, user, m, **extra_kw)
                     # Honesty: if we silently fell through to mock (because
                     # the configured model had no real provider — e.g. user

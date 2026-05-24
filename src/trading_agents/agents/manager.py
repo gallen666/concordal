@@ -62,9 +62,42 @@ def manager_node(
         "Emit your final Decision JSON."
     )
     with current_span("manager", ticker=state.get("ticker"), asof=str(state.get("asof"))):
-        resp = llm.complete(tier=Tier.DEEP, system=pack.fund_manager_system, user=user)
+        # v69: json_mode=True ports upstream TradingAgents v0.2.4's
+        # structured-output manager — the provider returns guaranteed-valid
+        # JSON (DeepSeek/OpenAI response_format, Gemini response_mime_type)
+        # instead of free text we hope parses.
+        resp = llm.complete(
+            tier=Tier.DEEP, system=pack.fund_manager_system, user=user, json_mode=True
+        )
     state.setdefault("usage", []).append(resp.usage)
     payload = extract_json(resp.text) or {}
+
+    # v69: never let a parse failure SILENTLY become HOLD/0.5. If the model
+    # still didn't return parseable JSON (json_mode unsupported by the
+    # fallback model, or a stray wrapper), flag it loudly and retry ONCE with
+    # an explicit JSON-only instruction. This makes the failure visible in the
+    # decision's flags (and the audit log) — consistent with the v55-v62
+    # data-integrity stance: surface problems, don't hide them.
+    if not payload:
+        state.setdefault("flags", []).append("manager_json_parse_failed")
+        strict_user = (
+            user
+            + "\n\nIMPORTANT: Return ONLY a single valid JSON object for the "
+            "Decision — no prose, no explanation, no markdown code fences."
+        )
+        with current_span("manager.json_retry"):
+            resp_retry = llm.complete(
+                tier=Tier.DEEP, system=pack.fund_manager_system,
+                user=strict_user, json_mode=True,
+            )
+        state.setdefault("usage", []).append(resp_retry.usage)
+        retry_payload = extract_json(resp_retry.text) or {}
+        if retry_payload:
+            payload = retry_payload
+            state["flags"].append("manager_json_recovered_on_retry")
+            resp = resp_retry  # so manager_review reflects the parsed response
+        else:
+            state["flags"].append("manager_json_unrecoverable_held")
 
     # Build a Decision with safety nets
     side = _coerce_side(payload.get("side", "HOLD"))
