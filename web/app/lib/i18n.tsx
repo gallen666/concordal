@@ -547,8 +547,8 @@ const dict = {
   "header.ecosystem":           { en: "Ecosystem",                          zh: "生态" },
   "eco.label":                  { en: "ECOSYSTEM",                          zh: "生态系统" },
   "eco.heading":                {
-    en: "10 best-of-breed projects, one data bus, geometric leverage.",
-    zh: "10 个一流开源项目，一条数据总线，几何级杠杆。",
+    en: "Best-of-breed open projects, one data bus, geometric leverage.",
+    zh: "一流开源项目，一条数据总线，几何级杠杆。",
   },
   "eco.subheading":             {
     en: "Each project is the best in class for one slice of the AI-quant stack. We don't replace them — we wire them into a single platform with shared data, so the analyst that runs on FRED data can be backtested on Backtrader using Qlib factors and executed via Lean. The whole becomes more than the sum.",
@@ -584,8 +584,8 @@ const dict = {
   "eco.wiredToday":             { en: "Wired today",                        zh: "今日已接通" },
   "eco.honesty.title":          { en: "Be honest about what's shipping",    zh: "诚实标注上线状态" },
   "eco.honesty.body":           {
-    en: "Of these 10 projects, only those with a green Live badge actually flow data through our pipeline today. Building / Roadmap items are committed work-in-progress with adapter stubs and clear extension points — not aspirational marketing. We update this page from the live registry, not a slide deck.",
-    zh: "这 10 个项目里，只有打绿色「Live」徽章的今天真在我们的 pipeline 里跑数据。Building / Roadmap 是有 adapter 桩和明确扩展点的进行中工作，不是 PPT 上的愿望。这页内容从生产 registry 实时拉取，不是我自己手写的。",
+    en: "Of these projects, only those with a green Live badge actually flow data through our pipeline today. Building / Roadmap items are committed work-in-progress with adapter stubs and clear extension points — not aspirational marketing. We update this page from the live registry, not a slide deck.",
+    zh: "这些项目里，只有打绿色「Live」徽章的今天真在我们的 pipeline 里跑数据。Building / Roadmap 是有 adapter 桩和明确扩展点的进行中工作，不是 PPT 上的愿望。这页内容从生产 registry 实时拉取，不是我自己手写的。",
   },
   "eco.section.live":           { en: "Live integrations",                  zh: "已上线集成" },
   "eco.section.building":       { en: "In active development",              zh: "开发中" },

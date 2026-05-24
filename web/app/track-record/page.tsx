@@ -463,8 +463,8 @@ function SampleBacktestPreview() {
         </div>
         <p className="text-ink-tertiary text-xs">
           {locale === "zh"
-            ? "下面是真实回测出来后大概长什么样的预览。完整 20 票 × 78 周回测正在跑，预计 5 月 20 日发布。"
-            : "Below is what the real report will look like. The full 20-ticker × 78-week backtest is running; results land here on May 20."}
+            ? "下面是真实回测出来后大概长什么样的预览。完整 20 票 × 78 周回测正在分批跑，完成的批次会陆续显示在这里。"
+            : "Below is what the real report will look like. The full 20-ticker × 78-week backtest is running in batches; finished batches appear here as they complete."}
         </p>
       </div>
 

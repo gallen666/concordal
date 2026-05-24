@@ -249,8 +249,13 @@ export default async function TickerLandingPage({ params }: Props) {
       </div>
 
       {/* Schema.org structured data — helps Google understand what this page is */}
+      {/* v71: suppressHydrationWarning — datePublished uses build-time `new Date()`
+          on a statically-prerendered page; the client recomputes it at runtime,
+          which otherwise trips a React #418 hydration mismatch on the JSON-LD.
+          Crawlers still read the SSR build date; the client keeps the server value. */}
       <script
         type="application/ld+json"
+        suppressHydrationWarning
         dangerouslySetInnerHTML={{
           __html: JSON.stringify({
             "@context": "https://schema.org",

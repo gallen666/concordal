@@ -21,7 +21,7 @@
  * always paired. Both audiences are first-class.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -389,7 +389,16 @@ const PULSE_SEED: PulseRow[] = [
 
 function TodayPulse() {
   const { locale } = useT();
-  const stamp = new Date().toISOString().slice(0, 10);
+  // v71 hydration fix: `new Date()` differs between the server (build-time on a
+  // statically-prerendered page) and the client (runtime), so rendering it
+  // directly produced a React #418 text-mismatch on every landing-page load
+  // once a day had passed since the last deploy. Gate it behind mount: the
+  // server and the client's first render both emit no date (identical HTML),
+  // then the effect fills in the real current date after hydration.
+  const [stamp, setStamp] = useState<string>("");
+  useEffect(() => {
+    setStamp(new Date().toISOString().slice(0, 10));
+  }, []);
   return (
     <section className="border-t border-border-subtle">
       <div className="max-w-6xl mx-auto px-6 py-20">
@@ -404,7 +413,7 @@ function TodayPulse() {
             </h2>
           </div>
           <div className="text-2xs font-mono uppercase tracking-kicker text-ink-tertiary">
-            Updated {stamp} · refreshed daily
+            {stamp ? `Updated ${stamp} · refreshed daily` : "Refreshed daily"}
           </div>
         </div>
 

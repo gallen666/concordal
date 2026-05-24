@@ -28,6 +28,7 @@ import {
   BookOpen, TrendingUp, TrendingDown, ShieldCheck, AlertCircle,
   Database, Sparkles, Activity, GitBranch, Network, Layers,
 } from "lucide-react";
+import { useT } from "../lib/i18n";
 
 // ============================================================================
 // AUDIT ITEM 1 · /proof — paper §9.2 calibration table
@@ -154,27 +155,56 @@ export function ConfidenceBinTable() {
 // ============================================================================
 
 export function DatasetBanner() {
+  // v71 honesty fix: this banner previously asserted "1,560 个票-周决策 · 20 票 ×
+  // 78 周 (2024-11 至 2026-05)" as if that full dataset existed and was
+  // downloadable — but the full 20×78 backtest has NOT been run yet (only a
+  // 3-ticker smoke sample is published), so the claim directly contradicted the
+  // real "Live activity" / report numbers rendered immediately above and below
+  // it. It also linked to a malformed GitHub release URL (404) and a
+  // /research#empirical-results anchor that doesn't exist. Reframed as the
+  // DESIGNED evaluation protocol (a target, honestly labelled), with the dead
+  // links replaced by real ones. For a "data must be accurate" product, a
+  // fabricated empirical claim sitting next to the real sample is the single
+  // worst credibility defect on the page.
+  const { locale } = useT();
+  const zh = locale === "zh";
   return (
     <div className="surface-elev p-5 border-l-4 border-l-accent my-6">
       <div className="flex items-start gap-3">
         <Database className="w-5 h-5 text-accent shrink-0 mt-0.5" />
         <div className="flex-1">
-          <div className="kicker text-2xs mb-2">数据集 · TradingAgents-20×78</div>
+          <div className="kicker text-2xs mb-2">
+            {zh ? "评测协议 · TradingAgents-20×78（目标）" : "Evaluation protocol · TradingAgents-20×78 (target)"}
+          </div>
           <p className="text-sm text-ink-primary leading-relaxed">
-            <strong>1,560 个票-周决策</strong> · 20 票（10 美股 + 6 A 股 + 4 加密币）× 78 周（2024-11 至 2026-05）。
-            每个决策含完整 LLM 追溯、5 份分析师理由、多空论证、风险面板投票、经理理由、实现 5 日前瞻收益。
+            {zh ? (
+              <>
+                <strong>设计目标：20 票（10 美股 + 6 A 股 + 4 加密币）× 78 周</strong>的样本外周度回测，
+                每个票-周产生一次完整决策（含 LLM 追溯、5 份分析师理由、多空论证、风险面板投票、经理理由、实现 5 日前瞻收益）。
+                完整 78 周回测正在分批跑——<strong>上方"实时活动"与下方曲线展示的是已发布的真实样本</strong>，而非完整数据集。
+              </>
+            ) : (
+              <>
+                <strong>Designed target: 20 tickers (10 US + 6 A-share + 4 crypto) × 78 weeks</strong> of
+                out-of-sample weekly backtesting — each ticker-week yields one full decision (LLM trace,
+                5 analyst rationales, bull/bear debate, risk-panel vote, manager rationale, realised 5-day
+                forward return). The full 78-week run is being executed in batches —{" "}
+                <strong>the live activity above and the curves below show the real published sample so far</strong>,
+                not the complete dataset.
+              </>
+            )}
           </p>
           <div className="flex flex-wrap gap-3 mt-3 text-xs">
             <a
-              href="https://github.com/gallen666/trading-agents-platform/releases/v1.0-dataset"
+              href="https://github.com/gallen666/trading-agents-platform/blob/main/src/trading_agents/backtest/agent_backtest.py"
               target="_blank"
               rel="noopener"
               className="text-accent hover:underline inline-flex items-center gap-1"
             >
-              <Database className="w-3 h-3" /> 下载完整数据集
+              <GitBranch className="w-3 h-3" /> {zh ? "回测引擎源码" : "Backtest engine source"}
             </a>
-            <Link href="/research#empirical-results" className="text-gold hover:underline inline-flex items-center gap-1">
-              <BookOpen className="w-3 h-3" /> 论文实证章节
+            <Link href="/proof" className="text-gold hover:underline inline-flex items-center gap-1">
+              <BookOpen className="w-3 h-3" /> {zh ? "方法论与证据" : "Methodology & evidence"}
             </Link>
           </div>
         </div>
