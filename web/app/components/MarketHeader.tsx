@@ -80,13 +80,42 @@ export function MarketHeader({ ticker }: { ticker: string }) {
     );
   }
 
-  const up = (data.change ?? 0) >= 0;
-  const ToneIcon = up ? TrendingUp : (data.change ?? 0) < 0 ? TrendingDown : Minus;
-  const toneClass = up ? "text-signal-buy" : (data.change ?? 0) < 0 ? "text-signal-sell" : "text-ink-secondary";
-  const formatted = formatPrice(data.current, data.currency);
-  const changeFmt = formatPrice(Math.abs(data.change ?? 0), data.currency);
-  const pctFmt = ((data.changePct ?? 0)).toFixed(2);
-  const sign = (data.change ?? 0) >= 0 ? "+" : "-";
+  // v70 data-integrity polish: reconcile `current` against the chart's own
+  // last close. On Render cold-start the quote endpoint can briefly return a
+  // garbage `current` (observed: AAPL $78.90 while the K-line was ~$309), and
+  // showing a headline price that contradicts the chart right below it is the
+  // worst possible first impression for a "数据要正确精准" product. The ohlcv
+  // series is the same source the chart draws, so if `current` is missing or
+  // deviates >25% from the last close, fall back to the last close (and
+  // recompute change from the last two closes). The header then can never
+  // visibly disagree with the chart.
+  const closes = (data.ohlcv || [])
+    .map((o) => o.close)
+    .filter((c): c is number => typeof c === "number");
+  const lastClose = closes.length ? closes[closes.length - 1] : null;
+  const prevClose = closes.length >= 2 ? closes[closes.length - 2] : null;
+  let price = data.current;
+  let change = data.change;
+  let changePct = data.changePct;
+  const currentIsSane =
+    price != null && lastClose != null && lastClose > 0 &&
+    Math.abs(price - lastClose) / lastClose <= 0.25;
+  if (!currentIsSane && lastClose != null) {
+    price = lastClose;
+    change = prevClose != null ? lastClose - prevClose : null;
+    changePct =
+      prevClose != null && prevClose > 0
+        ? ((lastClose - prevClose) / prevClose) * 100
+        : null;
+  }
+
+  const up = (change ?? 0) >= 0;
+  const ToneIcon = up ? TrendingUp : (change ?? 0) < 0 ? TrendingDown : Minus;
+  const toneClass = up ? "text-signal-buy" : (change ?? 0) < 0 ? "text-signal-sell" : "text-ink-secondary";
+  const formatted = formatPrice(price, data.currency);
+  const changeFmt = formatPrice(Math.abs(change ?? 0), data.currency);
+  const pctFmt = ((changePct ?? 0)).toFixed(2);
+  const sign = (change ?? 0) >= 0 ? "+" : "-";
 
   return (
     <div className="surface-elev overflow-hidden">

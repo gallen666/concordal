@@ -143,7 +143,7 @@ const dict = {
 
   // ---- Decision page (form + status) --------------------------------------
   // v48 Phase 2: trust banner above the decision form
-  "decision.trust.licensed":    { en: "Licensed · HK SFC Type 4 in progress", zh: "持牌中 · HK SFC Type 4 申请中" },
+  "decision.trust.licensed":    { en: "HK SFC Type 4 — license application in progress", zh: "HK SFC Type 4 持牌申请中" },
   "decision.trust.regression":  { en: "27 regression tests · zero lookahead", zh: "27 个回归测试 · 零前瞻偏差" },
   "decision.trust.audit":       { en: "Every LLM call audit-logged",          zh: "每次 LLM 调用全程留痕" },
   "decision.trust.consensus":   { en: "DeepSeek V4 primary · Gemini fallback",  zh: "DeepSeek V4 主推理 · Gemini 兜底" },
@@ -312,8 +312,8 @@ const dict = {
     zh: "为信号付费，不为门面",
   },
   "pricing.subheading":         {
-    en: "Same licensed multi-agent pipeline at every tier. Free runs it 5×/day. Pro raises quota and persists your history. Pro+ adds priority queue and watchlist alerts. Enterprise plugs into your compliance stack.",
-    zh: "每一档跑的都是同一条持牌多 agent 流水线。免费档每日 5 次。Pro 升额度 + 持久化历史。Pro+ 优先队列 + 自选股提醒。Enterprise 接入你的合规体系。",
+    en: "Same multi-agent pipeline at every tier. Free runs it 5×/day. Pro raises quota and persists your history. Pro+ adds priority queue and watchlist alerts. Enterprise plugs into your compliance stack.",
+    zh: "每一档跑的都是同一条多 agent 流水线。免费档每日 5 次。Pro 升额度 + 持久化历史。Pro+ 优先队列 + 自选股提醒。Enterprise 接入你的合规体系。",
   },
   "pricing.tier.free":          { en: "Free",                               zh: "免费" },
   "pricing.tier.pro":           { en: "Pro",                                zh: "Pro" },

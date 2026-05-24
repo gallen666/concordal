@@ -147,8 +147,8 @@ export default function PricingPage() {
         <div className="mt-5 inline-flex items-center gap-2 text-2xs font-mono tracking-wider uppercase text-gold/80 border border-gold/20 bg-gold-soft/30 rounded px-3 py-1.5">
           <span className="status-dot bg-gold animate-pulse-slow" />
           {locale === "zh"
-            ? "持牌中 · SFC Type 4 申请中 · 香港注册中"
-            : "Licensed · HK SFC Type 4 in progress · HK incorporation"}
+            ? "持牌申请中 · SFC Type 4 · 香港注册中"
+            : "License application in progress · HK SFC Type 4 · HK incorporation"}
         </div>
       </header>
 
