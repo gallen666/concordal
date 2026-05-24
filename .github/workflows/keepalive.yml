@@ -1,0 +1,49 @@
+name: keep-warm
+
+# v68: keep the Render free-tier backend warm so real users don't hit the
+# ~50s cold-start on the first decision/report request. Render free web
+# services spin down after ~15 min of no inbound traffic; a periodic ping
+# is inbound traffic, so it stays awake.
+#
+# Honest caveats:
+#  - GitHub Actions `schedule` is best-effort: under load GitHub delays or
+#    SKIPS cron runs, so the real interval can drift to 15-30+ min. That
+#    means this REDUCES cold-starts but does not 100% eliminate them. The
+#    retry loop below also re-pings if the instance was already cold, so a
+#    real user arriving right after a workflow run finds it warm.
+#  - A single always-warm free service uses ~730 of the 750 free
+#    instance-hours/month — fine for one service, no headroom for a second.
+#  - The fully reliable free option is an external uptime monitor
+#    (UptimeRobot / cron-job.org, 5-min pings, ~3-min signup). The fully
+#    correct option is Render Starter ($7/mo, zero spin-down). This workflow
+#    is the zero-friction, in-repo, no-new-account mitigation.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # aim for every 10 min (GitHub may delay)
+  workflow_dispatch: {}        # allow manual "wake it now" runs
+
+# Don't pile up overlapping runs if a previous one is slow (cold-start).
+concurrency:
+  group: keep-warm
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render health endpoint (retry through a cold-start)
+        run: |
+          URL="https://trading-agents-platform.onrender.com/v1/health"
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 70 "$URL" || echo "000")
+            echo "attempt $i -> HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "warm ✓"
+              exit 0
+            fi
+            sleep 25
+          done
+          # Don't fail the workflow on a stubborn cold-start — the next run
+          # will try again. A red X every now and then is just noise.
+          echo "not 200 after retries (instance may still be waking); will retry next run"
