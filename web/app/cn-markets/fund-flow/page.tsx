@@ -118,7 +118,7 @@ export default function FundFlowPage() {
             netKey="主力净流入-净额"
             pctKey="主力净流入-净占比"
             priceKey="最新价"
-            changeKey="今日涨跌幅"
+            changeKey="涨跌幅"
           />
         )}
       </section>

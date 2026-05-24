@@ -131,7 +131,7 @@ export default function ProofPage() {
 
       {/* Headline numbers */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-10">
-        <Stat label={locale === "zh" ? "OSS 集成" : "OSS integrations"} value="12" sub={locale === "zh" ? "8 已上线" : "8 live"} />
+        <Stat label={locale === "zh" ? "OSS 集成" : "OSS integrations"} value="12" sub={locale === "zh" ? "6 已上线" : "6 live"} />
         <Stat label={locale === "zh" ? "单元测试" : "Unit tests"} value="25" sub="all green" />
         <Stat label={locale === "zh" ? "数据源" : "Real data sources"} value="6" sub={locale === "zh" ? "无需付费 API" : "no paid APIs"} />
         <Stat label={locale === "zh" ? "回测引擎" : "Backtest engines"} value="2" sub={locale === "zh" ? "互相校验" : "cross-validated"} />
