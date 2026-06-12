@@ -187,6 +187,50 @@ function buildGroups(isZh: boolean): NavGroup[] {
           ],
         },
         {
+          // v75: US equities section — parallel to the A-share section above.
+          // Surfaces /us-markets landing + the 3 detail pages (indices /
+          // sectors / movers). All data via yfinance + Yahoo screener, free.
+          heading: lbl("美股", "US equities"),
+          items: [
+            {
+              href: "/us-markets",
+              label: lbl("美股概览", "US overview"),
+              desc: lbl(
+                "指数 · 板块热力图 · 涨跌排行 一页看",
+                "Indices · sector heatmap · movers — one page",
+              ),
+              icon: <TrendingUp className="w-4 h-4" />,
+            },
+            {
+              href: "/us-markets/indices",
+              label: lbl("指数 · VIX · 美十债 · DXY", "Indices · VIX · 10Y · DXY"),
+              desc: lbl(
+                "S&P / NASDAQ / Dow / Russell 2000 + 宏观三件套",
+                "S&P / NASDAQ / Dow / Russell 2000 + macro tells",
+              ),
+              icon: <BarChart3 className="w-4 h-4" />,
+            },
+            {
+              href: "/us-markets/sectors",
+              label: lbl("GICS 板块热力图", "GICS sector heatmap"),
+              desc: lbl(
+                "11 大行业 SPDR ETF (XLF / XLK / XLE / ...)",
+                "11 SPDR sector ETFs (XLF / XLK / XLE / ...)",
+              ),
+              icon: <Activity className="w-4 h-4" />,
+            },
+            {
+              href: "/us-markets/movers",
+              label: lbl("涨跌排行", "Top movers"),
+              desc: lbl(
+                "Top gainers / losers / most active — 点代码即跑决策",
+                "Top gainers / losers / most active — click to run decisions",
+              ),
+              icon: <Flame className="w-4 h-4" />,
+            },
+          ],
+        },
+        {
           heading: lbl("其他市场", "Other markets"),
           items: [
             {

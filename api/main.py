@@ -3524,6 +3524,192 @@ def cn_block_trade(date_str: str | None = None, top: int = 50) -> dict:
         return {"status": "unavailable", "message": str(e), "rows": []}
 
 
+# ============================================================================
+# v75 美股市场概览 — /v1/us/* — 把美股补成跟 A 股对称的一档。
+# 数据全免费: yfinance (Yahoo Finance) 拿 indices/sectors ETF 报价, Yahoo 的
+# predefined screener 拿 day_gainers/day_losers/most_actives。无需任何 paid key。
+# yfinance 在 Render 上偶尔会限流, 同 /v1/quote 一样的兜底套路: 失败时回 stale
+# 缓存而不是空页, 让用户看到"15 分钟前的数据 + 退化提示"而不是白屏。
+# ============================================================================
+
+# Major US indices + macro tells. Order = display order.
+_US_INDICES = [
+    {"symbol": "^GSPC",    "name_en": "S&P 500",          "name_zh": "标普 500",        "kind": "equity_index"},
+    {"symbol": "^IXIC",    "name_en": "NASDAQ Composite", "name_zh": "纳斯达克综合",     "kind": "equity_index"},
+    {"symbol": "^NDX",     "name_en": "NASDAQ 100",       "name_zh": "纳斯达克 100",     "kind": "equity_index"},
+    {"symbol": "^DJI",     "name_en": "Dow Jones",        "name_zh": "道琼斯工业指数",   "kind": "equity_index"},
+    {"symbol": "^RUT",     "name_en": "Russell 2000",     "name_zh": "罗素 2000",        "kind": "equity_index"},
+    {"symbol": "^VIX",     "name_en": "VIX (volatility)", "name_zh": "VIX 恐慌指数",     "kind": "vol"},
+    {"symbol": "^TNX",     "name_en": "10Y Treasury",     "name_zh": "美十债收益率",     "kind": "rate"},
+    {"symbol": "DX-Y.NYB", "name_en": "Dollar Index",     "name_zh": "美元指数 DXY",     "kind": "fx"},
+]
+
+# SPDR sector ETFs — the standard 11 GICS sectors, alphabetic by ticker.
+_US_SECTOR_ETFS = [
+    {"symbol": "XLB",  "name_en": "Materials",                "name_zh": "原材料"},
+    {"symbol": "XLC",  "name_en": "Communication Services",   "name_zh": "通讯服务"},
+    {"symbol": "XLE",  "name_en": "Energy",                   "name_zh": "能源"},
+    {"symbol": "XLF",  "name_en": "Financials",               "name_zh": "金融"},
+    {"symbol": "XLI",  "name_en": "Industrials",              "name_zh": "工业"},
+    {"symbol": "XLK",  "name_en": "Technology",               "name_zh": "科技"},
+    {"symbol": "XLP",  "name_en": "Consumer Staples",         "name_zh": "必需消费品"},
+    {"symbol": "XLRE", "name_en": "Real Estate",              "name_zh": "房地产"},
+    {"symbol": "XLU",  "name_en": "Utilities",                "name_zh": "公用事业"},
+    {"symbol": "XLV",  "name_en": "Health Care",              "name_zh": "医疗保健"},
+    {"symbol": "XLY",  "name_en": "Consumer Discretionary",   "name_zh": "可选消费"},
+]
+
+
+def _us_fetch_quote_batch(symbols: list[str]) -> dict[str, dict]:
+    """Batch-fetch last + previous close + change% via yfinance.
+
+    Returns {symbol: {last, prev, change, changePct, volume}}. Tolerates
+    partial failures — symbols that 404 or rate-limit are simply absent
+    from the result and the caller renders them as '—'. period=5d covers
+    weekend gaps so the 'previous trading day' close is always available.
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        return {}
+    out: dict[str, dict] = {}
+    try:
+        df = yf.download(
+            symbols, period="5d", interval="1d",
+            group_by="ticker", auto_adjust=False, progress=False, threads=True,
+        )
+        if df is None or df.empty:
+            return {}
+        for s in symbols:
+            try:
+                sub = df[s] if len(symbols) > 1 else df
+                closes = [c for c in sub["Close"].tolist() if c == c]  # drop NaN
+                vols   = [v for v in sub["Volume"].tolist() if v == v]
+                if len(closes) < 2:
+                    continue
+                last = float(closes[-1])
+                prev = float(closes[-2])
+                out[s] = {
+                    "last":      last,
+                    "prev":      prev,
+                    "change":    last - prev,
+                    "changePct": ((last - prev) / prev * 100) if prev else None,
+                    "volume":    float(vols[-1]) if vols else None,
+                }
+            except Exception:
+                continue
+    except Exception as e:
+        log.info("[us] yfinance batch fetch failed: %s", e)
+    return out
+
+
+@app.get("/v1/us/indices", tags=["markets"])
+def us_indices() -> dict:
+    """Major US market indices + macro tells.
+
+    S&P 500 / NASDAQ Composite / NASDAQ 100 / Dow / Russell 2000 (equity
+    breadth), VIX (volatility), 10Y Treasury yield, DXY (dollar). All via
+    yfinance — 15-min delayed but free, same source as /v1/quote.
+    """
+    cache_key = "us/indices"
+    symbols = [r["symbol"] for r in _US_INDICES]
+    quotes = _us_fetch_quote_batch(symbols)
+    rows = [{**r, **quotes.get(r["symbol"], {})} for r in _US_INDICES]
+    if any("last" in r for r in rows):
+        payload = {
+            "status": "ok",
+            "asof": datetime.utcnow().isoformat() + "Z",
+            "rows": rows,
+            "source": "yfinance",
+        }
+        _cache_put(cache_key, payload)
+        return payload
+    stale = _cache_get_stale(cache_key)
+    if stale:
+        return {**stale, "stale": True,
+                "source": f"{stale.get('source','cached')} | stale ({_cache_age_min(cache_key)}m)"}
+    return {"status": "unavailable", "rows": rows, "message": "yfinance fetch failed"}
+
+
+@app.get("/v1/us/sectors", tags=["markets"])
+def us_sectors() -> dict:
+    """SPDR sector-ETF heatmap — 11 GICS sectors.
+
+    Each sector ETF's day change% is the proxy for sector breadth. Matches
+    the surface area /cn-markets/sectors gives for A-share industries.
+    """
+    cache_key = "us/sectors"
+    symbols = [r["symbol"] for r in _US_SECTOR_ETFS]
+    quotes = _us_fetch_quote_batch(symbols)
+    rows = [{**r, **quotes.get(r["symbol"], {})} for r in _US_SECTOR_ETFS]
+    if any("last" in r for r in rows):
+        payload = {
+            "status": "ok",
+            "asof": datetime.utcnow().isoformat() + "Z",
+            "rows": rows,
+            "source": "yfinance (SPDR sector ETFs)",
+        }
+        _cache_put(cache_key, payload)
+        return payload
+    stale = _cache_get_stale(cache_key)
+    if stale:
+        return {**stale, "stale": True,
+                "source": f"{stale.get('source','cached')} | stale ({_cache_age_min(cache_key)}m)"}
+    return {"status": "unavailable", "rows": rows, "message": "yfinance fetch failed"}
+
+
+@app.get("/v1/us/movers", tags=["markets"])
+def us_movers(kind: str = "gainers", count: int = 25) -> dict:
+    """Top US movers — gainers / losers / most active.
+
+    Hits Yahoo's predefined-screener endpoint (the same one yahoo.finance.com
+    serves to its own UI). No key needed. ``kind`` ∈ {gainers, losers, active}.
+    """
+    kind_map = {"gainers": "day_gainers", "losers": "day_losers", "active": "most_actives"}
+    scr_id = kind_map.get(kind, "day_gainers")
+    count = max(5, min(int(count or 25), 100))
+    cache_key = f"us/movers/{scr_id}/{count}"
+    try:
+        import requests
+        url = "https://query2.finance.yahoo.com/v1/finance/screener/predefined/saved"
+        r = requests.get(
+            url, params={"count": count, "scrIds": scr_id},
+            headers={"User-Agent": "Mozilla/5.0 (compatible; TradingAgents/1.0)"},
+            timeout=10,
+        )
+        r.raise_for_status()
+        j = r.json()
+        quotes = (((j.get("finance") or {}).get("result") or [{}])[0]).get("quotes") or []
+        rows = []
+        for q in quotes:
+            rows.append({
+                "symbol":    q.get("symbol"),
+                "name":      q.get("shortName") or q.get("longName"),
+                "last":      q.get("regularMarketPrice"),
+                "change":    q.get("regularMarketChange"),
+                "changePct": q.get("regularMarketChangePercent"),
+                "volume":    q.get("regularMarketVolume"),
+                "marketCap": q.get("marketCap"),
+                "exchange":  q.get("fullExchangeName"),
+            })
+        payload = {
+            "status": "ok",
+            "asof": datetime.utcnow().isoformat() + "Z",
+            "kind": kind,
+            "rows": rows,
+            "source": f"Yahoo Finance predefined screener · {scr_id}",
+        }
+        _cache_put(cache_key, payload)
+        return payload
+    except Exception as e:
+        log.info("[us/movers %s] fetch failed: %s", kind, e)
+        stale = _cache_get_stale(cache_key)
+        if stale:
+            return {**stale, "stale": True,
+                    "source": f"{stale.get('source','cached')} | stale ({_cache_age_min(cache_key)}m)"}
+        return {"status": "unavailable", "rows": [], "message": str(e)}
+
+
 @app.get("/v1/cn/etf/spot", tags=["markets"])
 def cn_etf_spot() -> dict:
     """ETF spot list — current price / NAV / 净值溢价率 / 成交额.
