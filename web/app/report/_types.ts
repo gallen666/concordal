@@ -211,7 +211,7 @@ export interface ReportData {
   follow_up: FollowUpRow[];
   team: TeamSection;
 
-  // TradingAgents exclusive extensions
+  // Concordal exclusive extensions
   bus_telemetry: BusTelemetryRow[];
   calibration_context: CalibrationContext;
 

@@ -35,11 +35,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const post = POSTS_BY_SLUG[slug];
   if (!post) {
-    return { title: "Post not found | TradingAgents Blog" };
+    return { title: "Post not found | Concordal Blog" };
   }
   const url = `${SITE}/blog/${slug}`;
   return {
-    title: `${post.meta.title} | TradingAgents Blog`,
+    title: `${post.meta.title} | Concordal Blog`,
     description: post.meta.description,
     alternates: { canonical: `/blog/${slug}` },
     openGraph: {
@@ -74,10 +74,10 @@ export default async function BlogPostPage({ params }: Props) {
     description: meta.description,
     datePublished: meta.date,
     dateModified: meta.date,
-    author: { "@type": "Organization", name: "TradingAgents" },
+    author: { "@type": "Organization", name: "Concordal" },
     publisher: {
       "@type": "Organization",
-      name: "TradingAgents",
+      name: "Concordal",
       url: SITE,
     },
     mainEntityOfPage: { "@type": "WebPage", "@id": url },

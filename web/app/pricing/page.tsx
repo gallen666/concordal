@@ -108,10 +108,14 @@ export default function PricingPage() {
       return;
     }
     if (tier === "enterprise") {
-      // v48: route to mailto until /contact exists. Subject pre-fills so
-      // sales pipeline can categorise inbound enterprise interest.
-      const subj = encodeURIComponent("TradingAgents · 协奏 Concord — Enterprise inquiry");
-      window.location.href = `mailto:hello@tradingagents.ai?subject=${subj}`;
+      // v77: Institutional tier (formerly Enterprise) — ¥4,999 / $649 / mo
+      // for SMB asset managers / family offices / HK-Singapore boutique
+      // funds (the segment Bloomberg won't sell to). Sales-led for now
+      // because the contract bundle (audit DB / SSO / custom prompts /
+      // legal SLA) needs per-customer review; Stripe self-serve checkout
+      // for Institutional comes after the first 2-3 design partners.
+      const subj = encodeURIComponent("Concordal — Institutional inquiry (¥4,999/月 · $649/mo)");
+      window.location.href = `mailto:hello@concordal.hk?subject=${subj}`;
       return;
     }
     if (!auth.isLoggedIn()) {
@@ -187,6 +191,34 @@ export default function PricingPage() {
           locale={locale}
         />
       </div>
+
+      {/* v77: True Enterprise callout — bigger than Institutional. Multi-region
+          deployment, dedicated infra, custom contracts. Sales-only, no card. */}
+      <section className="surface-elev p-5 mb-12 flex flex-col md:flex-row items-start md:items-center gap-4 justify-between">
+        <div className="flex-1">
+          <div className="kicker mb-1.5">
+            <Building2 className="w-3.5 h-3.5" />
+            {locale === "zh" ? "更大需求" : "Bigger needs"}
+          </div>
+          <div className="font-semibold text-ink-primary">
+            {locale === "zh"
+              ? "Enterprise · 多地区部署 · 专属基础设施 · 自定义合同"
+              : "Enterprise · Multi-region · Dedicated infra · Custom contract"}
+          </div>
+          <p className="text-sm text-ink-secondary leading-relaxed mt-1.5 max-w-2xl">
+            {locale === "zh"
+              ? "买方机构 / 自营 / 头部 family office 需要的 — 私有部署、自有 LLM key、专属合规审计、SLA 与法律条款一对一谈。从 Institutional 起步、规模上去后无缝升级。"
+              : "What buy-side funds, prop trading desks, and large family offices need — private deployment, BYO-LLM keys, dedicated audit, 1-on-1 SLA and legal review. Start at Institutional and graduate as you scale."}
+          </p>
+        </div>
+        <a
+          href={`mailto:hello@concordal.hk?subject=${encodeURIComponent("Concordal — Enterprise inquiry (private deployment)")}`}
+          className="btn-secondary self-start shrink-0"
+        >
+          <Building2 className="w-4 h-4" />
+          {locale === "zh" ? "聊聊 Enterprise" : "Talk Enterprise"}
+        </a>
+      </section>
 
       {/* Comparison table */}
       <section className="surface overflow-hidden mb-12">

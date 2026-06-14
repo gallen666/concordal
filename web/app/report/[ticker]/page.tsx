@@ -4,7 +4,7 @@
  * /report/[ticker] — Professional Investment Research Report Module.
  *
  * Modeled after the StockAlpha V0.0.2 11-section PDF layout, with 4
- * TradingAgents-exclusive extensions:
+ * Concordal-exclusive extensions:
  *
  *   1. Bus Telemetry Audit — every bus.fetch this report made, with
  *      source / latency / cache-hit. (StockAlpha doesn't have a bus.)
@@ -379,7 +379,7 @@ function ReportHeader({ data }: { data: ReportData }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Extension strip — TradingAgents 4 exclusive features banner
+// Extension strip — Concordal 4 exclusive features banner
 // ─────────────────────────────────────────────────────────────────────────
 
 function ExtensionStrip({ data }: { data: ReportData }) {
@@ -387,7 +387,7 @@ function ExtensionStrip({ data }: { data: ReportData }) {
     <div className="surface-elev p-4 mb-8 border-l-4 border-l-accent">
       <div className="kicker text-2xs mb-2 flex items-center gap-1.5">
         <Sparkles className="w-3 h-3 text-accent" />
-        TradingAgents 独家扩展 · 比 StockAlpha 多 4 项
+        Concordal 独家扩展 · 比 StockAlpha 多 4 项
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
         <Link href="#bus-audit" className="hover:text-accent transition-colors">
@@ -1109,7 +1109,7 @@ function TeamContribution({ data }: { data: ReportData }) {
       <div className="kicker mb-3 flex items-center gap-2">
         <Users className="w-3.5 h-3.5 text-accent" /> 分析团队贡献
       </div>
-      <p className="text-xs text-ink-secondary mb-4">本报告由 TradingAgents v3.1 多智能体系统协作完成：</p>
+      <p className="text-xs text-ink-secondary mb-4">本报告由 Concordal v3.1 多智能体系统协作完成：</p>
       <div className="grid sm:grid-cols-2 gap-3">
         {arr(data.team.teams).map((t) => (
           <div key={t.name} className="surface p-3">
@@ -1131,14 +1131,14 @@ function TeamContribution({ data }: { data: ReportData }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// TradingAgents Extension 1 — Bus Telemetry Audit
+// Concordal Extension 1 — Bus Telemetry Audit
 // ─────────────────────────────────────────────────────────────────────────
 
 function BusTelemetryAudit({ data }: { data: ReportData }) {
   return (
     <section id="bus-audit" className="surface-elev p-6 mt-4 border-l-4 border-l-accent">
       <div className="kicker mb-3 flex items-center gap-2">
-        <Database className="w-3.5 h-3.5 text-accent" /> 总线遥测审计 · TradingAgents 独家
+        <Database className="w-3.5 h-3.5 text-accent" /> 总线遥测审计 · Concordal 独家
       </div>
       <p className="text-xs text-ink-secondary mb-4">
         本报告生成时通过 <code className="text-accent">UniversalDataBus</code> 发起的全部 fetch。
@@ -1187,7 +1187,7 @@ function BusTelemetryAudit({ data }: { data: ReportData }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// TradingAgents Extension 2 — Calibration Context
+// Concordal Extension 2 — Calibration Context
 // ─────────────────────────────────────────────────────────────────────────
 
 function CalibrationContext({ data }: { data: ReportData }) {
@@ -1195,7 +1195,7 @@ function CalibrationContext({ data }: { data: ReportData }) {
   return (
     <section id="calibration" className="surface-elev p-6 mt-4 border-l-4 border-l-gold">
       <div className="kicker mb-3 flex items-center gap-2">
-        <ShieldCheck className="w-3.5 h-3.5 text-gold" /> 校准置信度上下文 · TradingAgents 独家
+        <ShieldCheck className="w-3.5 h-3.5 text-gold" /> 校准置信度上下文 · Concordal 独家
       </div>
       <p className="text-xs text-ink-secondary mb-4 leading-relaxed">
         本系统宣称的置信度不是空话——基于 <strong>20 票 × 78 周 = 1,560 决策</strong>的回测，
@@ -1236,7 +1236,7 @@ function SystemDisclaimer({ data }: { data: ReportData }) {
     <section className="surface p-6 mt-4 text-xs text-ink-secondary leading-relaxed space-y-3">
       <div>
         <div className="font-semibold text-ink-primary mb-1">免责声明</div>
-        <p>本报告由 TradingAgents 多智能体系统（{data.system_version}）基于公开数据生成，所有结论仅供参考，不构成任何投资建议。</p>
+        <p>本报告由 Concordal 多智能体系统（{data.system_version}）基于公开数据生成，所有结论仅供参考，不构成任何投资建议。</p>
       </div>
       <div>
         <div className="font-semibold text-ink-primary mb-1">系统局限性</div>

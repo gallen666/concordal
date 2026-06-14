@@ -76,8 +76,8 @@ export default function CompliancePage() {
 
         <p className="text-sm text-ink-secondary leading-relaxed mb-5">
           {isZh
-            ? "TradingAgents 计划以 香港持牌法团身份 经营。当前阶段：(1) 香港子公司 TradingAgents (HK) Ltd. 注册中 (Vistra 代办); (2) 业务负责人 (RO) + 香港办公地址确认中; (3) SFC Type 4 申请预计于 HK OpCo 注册完成后 60 天内提交。"
-            : "TradingAgents intends to operate as a licensed entity under HK SFC. Current state: (1) HK OpCo 'TradingAgents (HK) Ltd.' incorporation in progress (Vistra-assisted); (2) Responsible Officer (RO) + HK office address under confirmation; (3) Type 4 application targeted within 60 days of OpCo registration."}
+            ? "Concordal 计划以 香港持牌法团身份 经营。当前阶段：(1) 香港子公司 TradingAgents (HK) Ltd. 注册中 (Vistra 代办); (2) 业务负责人 (RO) + 香港办公地址确认中; (3) SFC Type 4 申请预计于 HK OpCo 注册完成后 60 天内提交。"
+            : "Concordal intends to operate as a licensed entity under HK SFC. Current state: (1) HK OpCo 'TradingAgents (HK) Ltd.' incorporation in progress (Vistra-assisted); (2) Responsible Officer (RO) + HK office address under confirmation; (3) Type 4 application targeted within 60 days of OpCo registration."}
         </p>
 
         <div className="grid sm:grid-cols-2 gap-3 text-sm">
@@ -95,8 +95,8 @@ export default function CompliancePage() {
           </span>
           <p className="mt-1">
             {isZh
-              ? "在牌照获批前，TradingAgents 仅提供 决策支持工具 (decision-support tool)，不构成投资建议。任何 marketing 文案中提到 '持牌'、'licensed' 均明示为 '申请筹备中 / in preparation'。每个决策结果页底部都附 '不构成投资建议' 红色横幅。"
-              : "Until license grant, TradingAgents provides a decision-support tool only — not investment advice. All marketing copy referring to 'licensed' is qualified with 'in preparation'. Every decision result includes a red disclaimer banner."}
+              ? "在牌照获批前，Concordal 仅提供 决策支持工具 (decision-support tool)，不构成投资建议。任何 marketing 文案中提到 '持牌'、'licensed' 均明示为 '申请筹备中 / in preparation'。每个决策结果页底部都附 '不构成投资建议' 红色横幅。"
+              : "Until license grant, Concordal provides a decision-support tool only — not investment advice. All marketing copy referring to 'licensed' is qualified with 'in preparation'. Every decision result includes a red disclaimer banner."}
           </p>
         </div>
       </section>
@@ -168,8 +168,8 @@ export default function CompliancePage() {
             {isZh ? "GDPR / PDPO 权利:" : "GDPR / PDPO rights:"}
           </strong>{" "}
           {isZh
-            ? "任何用户可以请求导出/删除个人数据。流程：发邮件到 privacy@tradingagents.ai，72 小时内回应。"
-            : "Any user may request data export / deletion by emailing privacy@tradingagents.ai. We respond within 72 hours."}
+            ? "任何用户可以请求导出/删除个人数据。流程：发邮件到 privacy@concordal.hk，72 小时内回应。"
+            : "Any user may request data export / deletion by emailing privacy@concordal.hk. We respond within 72 hours."}
         </div>
       </section>
 
@@ -284,22 +284,22 @@ export default function CompliancePage() {
           <ContactCell
             icon={<AlertTriangle className="w-4 h-4 text-bear-ink" />}
             label={isZh ? "举报内容失实 / marketing 与事实不符" : "Report a misleading marketing claim"}
-            email="compliance@tradingagents.ai"
+            email="compliance@concordal.hk"
           />
           <ContactCell
             icon={<Database className="w-4 h-4 text-accent" />}
             label={isZh ? "申请数据导出 / 删除 (GDPR/PDPO)" : "Data export / deletion (GDPR/PDPO)"}
-            email="privacy@tradingagents.ai"
+            email="privacy@concordal.hk"
           />
           <ContactCell
             icon={<Calendar className="w-4 h-4 text-gold" />}
             label={isZh ? "机构客户尽职调查 (DD)" : "Institutional DD inquiry"}
-            email="hello@tradingagents.ai"
+            email="hello@concordal.hk"
           />
           <ContactCell
             icon={<Mail className="w-4 h-4 text-bull-ink" />}
             label={isZh ? "媒体 / 投资人 / 一般咨询" : "Press / investor / general"}
-            email="hello@tradingagents.ai"
+            email="hello@concordal.hk"
           />
         </div>
         <p className="text-xs text-ink-tertiary leading-relaxed mt-5">
@@ -312,8 +312,8 @@ export default function CompliancePage() {
       {/* Page-level disclaimer footer */}
       <div className="mt-8 border-t border-border-subtle pt-6 text-2xs font-mono uppercase tracking-wider text-ink-tertiary text-center">
         {isZh
-          ? "本页内容仅为透明度披露 · 不构成法律或财务建议 · TradingAgents · 协奏 Concord"
-          : "Disclosure for transparency only · Not legal or financial advice · TradingAgents · Concord"}
+          ? "本页内容仅为透明度披露 · 不构成法律或财务建议 · Concordal · 协奏 Concord"
+          : "Disclosure for transparency only · Not legal or financial advice · Concordal · Concord"}
       </div>
     </div>
   );

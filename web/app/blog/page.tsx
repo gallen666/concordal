@@ -20,12 +20,12 @@ interface DailyBriefMeta {
  */
 
 export const metadata: Metadata = {
-  title: "Blog · TradingAgents",
+  title: "Blog · Concordal",
   description:
-    "Long-form essays on multi-agent LLMs, lookahead bias, A-share data sources, and how TradingAgents compares to Bloomberg / single-prompt ChatGPT.",
+    "Long-form essays on multi-agent LLMs, lookahead bias, A-share data sources, and how Concordal compares to Bloomberg / single-prompt ChatGPT.",
   alternates: { canonical: "/blog" },
   openGraph: {
-    title: "TradingAgents Blog",
+    title: "Concordal Blog",
     description:
       "Methodology essays on multi-agent LLM analysis, backtest hygiene, and market-specific data sources.",
     type: "website",

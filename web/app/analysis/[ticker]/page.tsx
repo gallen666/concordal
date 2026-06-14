@@ -113,7 +113,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const name = live?.name || fallback?.name || t;
   const sector = live?.sector || fallback?.sector;
 
-  const title = `${t} Multi-Agent AI Analysis · ${name} | TradingAgents`;
+  const title = `${t} Multi-Agent AI Analysis · ${name} | Concordal`;
   const description = sector
     ? `5-analyst LLM pipeline (fundamentals + sentiment + news + technical + macro) ` +
       `debates ${name} (${t}) on every run. Sector: ${sector}. ` +
@@ -262,7 +262,7 @@ export default async function TickerLandingPage({ params }: Props) {
             "@type": "Article",
             headline: `${t} Multi-Agent AI Analysis`,
             datePublished: new Date().toISOString().slice(0, 10),
-            author: { "@type": "Organization", name: "TradingAgents Platform" },
+            author: { "@type": "Organization", name: "Concordal Platform" },
             about: meta?.name || t,
           }),
         }}

@@ -80,7 +80,7 @@ export default function Footer() {
                 <path d="M14 4 A10 10 0 0 1 14 24 Z" fill="#A0524A" />
                 <rect x="13" y="3" width="2" height="22" fill="#C9A961" />
               </svg>
-              <span className="font-display text-lg text-ink-primary">TradingAgents</span>
+              <span className="font-display text-lg text-ink-primary">Concordal</span>
               {/* v47: 中文双名 "协奏" (Concord) per brand strategy doc */}
               <span className="font-display text-base text-gold">协奏</span>
             </div>
@@ -153,9 +153,9 @@ export default function Footer() {
             )}
           </div>
           <span className="text-2xs font-mono text-ink-tertiary tracking-wider uppercase">
-            {/* v47: Pre-HK-OpCo copyright. After Vistra registers TradingAgents (HK) Ltd,
+            {/* v47: Pre-HK-OpCo copyright. After Vistra registers Concordal (HK) Ltd,
                 change to "© 2026 TradingAgents (HK) Ltd. · EST. Hong Kong". */}
-            © 2026 TradingAgents · 协奏 Concord · Est. Hong Kong
+            © 2026 Concordal · 协奏 Concord · Est. Hong Kong
           </span>
         </div>
       </div>

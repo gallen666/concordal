@@ -680,7 +680,7 @@ function PullQuote() {
           一次好的决策推理，应该只值几分钱。
         </p>
         <p className="text-ink-tertiary text-sm font-mono uppercase tracking-kicker mt-10">
-          — TradingAgents · 2026
+          — Concordal · 2026
         </p>
       </div>
     </section>

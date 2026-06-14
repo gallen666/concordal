@@ -56,7 +56,7 @@ export default function ReportLandingPage() {
       <div className="text-center mb-12">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-elev text-xs text-ink-tertiary mb-4">
           <Sparkles className="w-3.5 h-3.5 text-accent" />
-          深度投研报告 · StockAlpha 风格 11 节 + 4 个 TradingAgents 专属拓展
+          深度投研报告 · StockAlpha 风格 11 节 + 4 个 Concordal 专属拓展
         </div>
         <h1 className="text-4xl sm:text-5xl font-serif text-ink-primary mb-4">深度报告</h1>
         <p className="text-ink-tertiary max-w-2xl mx-auto">

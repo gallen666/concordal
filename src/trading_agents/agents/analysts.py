@@ -62,6 +62,11 @@ def _make_analyst(
     state_key: str,
     state_report_key: str,
     tier: Tier = Tier.MID,
+    # v78: optional post-LLM validator. Signature: (state, raw_input, signals)
+    # → signals. Runs once after JSON extraction, before the AnalystReport
+    # is written. Used by the grounded Sentiment Analyst (v0.2.5-inspired)
+    # to verify every `evidence.quote` exists in the input posts.
+    validator: callable = None,
 ):
     def run(state: DecisionState, *, adapter: MarketAdapter, pack: PromptPack, llm: LLMRouter) -> DecisionState:
         with current_span(
@@ -89,6 +94,16 @@ def _make_analyst(
                 and isinstance(signals["signals"], dict)
             ):
                 signals = signals["signals"]
+            # v78 grounded sentiment: run optional validator on the
+            # (raw_input, signals) tuple. The validator may drop fabricated
+            # evidence and/or downgrade the signal envelope. Catch all
+            # exceptions — the decision must not crash on a validator bug.
+            if validator is not None:
+                try:
+                    signals = validator(state, state.get(state_key), signals)
+                except Exception as e:  # noqa: BLE001 — see comment above
+                    if isinstance(signals, dict):
+                        signals["_validator_error"] = str(e)[:200]
             state[state_report_key] = AnalystReport(  # type: ignore[index]
                 analyst=role,
                 ticker=state["ticker"],
@@ -100,6 +115,88 @@ def _make_analyst(
             return state
 
     return run
+
+
+def _validate_sentiment_grounding(state: DecisionState, raw_sentiment, signals):
+    """v78 — TauricResearch v0.2.5 inspired grounded-sentiment validator.
+
+    Sentiment prompt now requires the LLM to emit ``evidence`` — a list of
+    ``{theme, quote, source_id}`` triples where each ``quote`` must be a
+    verbatim substring of some input post. This validator spot-checks
+    every quote against the raw input corpus and:
+
+      • drops items whose quote is not present (i.e. fabricated)
+      • if ALL evidence is fabricated, downgrades intensity to "low",
+        skew to 0, contrarian_flag to false — the LLM has nothing real
+        to stand on, so its signal should not influence the manager
+      • annotates ``signals["_grounded_validator"]`` with a status tag
+        so /decision UI + /track-record audit log can surface it.
+
+    The check is intentionally lenient on whitespace and uses a 30-char
+    prefix match as a fallback so minor LLM normalisation (smart quotes,
+    trimmed whitespace) doesn't false-positive as fabrication.
+    """
+    if not isinstance(signals, dict):
+        return signals
+    evidence = signals.get("evidence")
+    if not isinstance(evidence, list):
+        return signals
+
+    # Build the input-post corpus from raw_sentiment. We try the common
+    # field names; if the adapter returns something else, we degrade
+    # gracefully and skip validation.
+    posts = []
+    if isinstance(raw_sentiment, dict):
+        for key in ("posts", "sample_posts", "examples", "samples", "items"):
+            v = raw_sentiment.get(key)
+            if isinstance(v, list) and v:
+                posts = v
+                break
+    corpus_parts = []
+    for p in posts:
+        if isinstance(p, dict):
+            for key in ("text", "body", "content", "title", "post"):
+                v = p.get(key)
+                if isinstance(v, str) and v:
+                    corpus_parts.append(v)
+                    break
+        elif isinstance(p, str):
+            corpus_parts.append(p)
+    corpus = " \n ".join(corpus_parts)
+
+    if not corpus:
+        signals["_grounded_validator"] = "no_input_corpus"
+        return signals
+
+    good, bad = [], []
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
+        quote = str(item.get("quote") or "").strip()
+        if not quote:
+            continue
+        # Exact substring OR 30-char prefix substring (tolerant to LLM
+        # smart-quote / whitespace normalisation).
+        if quote in corpus or (len(quote) >= 30 and quote[:30] in corpus):
+            good.append(item)
+        else:
+            bad.append(item)
+
+    if bad:
+        signals["evidence"] = good
+        signals["_grounded_validator"] = (
+            f"dropped_{len(bad)}_fabricated_of_{len(bad) + len(good)}"
+        )
+        if not good:
+            # Every quote was fabricated. The LLM had no real evidence —
+            # neutralise the signal so manager doesn't follow it.
+            signals["intensity"] = "low"
+            signals["skew"] = 0.0
+            signals["contrarian_flag"] = False
+    else:
+        signals["_grounded_validator"] = "passed"
+
+    return signals
 
 
 # ---- per-analyst fetchers ----------------------------------------------------
@@ -170,6 +267,11 @@ fundamentals_node = _make_analyst(
 sentiment_node = _make_analyst(
     "sentiment", "sentiment_analyst_system", _fetch_sentiment,
     "sentiment", "sentiment_report",
+    # v78: TauricResearch v0.2.5-inspired grounded sentiment — verifies
+    # every LLM-emitted `evidence.quote` is verbatim-present in the raw
+    # input posts. Fabricated quotes are dropped; if all evidence is
+    # fabricated, the signal is neutralised so the manager ignores it.
+    validator=_validate_sentiment_grounding,
 )
 news_node = _make_analyst(
     "news", "news_analyst_system", _fetch_news,

@@ -11,7 +11,7 @@ import { ImageResponse } from "next/og";
  */
 
 export const runtime = "edge";
-export const alt = "TradingAgents — Seven AI analysts debate every ticker";
+export const alt = "Concordal — Seven AI analysts debate every ticker";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -42,7 +42,7 @@ export default async function OG() {
             <rect x="13" y="3" width="2" height="22" fill="#C9A961" />
           </svg>
           <div style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
-            <div style={{ fontSize: 26, fontWeight: 600 }}>TradingAgents</div>
+            <div style={{ fontSize: 26, fontWeight: 600 }}>Concordal</div>
             <div style={{ fontSize: 12, letterSpacing: 3, color: "#7A7163", marginTop: 6, textTransform: "uppercase", fontFamily: "ui-monospace, monospace" }}>
               The Decision Dialectic
             </div>

@@ -91,15 +91,18 @@ export default function DevelopersPage() {
       {/* Pricing recap */}
       <section className="surface-elev p-6 flex flex-col sm:flex-row gap-4 items-start">
         <div className="flex-1">
-          <h2 className="text-lg font-semibold mb-1">$99 / month</h2>
+          <h2 className="text-lg font-semibold mb-1">$299 / month</h2>
           <p className="text-sm text-ink-secondary leading-relaxed">
-            500 fresh decisions/month · cached repeats free · all 6 LLM providers
-            with auto-fallback · 10 req/min rate limit · email support.
+            1,500 fresh decisions/month · cached repeats free · all 6 LLM providers
+            with auto-fallback · 30 req/min rate limit · email support · dedicated
+            audit log retention.
           </p>
           <p className="text-xs text-ink-tertiary mt-2">
-            {locale === "zh" ? "需要更多？" : "Need more?"}{" "}
-            <Link href="/pricing#team" className="text-accent hover:underline">
-              {locale === "zh" ? "Team / 机构方案" : "Team / institutional"}
+            {locale === "zh" ? "更大体量? " : "Bigger volume? "}
+            <Link href="/pricing#enterprise" className="text-accent hover:underline">
+              {locale === "zh"
+                ? "Institutional ¥4,999/月 · 含 SSO + 专属 audit DB + 定制 prompts"
+                : "Institutional $649/mo · SSO + dedicated audit DB + custom prompts"}
             </Link>
           </p>
         </div>

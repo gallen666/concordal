@@ -84,9 +84,9 @@ function Code({ children }: { children: React.ReactNode }) {
 const post_bloomberg: BlogPost = {
   meta: {
     slug: "tradingagents-vs-bloomberg-terminal",
-    title: "TradingAgents vs Bloomberg Terminal: Honest Comparison",
+    title: "Concordal vs Bloomberg Terminal: Honest Comparison",
     description:
-      "Bloomberg costs $25,000/year per seat. TradingAgents is free and open-source. Here's what each does, what each doesn't, and when each makes sense.",
+      "Bloomberg costs $25,000/year per seat. Concordal is free and open-source. Here's what each does, what each doesn't, and when each makes sense.",
     date: "2026-05-08",
     category: "Comparison",
     lang: "en",
@@ -96,7 +96,7 @@ const post_bloomberg: BlogPost = {
     <>
       <P>
         Bloomberg Terminal has been the institutional gold standard for 35 years.
-        TradingAgents is a 2026 open-source decision-support platform built on
+        Concordal is a 2026 open-source decision-support platform built on
         large language models. They are not direct competitors — but a lot of
         retail traders ask which one solves the problem better for them, so it&apos;s
         worth being honest about what each tool does and doesn&apos;t.
@@ -104,9 +104,9 @@ const post_bloomberg: BlogPost = {
 
       <H2>The TL;DR</H2>
       <P>
-        Bloomberg is a real-time data terminal. TradingAgents is a multi-agent
+        Bloomberg is a real-time data terminal. Concordal is a multi-agent
         AI analyst. They sit at different layers: Bloomberg gets you facts;
-        TradingAgents reasons over facts. The closest comparison is what
+        Concordal reasons over facts. The closest comparison is what
         Bloomberg Intelligence (BI) does — research notes written by human
         analysts — except we generate the same shape of report in 90 seconds
         for under $0.10 of LLM cost.
@@ -114,7 +114,7 @@ const post_bloomberg: BlogPost = {
 
       <Callout>
         We are not claiming feature parity. Bloomberg has 30+ years of data
-        depth and connectivity TradingAgents will never match. The question is
+        depth and connectivity Concordal will never match. The question is
         whether a retail trader actually needs that depth, or whether they
         need cleaner reasoning over freely available data.
       </Callout>
@@ -186,7 +186,7 @@ const post_bloomberg: BlogPost = {
         You need true tick-by-tick FX or options vol surfaces.
       </P>
 
-      <H2>When TradingAgents is the right tool</H2>
+      <H2>When Concordal is the right tool</H2>
       <P>
         You&apos;re a self-directed retail trader running a focused book. You
         want to outsource the "read 40 pages of 10-K + skim Reddit + check
@@ -210,7 +210,7 @@ const post_bloomberg: BlogPost = {
 
       <H2>The bottom line</H2>
       <P>
-        Bloomberg is a hammer. TradingAgents is a different hammer. Most
+        Bloomberg is a hammer. Concordal is a different hammer. Most
         retail traders don&apos;t need a $25k hammer, and most institutions can&apos;t
         let an LLM see their order flow anyway. The two tools occupy
         different parts of the workflow, and the right answer for many
@@ -539,7 +539,7 @@ const post_aapl_walkthrough: BlogPost = {
     slug: "aapl-through-5-ai-analyst-lenses",
     title: "AAPL Through 5 AI Analyst Lenses: A Walkthrough",
     description:
-      "We run AAPL through every stage of the TradingAgents pipeline and show what each analyst sees, what they disagree on, and how the manager resolves it.",
+      "We run AAPL through every stage of the Concordal pipeline and show what each analyst sees, what they disagree on, and how the manager resolves it.",
     date: "2026-05-07",
     category: "Walkthrough",
     lang: "en",
@@ -730,7 +730,7 @@ const post_a_share: BlogPost = {
   render: () => (
     <>
       <P>
-        我们做 TradingAgents 的时候，最早的版本是直接把美股的那套
+        我们做 Concordal 的时候，最早的版本是直接把美股的那套
         sentiment pipeline 拷过来给 A 股用——Twitter API + Reddit。结果是：
         茅台 (600519) 一周拉了 14 条相关 tweet，半数还是英文的，全部来自
         境外卖方分析师转发。这不是中国散户的真实情绪，这是华尔街看 A 股的情绪。
@@ -877,7 +877,7 @@ const post_a_share: BlogPost = {
         被错误解析成 UTC 而非 UTC+8 是常见 bug，整张表都会偏 8 小时。
       </P>
       <P>
-        TradingAgents 这四项都达标。具体实现都在{" "}
+        Concordal 这四项都达标。具体实现都在{" "}
         <Link
           href="https://github.com/gallen666/trading-agents-platform"
           className="text-accent hover:underline"

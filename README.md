@@ -1,4 +1,4 @@
-# TradingAgents Platform
+# Concordal Platform
 
 ### 👉 Live site: **[trading-agents-platform.vercel.app](https://trading-agents-platform.vercel.app)**
 
@@ -155,7 +155,7 @@ trading-agents-platform/
 
 ## Roadmap
 
-See `TradingAgents_产品路线图.md` (Chinese) for the six-phase plan that
+See `Concordal_产品路线图.md` (Chinese) for the six-phase plan that
 shipped this codebase. Major milestones:
 
 - ✅ Phase 0 — Fork & understand official repo

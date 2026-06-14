@@ -124,7 +124,7 @@ export default function ReferralPage() {
             if (navigator.share) {
               try {
                 await navigator.share({
-                  title: "TradingAgents",
+                  title: "Concordal",
                   text: "Multi-agent AI for stock + crypto decisions. Free to try:",
                   url: inviteLink,
                 });

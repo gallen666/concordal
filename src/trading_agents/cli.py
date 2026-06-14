@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover - fallback so module is importable
 from .backtest.engine import Backtester
 from .core.graph import run_decision
 
-app = typer.Typer(help="TradingAgents CLI") if typer else None
+app = typer.Typer(help="Concordal CLI") if typer else None
 console = Console() if Console else None
 
 

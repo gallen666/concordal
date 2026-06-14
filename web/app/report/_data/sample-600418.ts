@@ -20,7 +20,7 @@ export const SAMPLE_600418: ReportData = {
   asof: "2025-12-31",
   report_id: "report_sample_600418_v002",
   generated_at: "2025-12-31T12:25:51+08:00",
-  system_version: "TradingAgents v3.1 · Report Module v1",
+  system_version: "Concordal v3.1 · Report Module v1",
 
   // ─── Header ──────────────────────────────────────────────────────────
   core_view: "公司基本面尚可但缺乏催化剂，建议持有或等待更好买点。",
@@ -367,7 +367,7 @@ export const SAMPLE_600418: ReportData = {
     data_sources: ["行情数据：交易所", "财务数据：SEC EDGAR / akshare 财报", "市场数据：5 层 A 股容灾链路", "新闻数据：Reddit + 东方财富股吧 + 雪球"],
   },
 
-  // ─── TradingAgents Exclusive Extensions ──────────────────────────────
+  // ─── Concordal Exclusive Extensions ──────────────────────────────
   bus_telemetry: [
     { need_kind: "QUOTE",        source: "tencent",                latency_ms: 142, cache_hit: false },
     { need_kind: "OHLCV",        source: "cn_equity_multi_source", latency_ms: 387, cache_hit: false },

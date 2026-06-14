@@ -313,6 +313,20 @@ function buildGroups(isZh: boolean): NavGroup[] {
               icon: <Network className="w-4 h-4" />,
             },
             {
+              // v76: positioning page — surfaces "辩证 / 可审 / 反幻觉"
+              // narrative + competitor comparison (东财妙想 / Public.com /
+              // Bloomberg ASKB / TauricResearch OSS). All downstream copy
+              // (landing hero, pricing strip, decision trust bar, SEO,
+              // sales decks) pivots from this single page.
+              href: "/why",
+              label: lbl("为什么 Concordal", "Why Concordal"),
+              desc: lbl(
+                "辩证 · 可审 · 反幻觉 — 对比东财妙想 / Public / Bloomberg / OSS",
+                "Dialectical · Auditable · Hallucination-resistant — vs Eastmoney / Public / Bloomberg / OSS",
+              ),
+              icon: <Sparkles className="w-4 h-4" />,
+            },
+            {
               href: "/how-it-works",
               label: lbl("工作原理", "How it works"),
               desc: lbl(

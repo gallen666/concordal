@@ -22,7 +22,7 @@ const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://trading-agents-platfor
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
-  title: "TradingAgents — Decision Support",
+  title: "Concordal — Decision Support",
   description:
     "Five AI analysts debate every ticker — fundamentals + sentiment + news + technical + macro. " +
     "Real SEC EDGAR / Reddit / OpenBB data. Decision support, not investment advice.",
@@ -37,15 +37,15 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "TradingAgents — Multi-Agent AI Decision Support",
+    title: "Concordal — Multi-Agent AI Decision Support",
     description: "Five AI analysts debate every ticker. Real data, cross-validated.",
     url: SITE,
-    siteName: "TradingAgents",
+    siteName: "Concordal",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "TradingAgents",
+    title: "Concordal",
     description: "Multi-agent AI decision support for stocks + crypto.",
   },
   robots: {

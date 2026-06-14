@@ -12,7 +12,7 @@
  * Components:
  *   <CalibrationTable />        — paper §9.2 Table 2: ECE / Brier / hit
  *   <ConfidenceBinTable />      — paper §9.3 Table 3: hit rate by bin
- *   <DatasetBanner />            — TradingAgents-20×78 reference
+ *   <DatasetBanner />            — Concordal-20×78 reference
  *   <FiveLayerHeatmap />         — paper §8 5-layer fallback availability
  *   <BusRegisterExample />       — paper §10.3 institutional integration
  *   <ReflectionMechanism />      — paper §6.4 nightly reflection cron
@@ -59,7 +59,7 @@ export function CalibrationTable() {
         </span>
       </div>
       <p className="text-xs text-ink-tertiary leading-relaxed mb-4">
-        TradingAgents-20×78 评估（1,560 个决策）。ECE 与 Brier 越低越好。最后两行是相对完整流水线的消融。
+        Concordal-20×78 评估（1,560 个决策）。ECE 与 Brier 越低越好。最后两行是相对完整流水线的消融。
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
@@ -174,7 +174,7 @@ export function DatasetBanner() {
         <Database className="w-5 h-5 text-accent shrink-0 mt-0.5" />
         <div className="flex-1">
           <div className="kicker text-2xs mb-2">
-            {zh ? "评测协议 · TradingAgents-20×78（目标）" : "Evaluation protocol · TradingAgents-20×78 (target)"}
+            {zh ? "评测协议 · Concordal-20×78（目标）" : "Evaluation protocol · Concordal-20×78 (target)"}
           </div>
           <p className="text-sm text-ink-primary leading-relaxed">
             {zh ? (
@@ -389,7 +389,7 @@ export function KnownLimitations() {
     },
     {
       title: "监管与披露",
-      body: "TradingAgents 是决策支持，不是投资建议。生产 UI 每个决策页显示风险免责。各司法管辖区监管框架差异巨大；任何具体地区生产部署需要法律审查。",
+      body: "Concordal 是决策支持，不是投资建议。生产 UI 每个决策页显示风险免责。各司法管辖区监管框架差异巨大；任何具体地区生产部署需要法律审查。",
       ref: "论文 §11.4",
     },
   ];
@@ -432,7 +432,7 @@ export function CrossMarketCallout() {
           <p className="text-sm text-ink-primary leading-relaxed">
             <strong>AAPL、600519、BTC/USDT — 同一个 7-agent 流水线、同一个 UI、同一个置信度解读。</strong>
             散户今天有三个不相交研究栈（彭博美股、东方财富 A 股、Coingecko 加密币），
-            TradingAgents 统一覆盖让你应用一致决策准则、消除跨市场认知负荷。
+            Concordal 统一覆盖让你应用一致决策准则、消除跨市场认知负荷。
           </p>
         </div>
       </div>

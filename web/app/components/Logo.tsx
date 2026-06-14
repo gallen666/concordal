@@ -30,7 +30,7 @@ export function Logo({ className }: { className?: string }) {
       <div className="flex flex-col leading-none">
         <div className="flex items-baseline gap-2">
           <span className="font-display font-medium tracking-tight text-ink-primary text-[17px]">
-            TradingAgents
+            Concordal
           </span>
           {/* v47: Chinese double-name "协奏" (Concord) per brand strategy.
               Symbolises 7 agents in harmony — and harmony with regulators,

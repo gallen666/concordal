@@ -12,7 +12,7 @@ import { ImageResponse } from "next/og";
  */
 
 export const runtime = "edge";
-export const alt = "TradingAgents — shared decision";
+export const alt = "Concordal — shared decision";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -74,7 +74,7 @@ export default async function OG({ params }: { params: Promise<{ shareId: string
             <rect x="13" y="3" width="2" height="22" fill="#C9A961" />
           </svg>
           <div style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
-            <div style={{ fontSize: 24, fontWeight: 600 }}>TradingAgents</div>
+            <div style={{ fontSize: 24, fontWeight: 600 }}>Concordal</div>
             <div style={{ fontSize: 11, letterSpacing: 3, color: "#7A7163", marginTop: 5, textTransform: "uppercase", fontFamily: "ui-monospace, monospace" }}>
               Shared decision · {dDate}
             </div>

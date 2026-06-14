@@ -2,7 +2,7 @@
 
 /**
  * /how-it-works — explains the 7-agent framework using the same narrative
- * as the TradingAgents paper: "modeled on a real trading firm's org chart".
+ * as the Concordal paper: "modeled on a real trading firm's org chart".
  *
  * Sections:
  *   1. Hero: "AI framework that mirrors a real trading firm"
