@@ -145,7 +145,7 @@ def weekly_digest_email(to: str, decisions: list[dict]) -> bool:
                 <tbody>{rows}</tbody>
               </table>
               <p style="margin-top: 24px;">
-                <a href="https://trading-agents-platform.vercel.app/me/history">View full history →</a>
+                <a href="https://www.concordal.hk/me/history">View full history →</a>
               </p>
             </div>
         """,

@@ -25,7 +25,7 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://trading-agents-platform.vercel.app";
+const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://www.concordal.hk";
 
 export async function generateStaticParams() {
   return BLOG_SLUGS.map((slug) => ({ slug }));

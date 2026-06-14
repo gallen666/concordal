@@ -112,7 +112,7 @@ export default async function OG({ params }: { params: Promise<{ shareId: string
             7 AI analysts · bull / bear debate · confidence-weighted call
           </div>
           <div style={{ color: "#C9A961", fontFamily: "ui-monospace, monospace", fontSize: 14, letterSpacing: 2, textTransform: "uppercase" }}>
-            trading-agents-platform.vercel.app/d/{shareId.slice(0, 8)}
+            www.concordal.hk/d/{shareId.slice(0, 8)}
           </div>
         </div>
       </div>

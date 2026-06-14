@@ -30,7 +30,7 @@ import {
   KnownLimitations,
 } from "../components/PaperBacked";
 
-const REPO = "https://github.com/gallen666/trading-agents-platform";
+const REPO = "https://github.com/gallen666/concordal";
 
 interface Section {
   icon: React.ReactNode;
@@ -99,7 +99,7 @@ export default function ProofPage() {
         ? "整个后端 + 前端代码 100% 在 GitHub 上公开。你可以自部署、改 prompt、加 adapter、把它当 SDK 用。Pro 订阅买的是托管 + 真 LLM 配额，不是访问权——访问权一直是免费的。"
         : "The entire backend + frontend is on public GitHub. Self-host it, fork the prompts, plug your own adapters, use it as an SDK. Pro subscription buys hosting + real-LLM quota — access has always been free.",
       bullets: [
-        { text: "github.com/gallen666/trading-agents-platform", href: REPO },
+        { text: "github.com/gallen666/concordal", href: REPO },
         { text: "Inspired by TauricResearch/TradingAgents (arXiv:2412.20138)", href: "https://github.com/TauricResearch/TradingAgents" },
         { text: "12 OSS integrations cataloged on /ecosystem", href: "/ecosystem" },
       ],

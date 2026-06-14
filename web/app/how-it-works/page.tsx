@@ -537,7 +537,7 @@ function CtaFooter() {
             <ArrowRight className="w-4 h-4" />
           </Link>
           <a
-            href="https://github.com/gallen666/trading-agents-platform"
+            href="https://github.com/gallen666/concordal"
             target="_blank"
             rel="noopener noreferrer"
             className="btn-secondary"

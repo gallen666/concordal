@@ -48,7 +48,7 @@ SUBREDDIT_MAP: dict[str, list[str]] = {
 }
 
 
-_USER_AGENT = "trading-agents-platform/0.2 (research; +https://trading-agents-platform.vercel.app)"
+_USER_AGENT = "concordal/0.2 (research; +https://www.concordal.hk)"
 
 # In-process cache — Reddit rate-limits aggressively, so we cache by query+asof
 # for an hour. Backtests over many dates will reuse very little, but that's

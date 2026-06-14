@@ -10,7 +10,7 @@ import type { MetadataRoute } from "next";
  *   - any /api/* if Next.js were proxying (we don't, but defensive)
  */
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://trading-agents-platform.vercel.app";
+const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://www.concordal.hk";
 
 export default function robots(): MetadataRoute.Robots {
   return {

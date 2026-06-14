@@ -81,7 +81,7 @@ export default async function OG() {
             <span>US · A-share · Crypto</span>
           </div>
           <div style={{ color: "#C9A961", fontFamily: "ui-monospace, monospace", fontSize: 14, letterSpacing: 2, textTransform: "uppercase" }}>
-            trading-agents-platform.vercel.app
+            www.concordal.hk
           </div>
         </div>
       </div>

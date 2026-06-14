@@ -124,7 +124,7 @@ export default function DevelopersPage() {
           </a>{" "}
           (interactive Swagger UI). Source on{" "}
           <a
-            href="https://github.com/gallen666/trading-agents-platform"
+            href="https://github.com/gallen666/concordal"
             target="_blank" rel="noopener noreferrer"
             className="text-accent hover:underline"
           >

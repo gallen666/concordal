@@ -197,7 +197,7 @@ def _format_decision_markdown(trace: dict[str, Any], locale: str = "en") -> str:
     lines.append("---")
     lines.append(
         "_Decision support, not investment advice. "
-        "Powered by [trading-agents-platform](https://trading-agents-platform.vercel.app)._"
+        "Powered by [trading-agents-platform](https://www.concordal.hk)._"
     )
     return "\n".join(lines)
 
@@ -452,6 +452,6 @@ def widget_track_record(request: Request) -> str:
     out.append("")
     out.append(
         "[Full report on the website →]"
-        "(https://trading-agents-platform.vercel.app/track-record)"
+        "(https://www.concordal.hk/track-record)"
     )
     return "\n".join(out)

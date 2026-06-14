@@ -18,7 +18,7 @@ const mono = JetBrains_Mono({
   display: "swap",
 });
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://trading-agents-platform.vercel.app";
+const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://www.concordal.hk";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),

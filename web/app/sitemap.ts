@@ -14,7 +14,7 @@ import { BLOG_SLUGS } from "./blog/posts";
  * + Baidu Webmaster Tools after deploy.
  */
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://trading-agents-platform.vercel.app";
+const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://www.concordal.hk";
 
 // Tickers we have dedicated landing pages for. Mirror the KNOWN_TICKERS
 // map in /analysis/[ticker]/page.tsx — keep in sync as you add more.

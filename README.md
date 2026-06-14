@@ -1,6 +1,6 @@
 # Concordal Platform
 
-### 👉 Live site: **[trading-agents-platform.vercel.app](https://trading-agents-platform.vercel.app)**
+### 👉 Live site: **[www.concordal.hk](https://www.concordal.hk)**
 
 **Real-only mode** — every visitor, including anonymous, hits the same real-LLM
 pipeline (Gemini 3.1 Pro / DeepSeek / Claude, with auto-fallback). Quota

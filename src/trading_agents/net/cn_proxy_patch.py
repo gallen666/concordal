@@ -15,7 +15,7 @@ through cn-proxy. After `apply_patch()`:
 
   requests.get("https://push2.eastmoney.com/api/qt/...")
   # → silently rewritten to:
-  # https://trading-agents-platform.vercel.app/api/cn-proxy
+  # https://www.concordal.hk/api/cn-proxy (or .vercel.app fallback)
   #   ?upstream=https%3A%2F%2Fpush2.eastmoney.com%2Fapi%2Fqt%2F...
   # → Vercel HK fetches EastMoney → returns body
   # → caller (akshare) sees the response transparently

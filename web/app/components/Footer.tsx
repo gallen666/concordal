@@ -59,7 +59,7 @@ export default function Footer() {
     {
       heading: locale === "zh" ? "联系" : "Connect",
       links: [
-        { href: "https://github.com/gallen666/trading-agents-platform", label: "GitHub" },
+        { href: "https://github.com/gallen666/concordal", label: "GitHub" },
         { href: "/sponsor", label: locale === "zh" ? "支持我们" : "Sponsor" },
         { href: "/me/referral", label: locale === "zh" ? "邀请朋友" : "Refer a friend" },
       ],
@@ -135,7 +135,7 @@ export default function Footer() {
             <span>v0.1.0</span>
             <span>{locale === "zh" ? "封闭测试" : "Closed beta"}</span>
             <a
-              href="https://github.com/gallen666/trading-agents-platform"
+              href="https://github.com/gallen666/concordal"
               className="hover:text-ink-primary inline-flex items-center gap-1"
               target="_blank" rel="noopener noreferrer"
             >
