@@ -29,7 +29,8 @@ RUN pip install --upgrade pip && \
         "akshare>=1.16.0" "beautifulsoup4>=4.12" "lxml>=4.9" \
         "ccxt>=4.4" \
         "backtrader>=1.9.78" \
-        "langfuse>=2.0"
+        "langfuse>=2.0" \
+        "psycopg[binary]>=3.1"
 
 # Copy app
 COPY src/ ./src/
