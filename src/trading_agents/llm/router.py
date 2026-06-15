@@ -57,9 +57,20 @@ _PRICES: dict[str, tuple[float, float]] = {
     "gemini-2.5-flash-lite": (0.10, 0.40),
     "gemini-2.0-flash": (0.10, 0.40),
     # DeepSeek (USD/Mtoken; check live pricing on api-docs.deepseek.com).
-    # V3 chat: cheap; R1 reasoner: 5–10× cheaper than o1 for similar quality.
-    "deepseek-chat": (0.27, 1.10),
-    "deepseek-reasoner": (0.55, 2.19),
+    # As of 2026/06, DeepSeek renamed:
+    #   deepseek-v4-pro    = top-tier, supports thinking + reasoning_effort
+    #   deepseek-v4-flash  = fast tier, supports thinking
+    #   deepseek-chat      = ALIAS for v4-flash non-thinking — deprecated 2026/07/24
+    #   deepseek-reasoner  = ALIAS for v4-flash thinking — deprecated 2026/07/24
+    # CNY prices from official table (2026-06):
+    #   v4-flash  ¥1 in,  ¥2 out per Mtoken
+    #   v4-pro    ¥3 in,  ¥6 out per Mtoken (2.5x discount through 2026/05/31;
+    #             after that goes to ¥12 / ¥24 — UPDATE THIS TABLE THEN!)
+    # Converted at 1 USD ≈ 7.2 CNY for cost-ledger display purposes.
+    "deepseek-v4-pro":   (0.42, 0.83),   # ¥3/M, ¥6/M @ 2.5x discount (expires 2026-05-31)
+    "deepseek-v4-flash": (0.14, 0.28),   # ¥1/M, ¥2/M
+    "deepseek-chat":     (0.14, 0.28),   # alias of v4-flash non-thinking
+    "deepseek-reasoner": (0.14, 0.28),   # alias of v4-flash thinking — same token price
     # Qwen / 通义千问 via DashScope OpenAI-compatible mode.
     # qwen-max ~ Claude Sonnet tier; turbo and flash are cheap workhorses.
     "qwen-max": (1.60, 6.40),
@@ -663,7 +674,13 @@ class LLMRouter:
         "gemini-2.5-flash-lite",   # last resort before mock
     ]
     _DEEPSEEK_FALLBACK_CHAIN = [
-        "deepseek-chat",           # cheap V3 fallback if reasoner fails
+        # v4-pro is primary (configured via TA_MODEL_*); on rate-limit
+        # (500 RPM cap) we drop to v4-flash which has 2500 RPM and is
+        # ~3× cheaper. Both speak the same API shape — drop-in fallback.
+        "deepseek-v4-flash",
+        # Legacy alias of v4-flash non-thinking. Keeps the chain alive
+        # during DeepSeek's 2026/07/24 rename grace period.
+        "deepseek-chat",
     ]
     _QWEN_FALLBACK_CHAIN = [
         "qwen-plus",

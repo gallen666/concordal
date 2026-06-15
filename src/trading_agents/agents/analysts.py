@@ -8,9 +8,12 @@ downstream consumption.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from ..adapters.base import MarketAdapter
+
+log = logging.getLogger(__name__)
 from ..core.state import DecisionState
 from ..core.types import AnalystReport
 from ..ecosystem.data_bus import Need, NeedKind, bus
@@ -225,12 +228,52 @@ def _fetch_sentiment(a: MarketAdapter, s: DecisionState):
 
 
 def _fetch_news(a: MarketAdapter, s: DecisionState):
-    """Bus-first: reddit → guba. See _fetch_sentiment for routing notes."""
-    return _via_bus(
+    """Bus-first: reddit → guba, then overlay realtime Perplexity Sonar.
+
+    Why the overlay: the data bus surfaces social-signal news (Reddit
+    threads, EastMoney guba posts) which are rich for sentiment but
+    *lag* — they happen AFTER the actual market-moving event. Perplexity
+    Sonar runs a fresh web search at decision time and brings back the
+    primary sources (Reuters, Bloomberg, SEC filings, company PR) that
+    triggered the social discussion. Merging both gives DeepSeek the
+    "what happened" (Sonar) and the "what people think about it"
+    (Reddit/guba) in one prompt — the news analyst is materially better
+    at the cost of one cheap Sonar call (~\$0.001/decision).
+
+    Sonar is opt-in via PERPLEXITY_API_KEY env var. If unset, this
+    silently falls back to bus-only output — pipeline still works.
+    """
+    bus_news = _via_bus(
         NeedKind.NEWS,
         {"ticker": s["ticker"], "asof": s["asof"], "market": s.get("market", "us_equity")},
         lambda: a.get_news(s["ticker"], s["asof"]),
     )
+
+    # Overlay Perplexity Sonar realtime web search (no-op if key unset).
+    try:
+        from trading_agents.adapters import perplexity_sonar
+        if perplexity_sonar.is_configured():
+            sonar_items = perplexity_sonar.fetch_sonar_news(
+                s["ticker"],
+                locale=s.get("locale", "en"),
+                market=s.get("market", "us_equity"),
+                max_items=5,
+            )
+            if sonar_items:
+                # Merge into the existing news payload shape. The bus
+                # typically returns either a list or a dict with 'items'.
+                if isinstance(bus_news, dict):
+                    existing = list(bus_news.get("items") or [])
+                    bus_news = {**bus_news, "items": existing + sonar_items}
+                elif isinstance(bus_news, list):
+                    bus_news = list(bus_news) + sonar_items
+                else:
+                    # bus returned None or unexpected shape — make a fresh payload.
+                    bus_news = {"items": sonar_items, "source": "perplexity"}
+    except Exception as e:  # noqa: BLE001 — perplexity is best-effort, never break the analyst
+        log.warning("perplexity overlay skipped: %s", e)
+
+    return bus_news
 
 
 def _fetch_technical(a: MarketAdapter, s: DecisionState):
