@@ -30,19 +30,22 @@ existing bus-only behaviour.
 
 Pricing reference (June 2026, sonar model):
   input  $1 / 1M tokens
-  output $1 / 1M tokens
-  search $5 / 1k requests
-A 500-token answer costs ~$0.001 — negligible at our scale.
-"""
+    output $1 / 1M tokens
+      search $5 / 1k requests
+      A 500-token answer costs ~$0.001 — negligible at our scale.
+      """
 
 from __future__ import annotations
 
 import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+
+from ..core.types import NewsItem
 
 log = logging.getLogger(__name__)
 
@@ -53,9 +56,9 @@ DEFAULT_MODEL = "sonar"  # cheapest realtime-search model; upgrade to sonar-pro 
 
 @dataclass
 class SonarNews:
-    """One news item Sonar surfaced. Citations come back as URLs from the
-    Perplexity response; we attach them so the news analyst (and the audit
-    log) can show users WHERE each claim came from."""
+      """One news item Sonar surfaced. Citations come back as URLs from the
+          Perplexity response; we attach them so the news analyst (and the audit
+              log) can show users WHERE each claim came from."""
 
     headline: str
     summary: str
@@ -63,122 +66,113 @@ class SonarNews:
 
 
 def is_configured() -> bool:
-    """True iff PERPLEXITY_API_KEY is set. Caller can gate cheaply on this
-    instead of attempting a request and catching auth failure."""
-    return bool(os.environ.get("PERPLEXITY_API_KEY", "").strip())
+      """True iff PERPLEXITY_API_KEY is set. Caller can gate cheaply on this
+          instead of attempting a request and catching auth failure."""
+      return bool(os.environ.get("PERPLEXITY_API_KEY", "").strip())
 
 
 def fetch_sonar_news(
-    ticker: str,
-    *,
-    locale: str = "en",
-    market: str = "us_equity",
-    max_items: int = 5,
-    timeout: float = 20.0,
-) -> list[dict[str, Any]]:
-    """Ask Perplexity Sonar for today's news on `ticker`. Returns a list of
-    dicts shaped like the rest of our news pipeline expects:
-      [{"headline": str, "summary": str, "url": str, "source": "perplexity"}, ...]
+      ticker: str,
+      *,
+      locale: str = "en",
+      market: str = "us_equity",
+      max_items: int = 5,
+      timeout: float = 20.0,
+) -> list[NewsItem]:
+      """Ask Perplexity Sonar for today's news on `ticker`. Returns a list of
+          NewsItem instances shaped like the rest of our news pipeline expects.
+              NewsItem fields used downstream by us_equity_en.py:294:
+                    .headline, .summary, .published_at, .url, .source
 
-    Empty list on:
-      - PERPLEXITY_API_KEY unset (degrade silently — pipeline still has reddit/guba)
-      - HTTP error (logged at WARNING, not raised, to keep pipeline robust)
-      - parse failure (Sonar occasionally returns prose instead of a list)
+                        Empty list on:
+                              - PERPLEXITY_API_KEY unset (degrade silently — pipeline still has reddit/guba)
+                                    - HTTP error (logged at WARNING, not raised, to keep pipeline robust)
+                                          - parse failure (Sonar occasionally returns prose instead of a list)
 
-    Locale-aware prompt: zh-CN gets Chinese, otherwise English. This matches
-    the rest of our analyst i18n.
-    """
-    api_key = os.environ.get("PERPLEXITY_API_KEY", "").strip()
-    if not api_key:
-        return []
+                                              Locale-aware prompt: zh-CN gets Chinese, otherwise English. This matches
+                                                  the rest of our analyst i18n.
+                                                      """
+      api_key = os.environ.get("PERPLEXITY_API_KEY", "").strip()
+      if not api_key:
+                return []
 
-    is_zh = locale == "zh"
-    is_a_share = market == "a_share"
+      is_zh = locale == "zh"
+      is_a_share = market == "a_share"
 
     if is_zh:
-        prompt = (
-            f"今天关于股票代码 {ticker} 的最新真实新闻，"
-            f"按时间倒序最多 {max_items} 条。"
-            f"每条用一行短中文摘要，附原文 URL。"
-            f"只列基于真实信息源（路透社、彭博、新华、东方财富、雪球、SEC、公司公告）的事实。"
-            f"不要编造、不要给投资建议。如无相关新闻就明说 \"无相关新闻\"。"
-        )
-        if is_a_share:
-            prompt = "A 股市场。" + prompt
+              prompt = (
+                            f"今天关于股票代码 {ticker} 的最新真实新闻，"
+                            f"按时间倒序最多 {max_items} 条。"
+                            f"每条用一行短中文摘要，附原文 URL。"
+                            f"只列基于真实信息源（路透社、彭博、新华、东方财富、雪球、SEC、公司公告）的事实。"
+                            f"不要编造、不要给投资建议。如无相关新闻就明说 \"无相关新闻\"。"
+              )
+              if is_a_share:
+                            prompt = "A 股市场。" + prompt
     else:
         prompt = (
-            f"What are the most recent factual news headlines for ticker {ticker} today? "
-            f"Give me up to {max_items} items, newest first. "
-            f"For each, write one short English sentence plus the source URL. "
-            f"Only use real sources (Reuters, Bloomberg, SEC filings, company press releases, etc.). "
-            f"Do not fabricate, do not give investment advice. "
-            f"If there is no relevant news today say so explicitly."
+                      f"What are the most recent factual news headlines for ticker {ticker} today? "
+                      f"Give me up to {max_items} items, newest first. "
+                      f"For each, write one short English sentence plus the source URL. "
+                      f"Only use real sources (Reuters, Bloomberg, SEC filings, company press releases, etc.). "
+                      f"Do not fabricate, do not give investment advice. "
+                      f"If there is no relevant news today say so explicitly."
         )
 
     body = {
-        "model": DEFAULT_MODEL,
-        "messages": [
-            {"role": "system", "content": "You are a factual real-time financial news aggregator. Cite every claim."},
-            {"role": "user", "content": prompt},
-        ],
-        # Cap output — we want headlines not essays. Keeps cost ~$0.001.
-        "max_tokens": 600,
-        # Low temperature: deterministic factual output, no creative summarisation.
-        "temperature": 0.1,
+              "model": DEFAULT_MODEL,
+              "messages": [
+                            {"role": "system", "content": "You are a factual real-time financial news aggregator. Cite every claim."},
+                            {"role": "user", "content": prompt},
+              ],
+              "max_tokens": 600,
+              "temperature": 0.1,
     }
     headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
+              "Authorization": f"Bearer {api_key}",
+              "Content-Type": "application/json",
     }
 
     try:
-        with httpx.Client(timeout=httpx.Timeout(timeout)) as c:
-            resp = c.post(SONAR_ENDPOINT, json=body, headers=headers)
-        if resp.status_code >= 400:
-            log.warning(
-                "perplexity_sonar: HTTP %s for ticker=%s — %s",
-                resp.status_code,
-                ticker,
-                resp.text[:200],
-            )
-            return []
-        data = resp.json()
-    except (httpx.RequestError, ValueError) as e:
+              with httpx.Client(timeout=httpx.Timeout(timeout)) as c:
+                            resp = c.post(SONAR_ENDPOINT, json=body, headers=headers)
+                        if resp.status_code >= 400:
+                                      log.warning("perplexity_sonar: HTTP %s for ticker=%s — %s", resp.status_code, ticker, resp.text[:200])
+                                      return []
+                                  data = resp.json()
+except (httpx.RequestError, ValueError) as e:
         log.warning("perplexity_sonar: request failed for ticker=%s — %s", ticker, e)
         return []
 
     try:
-        text = data["choices"][0]["message"]["content"] or ""
-    except (KeyError, IndexError, TypeError):
-        return []
+              text = data["choices"][0]["message"]["content"] or ""
+except (KeyError, IndexError, TypeError):
+        text = ""
 
-    # Perplexity returns citation URLs in a top-level "citations" field
-    # (separate from the message text). We surface them on each item so the
-    # audit log can show users every URL Sonar consulted.
     citations: list[str] = data.get("citations") or []
 
-    # Parse the text into items. Sonar usually returns one item per line or
-    # numbered list. We use a permissive split — if Sonar gave free-form
-    # prose, we still return it as a single item rather than dropping it.
-    items: list[dict[str, Any]] = []
+    items: list[NewsItem] = []
     lines = [ln.strip().lstrip("0123456789.").strip("-•* ").strip() for ln in text.splitlines() if ln.strip()]
     if not lines:
-        return []
+              return []
+
+    now = datetime.now(timezone.utc)
+
+    def _make(line: str, url: str | None) -> NewsItem:
+              return NewsItem(
+                  ticker=ticker,
+                  headline=line[:200],
+                  summary=line,
+                  source="perplexity",
+                  url=url or None,
+                  published_at=now,
+    )
+
     if len(lines) == 1:
-        # Single blob — return as one item so the analyst still sees it.
-        items.append({
-            "headline": lines[0][:200],
-            "summary": lines[0],
-            "url": citations[0] if citations else "",
-            "source": "perplexity",
-        })
-    else:
+              items.append(_make(lines[0], citations[0] if citations else None))
+else:
         for idx, line in enumerate(lines[:max_items]):
-            items.append({
-                "headline": line[:200],
-                "summary": line,
-                "url": citations[idx] if idx < len(citations) else (citations[0] if citations else ""),
-                "source": "perplexity",
-            })
+                      url = citations[idx] if idx < len(citations) else (citations[0] if citations else None)
+                      items.append(_make(line, url))
 
     return items
