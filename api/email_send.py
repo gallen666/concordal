@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import urllib.error
 import urllib.request
 
 log = logging.getLogger(__name__)
@@ -26,6 +27,20 @@ log = logging.getLogger(__name__)
 _RESEND_KEY = os.environ.get("RESEND_API_KEY")
 _FROM = os.environ.get("TA_EMAIL_FROM", "TradingAgents <no-reply@trading-agents.app>")
 _REPLY_TO = os.environ.get("TA_EMAIL_REPLY_TO", "")
+
+# v88 diagnostic: log a one-line fingerprint of the email config at import
+# time so we can confirm Render picked up the right env vars without
+# leaking the full API key. Helps debug 403s like "wrong key" or "wrong
+# from address" that otherwise show up as opaque HTTP errors.
+if _RESEND_KEY:
+    _key_prefix = _RESEND_KEY[:8]
+    _key_suffix = _RESEND_KEY[-4:] if len(_RESEND_KEY) > 12 else ""
+    log.info(
+        "email_send configured: from=%r key=%s...%s (len=%d) reply_to=%r",
+        _FROM, _key_prefix, _key_suffix, len(_RESEND_KEY), _REPLY_TO or "<unset>",
+    )
+else:
+    log.info("email_send not configured: RESEND_API_KEY missing")
 
 
 def is_configured() -> bool:
@@ -77,12 +92,28 @@ def send_email(
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
+            body_text = resp.read().decode("utf-8", errors="replace")[:500]
             ok = resp.status < 300
             if not ok:
-                log.warning("resend send failed: HTTP %s", resp.status)
+                log.warning("resend send failed: HTTP %s body=%s", resp.status, body_text)
+            else:
+                log.info("resend send ok: to=%s subject=%r resp=%s", to, subject[:80], body_text[:200])
             return ok
+    except urllib.error.HTTPError as e:
+        # v88: surface the actual JSON error body from Resend, not just "HTTP 403"
+        # so we can debug "domain not verified" / "from not allowed" / "invalid key"
+        # without guessing.
+        try:
+            err_body = e.read().decode("utf-8", errors="replace")[:500]
+        except Exception:
+            err_body = "<could not read body>"
+        log.warning(
+            "resend send HTTPError %s %s | body=%s | from=%r to=%s",
+            e.code, e.reason, err_body, _FROM, to,
+        )
+        return False
     except Exception as e:
-        log.warning("resend send error: %s", e)
+        log.warning("resend send error: %s (type=%s)", e, type(e).__name__)
         return False
 
 
