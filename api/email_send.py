@@ -82,12 +82,21 @@ def send_email(
     if tags:
         body["tags"] = tags
 
+    # v89: Resend's API sits behind Cloudflare, which sniffs the request's
+    # User-Agent. The default urllib UA is "Python-urllib/3.x" and gets
+    # blocked with Cloudflare error code 1010 ("browser signature banned"),
+    # which surfaces back to us as a confusing 403 Forbidden with zero
+    # detail about the Resend side. Sending a normal-looking UA + an
+    # explicit Accept header makes the request look like a real client
+    # and slips past the WAF.
     req = urllib.request.Request(
         "https://api.resend.com/emails",
         data=json.dumps(body).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {_RESEND_KEY}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Concordal/1.0 (+https://www.concordal.hk; email-magic-link)",
         },
     )
     try:
