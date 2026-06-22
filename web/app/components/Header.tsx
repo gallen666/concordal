@@ -35,7 +35,7 @@ import {
   LogOut, Languages, Menu, X, AlertTriangle, ChevronDown, Search,
   Sparkles, GitBranch, Activity, BookOpen, History, Star, MessageSquare,
   TrendingUp, Flame, BarChart3, Building2, Network, Calendar, Users,
-  Trophy, ShieldCheck, Microscope, Code, FileText, Gift, DollarSign,
+  Trophy, ShieldCheck, Microscope, Code, FileText, Gift, DollarSign, Eye,
 } from "lucide-react";
 import { auth, api, type CurrentUser } from "../lib/api";
 import { Logo } from "./Logo";
@@ -259,6 +259,23 @@ function buildGroups(isZh: boolean): NavGroup[] {
                 "Macro releases / earnings / central-bank / IPO timeline",
               ),
               icon: <Calendar className="w-4 h-4" />,
+            },
+          ],
+        },
+        {
+          // v85: 私募市场观察站 — 独角兽估值跟踪 + 7-agent 决策意见。
+          // 仅研究，不撮合。Type 4 兼容延伸，避免跨 broker-dealer 牌照。
+          heading: lbl("私募市场", "Private markets"),
+          items: [
+            {
+              href: "/pre-ipo",
+              label: lbl("Pre-IPO 观察站", "Pre-IPO Observatory"),
+              desc: lbl(
+                "6 家独角兽 · 估值 · 7-agent 意见 · 周报",
+                "6 unicorns · valuation · 7-agent take · weekly brief",
+              ),
+              icon: <Eye className="w-4 h-4" />,
+              badge: lbl("新", "New"),
             },
           ],
         },

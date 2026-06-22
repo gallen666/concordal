@@ -347,14 +347,17 @@ function Hero() {
           </p>
         </div>
 
-        {/* trust strip. v52: honest LLM-provider count — only 2 actually
-            wired in production (DeepSeek V4 primary, Gemini fallback). The
-            router scaffolds 6 families (OpenAI/Anthropic/Qwen/GLM/...), but
-            only the ones with API keys set on Render count toward this
-            stat. Bumps as new keys go live. */}
+        {/* trust strip. v85: provider count updated to reflect actual
+            production wiring after v51 (Gemini removed) and v83-v84
+            (Perplexity Sonar overlay added). DeepSeek V4-Pro powers all
+            seven agents' writing + reasoning; Perplexity Sonar is the
+            realtime-search overlay for the news analyst (DeepSeek itself
+            cannot browse). Router scaffolds 6 families
+            (OpenAI/Anthropic/Qwen/GLM/...) but only keys set on Render
+            count toward this stat. */}
         <div className="max-w-3xl mx-auto grid grid-cols-3 gap-6 text-center pt-2">
           <TrustItem n="27" l="Regression tests · zero lookahead" />
-          <TrustItem n="2"  l="LLM providers live · DeepSeek V4 + Gemini" />
+          <TrustItem n="2"  l="LLM stack · DeepSeek V4-Pro + Perplexity Sonar" />
           <TrustItem n="3"  l="Markets · US · A-share · Crypto" />
         </div>
       </div>
