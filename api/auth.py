@@ -95,11 +95,26 @@ def _verify_code(code: str, email: str) -> bool:
 
 def _issue_token(email: str) -> str:
     now = int(time.time())
+    # v86: Founder JWT never effectively expires (100-year TTL), so a single
+    # sign-in works across all the operator's devices forever without
+    # re-authentication. The founder allowlist is read from the same env
+    # var the API daily-cap bypass uses, so the two stay in sync.
+    founders = {
+        e.strip().lower()
+        for e in os.environ.get("TA_FOUNDER_EMAILS", "").split(",")
+        if e.strip()
+    }
+    if email.lower() in founders:
+        ttl_seconds = 100 * 365 * 24 * 3600  # 100 years
+        scope = "founder"
+    else:
+        ttl_seconds = cfg.jwt_ttl_hours * 3600
+        scope = "beta"
     payload = {
         "sub": email,
         "iat": now,
-        "exp": now + cfg.jwt_ttl_hours * 3600,
-        "scope": "beta",
+        "exp": now + ttl_seconds,
+        "scope": scope,
     }
     return jwt.encode(payload, cfg.jwt_secret, algorithm="HS256")
 

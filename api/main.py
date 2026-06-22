@@ -205,6 +205,19 @@ _daily_count: dict[tuple[str, str], int] = {}  # (user_id, "YYYY-MM-DD") -> coun
 
 _PRO_DAILY_CAP = int(os.environ.get("TA_PRO_DAILY_DECISIONS", "30"))
 
+# v86: Founder/owner email allowlist. Comma-separated. Any signed-in user
+# whose JWT sub matches one of these gets the "founder" tier — daily cap
+# of 999,999 (effectively unlimited) and the JWT auth module mints them
+# a 100-year token, so a single sign-in serves every device they own
+# without re-authentication. This is for the platform operator(s) only;
+# do NOT add customer emails here.
+_FOUNDER_EMAILS: set[str] = {
+    e.strip().lower()
+    for e in os.environ.get("TA_FOUNDER_EMAILS", "").split(",")
+    if e.strip()
+}
+_FOUNDER_DAILY_CAP = 999_999
+
 # --- Referral program ----------------------------------------------------
 # Each user has a deterministic 8-char referral code derived from their
 # email. When a new user signs up via /login?ref=XXXX:
@@ -282,6 +295,11 @@ _TEAM_DAILY_CAP = int(os.environ.get("TA_TEAM_DAILY_DECISIONS", "100"))
 def _base_cap_and_tier(user: CurrentUser) -> tuple[int, str]:
     if user.id == "anonymous":
         return _ANON_DAILY_CAP, "anon"
+    # v86: Founder bypass — short-circuit BEFORE any persisted-tier lookup
+    # so the operator never gets accidentally downgraded by stale Stripe
+    # state or a manual `set_user_tier` mistake.
+    if user.id.lower() in _FOUNDER_EMAILS:
+        return _FOUNDER_DAILY_CAP, "founder"
     # Look up persisted paid tier. Stripe webhook writes here on successful
     # checkout; the email then unlocks the matching cap. Free users (no
     # row in user_tiers) default to free's cap.
