@@ -12,15 +12,46 @@ from ..prompts.base import PromptPack
 
 
 def _coerce_side(s: str) -> Side:
-    s = (s or "").upper().strip()
+    s = (s or "").upper().strip().replace("-", "_").replace(" ", "_")
     try:
         return Side[s]
     except KeyError:
-        if s in {"LONG"}:
-            return Side.BUY
-        if s in {"SHORT"}:
-            return Side.SELL
-        return Side.HOLD
+        # v90: map MS / industry-standard abbreviations to the canonical
+        # enum value. "O/W" / "U/W" are common in research notes,
+        # "EW" / "OW" / "UW" are common in trader chat, "LONG/SHORT"
+        # come from older trader-plan prompts.
+        aliases = {
+            "OW": Side.OVERWEIGHT, "O_W": Side.OVERWEIGHT, "O": Side.OVERWEIGHT,
+            "EW": Side.HOLD, "E_W": Side.HOLD, "E": Side.HOLD,
+            "EQUALWEIGHT": Side.HOLD,
+            "UW": Side.UNDERWEIGHT, "U_W": Side.UNDERWEIGHT, "U": Side.UNDERWEIGHT,
+            "LONG": Side.BUY,
+            "SHORT": Side.SELL,
+            "NEUTRAL": Side.HOLD,
+            "NR": Side.HOLD, "NOT_RATED": Side.HOLD,
+        }
+        return aliases.get(s, Side.HOLD)
+
+
+def _infer_default_benchmark(state: DecisionState) -> str:
+    """v90: pick a sensible benchmark from the regime profile when the
+    LLM doesn't volunteer one. Used in the legally-defensible "X is
+    Overweight VS benchmark Y" phrasing.
+    """
+    try:
+        market = (state.get("regime") or {}).get("market") or ""
+    except Exception:
+        market = ""
+    market = market.lower()
+    if "us" in market or "nasdaq" in market or "nyse" in market:
+        return "S&P 500"
+    if "a_share" in market or "cn" in market or "sse" in market or "szse" in market:
+        return "CSI 300"
+    if "hk" in market or "hong_kong" in market:
+        return "Hang Seng Index"
+    if "crypto" in market:
+        return "BTC"
+    return "industry coverage universe"
 
 
 def manager_node(
@@ -117,6 +148,29 @@ def manager_node(
     if float(payload.get("confidence", 0.5)) > 0.90:
         state.setdefault("flags", []).append("confidence_capped_at_90pct")
 
+    # v90: pull the new sell-side research fields out of the payload with
+    # sensible fallbacks. Frontend renders the headline + takeaways when
+    # present and quietly falls back to rationale prose when they're empty,
+    # so older decisions and out-of-format LLM responses still display.
+    headline = payload.get("headline")
+    if headline is not None:
+        headline = str(headline).strip() or None
+
+    takeaways_raw = payload.get("key_takeaways") or []
+    if isinstance(takeaways_raw, str):
+        takeaways_raw = [takeaways_raw]
+    takeaways = [str(t).strip() for t in takeaways_raw if str(t).strip()][:6]
+
+    benchmark = payload.get("benchmark")
+    if not benchmark or not str(benchmark).strip():
+        benchmark = _infer_default_benchmark(state)
+    else:
+        benchmark = str(benchmark).strip()
+
+    time_horizon = str(payload.get("time_horizon") or "").strip() or "12-18 months"
+    risk_adjusted_raw = payload.get("risk_adjusted")
+    risk_adjusted = True if risk_adjusted_raw is None else bool(risk_adjusted_raw)
+
     decision = Decision(
         ticker=state["ticker"],
         asof=state["asof"],
@@ -126,6 +180,11 @@ def manager_node(
         rationale=payload.get("rationale", "(no rationale)"),
         risk_notes=payload.get("risk_notes", ""),
         flags=list(payload.get("flags", [])) + list(state.get("flags", [])),
+        headline=headline,
+        key_takeaways=takeaways,
+        benchmark=benchmark,
+        time_horizon=time_horizon,
+        risk_adjusted=risk_adjusted,
     )
 
     # ---- Consensus check (dual-LLM agreement score) ----------------------

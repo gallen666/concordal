@@ -30,6 +30,19 @@ export interface Decision {
     primary_confidence: number;
     second_confidence: number;
   } | { error: string } | null;
+  // v90 sell-side research format (all optional for back-compat).
+  /** Morgan-Stanley-style headline: action verb + quantified object + state. */
+  headline?: string | null;
+  /** 4 (or up to 6) Key Takeaways bullets, each evidence-dense. */
+  key_takeaways?: string[];
+  /** Benchmark this rating is relative to, e.g. "S&P 500", "CSI 300",
+   *  "industry coverage universe". Required for the relative-rating legal
+   *  framing ("Overweight vs. <benchmark>"). */
+  benchmark?: string | null;
+  /** Investment horizon — defaults to "12-18 months". */
+  time_horizon?: string;
+  /** Whether the rating is risk-adjusted (Sharpe-style) or raw. Defaults true. */
+  risk_adjusted?: boolean;
 }
 
 export interface AnalystReport {

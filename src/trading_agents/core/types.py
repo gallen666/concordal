@@ -47,6 +47,36 @@ class Decision(BaseModel):
     # = consensus check disabled or unavailable.
     consensus: dict | None = None
 
+    # --- v90 sell-side research format ------------------------------------
+    # Modelled after Morgan Stanley equity research format. The four fields
+    # below let the frontend render the decision as a professional research
+    # note (headline + key takeaways + relative rating + compliance footer)
+    # instead of a generic "BUY/HOLD/SELL" sticker. All are optional for
+    # backward compatibility — pre-v90 decisions render unchanged.
+
+    # MS-style headline: action verb + quantified object + state
+    # e.g. "AI Inference Demand Drives $800bn Capex Supercycle — AAPL O/W"
+    headline: str | None = None
+
+    # 4 bullet Key Takeaways, each loaded with numbers + time anchor + delta
+    # e.g. "May rack deployment down 11-12% MoM — first decline since 2025"
+    key_takeaways: list[str] = Field(default_factory=list)
+
+    # Rating relativity: "vs industry coverage universe" / "vs S&P 500" /
+    # "vs CSI 300". Used in the footer to make Overweight/Underweight
+    # legally defensible (relative call, not an absolute price prediction).
+    benchmark: str | None = None
+
+    # Investment horizon. MS standard is 12-18 months. Sets reader
+    # expectation that short-term price moves don't invalidate the call.
+    time_horizon: str = "12-18 months"
+
+    # Whether the rating is risk-adjusted (Sharpe-style) or raw total return.
+    # MS uses risk-adjusted — gives the analyst legal cover when a high-vol
+    # name underperforms in absolute terms but outperforms vs the peer set
+    # on a risk-adjusted basis.
+    risk_adjusted: bool = True
+
 
 # ---------------------------------------------------------------------------
 # Market data primitives
