@@ -4721,6 +4721,12 @@ def cn_hot_rankings(limit: int = 20) -> dict:
     explanation rather than a red HTTP error.
     """
     fetched_at = datetime.now(tz=timezone.utc).isoformat()
+    # v93: collect per-source error traces so the response message itself
+    # tells us *why* each source failed. Previously the endpoint returned
+    # an opaque "Could not fetch" string and we had to trawl Render logs
+    # to find the akshare exception. Now the error is in the response
+    # body and shows up in the frontend's friendly note + browser devtools.
+    errors: list[str] = []
 
     try:
         import akshare as ak
@@ -4733,7 +4739,7 @@ def cn_hot_rankings(limit: int = 20) -> dict:
             "message": "akshare not installed on this server.",
         }
 
-    # Try Baidu first (more globally accessible)
+    # Source 1: Baidu hot search — globally CDN-distributed
     try:
         df = ak.stock_hot_search_baidu(symbol="A股", date=date.today().strftime("%Y%m%d"), time="今日")
         if df is not None and not df.empty:
@@ -4745,10 +4751,13 @@ def cn_hot_rankings(limit: int = 20) -> dict:
                     "fetched_at": fetched_at,
                     "rows": rows,
                 }
+        errors.append("baidu: empty dataframe")
     except Exception as e:
+        msg = f"baidu: {type(e).__name__}: {str(e)[:120]}"
+        errors.append(msg)
         log.info("baidu hot search failed (%s); will try EastMoney next", e)
 
-    # Fallback: EastMoney
+    # Source 2: EastMoney 个股人气榜 (akshare emrnweb path — geo-fenced)
     try:
         df = ak.stock_hot_rank_em()
         if df is not None and not df.empty:
@@ -4760,20 +4769,87 @@ def cn_hot_rankings(limit: int = 20) -> dict:
                     "fetched_at": fetched_at,
                     "rows": rows,
                 }
+        errors.append("eastmoney_emrnweb: empty dataframe")
     except Exception as e:
+        msg = f"eastmoney_emrnweb: {type(e).__name__}: {str(e)[:120]}"
+        errors.append(msg)
         log.warning("EastMoney hot rank failed (%s)", e)
 
+    # Source 3 (v93 fallback): EastMoney datacenter-web 涨幅榜 via Vercel HK
+    # proxy — this is the same URL family that powers /v1/cn/zt-pool and is
+    # known to bypass Render Singapore's geo-block (see v37/v38). We use
+    # day-change-rate as a popularity proxy when the dedicated hot-rank
+    # endpoints are unreachable. The shape we return matches the others so
+    # the frontend doesn't have to special-case it — just a different
+    # `source` label so users know it's a proxy.
+    try:
+        import json as _json
+        # clist endpoint: market filter m:0+t:6/80 = SSE main + STAR,
+        # m:1+t:2/23 = SZSE main + ChiNext. Sort by f3 (涨跌幅) desc.
+        url = (
+            "https://push2.eastmoney.com/api/qt/clist/get"
+            "?pn=1&pz=50&po=1&np=1&fltt=2&invt=2"
+            "&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23"
+            "&fields=f2,f3,f12,f14"  # price / change_pct / code / name
+            "&fid=f3&sort=desc"
+        )
+        status, body = _fetch_cn_url_via_proxy(url)
+        if status == 200 and body:
+            data = _json.loads(body)
+            items = ((data.get("data") or {}).get("diff")) or []
+            rows: list[dict] = []
+            for i, it in enumerate(items[:limit]):
+                rows.append({
+                    "rank": i + 1,
+                    "ticker": str(it.get("f12") or "").strip() or None,
+                    "name": str(it.get("f14") or "").strip() or None,
+                    "last_price": _to_float(it.get("f2")),
+                    "change_pct": _to_float(it.get("f3")),
+                    "heat_score": None,
+                })
+            if rows:
+                return {
+                    "source": "EastMoney 涨幅榜 (proxy via Vercel HK)",
+                    "source_status": "ok_proxy_fallback",
+                    "fetched_at": fetched_at,
+                    "rows": rows,
+                    "note": (
+                        "百度热搜与人气榜均不可用，回退到东方财富涨幅榜（涨幅作为热度代理）。"
+                    ),
+                }
+        errors.append(f"eastmoney_clist_proxy: status={status}, empty body")
+    except Exception as e:
+        msg = f"eastmoney_clist_proxy: {type(e).__name__}: {str(e)[:120]}"
+        errors.append(msg)
+        log.warning("EastMoney clist (proxy fallback) failed (%s)", e)
+
+    # All three sources exhausted — surface the per-source failure reasons.
     return {
         "source": "akshare (multi-source)",
         "source_status": "unavailable",
         "fetched_at": fetched_at,
         "rows": [],
+        "errors": errors,
         "message": (
-            "暂时无法从百度热搜或东方财富拉到 A 股关注度数据。"
+            "暂时无法从百度热搜、东方财富人气榜或东方财富涨幅榜拉到 A 股关注度数据。"
             "请稍后重试。 / Could not fetch A-share attention data from "
-            "Baidu hot search or EastMoney. Try again shortly."
+            "Baidu hot search, EastMoney popularity rank, or EastMoney "
+            "movers (via proxy). Try again shortly. Details: "
+            + " | ".join(errors)
         ),
     }
+
+
+def _to_float(v) -> float | None:
+    """Safe parse for EastMoney numeric fields — empty string and '-' mean
+    'no quote' for that field (e.g. suspended stock). Return None rather
+    than raising so the row still renders with other fields populated."""
+    if v is None or v == "" or v == "-":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
 
 
 @app.get("/v1/datasource/health", tags=["report"])
