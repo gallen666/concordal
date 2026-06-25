@@ -27,6 +27,7 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Request,
+    Response,
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
@@ -4707,7 +4708,7 @@ def _currency_for(market: str) -> str:
 
 
 @app.get("/v1/markets/hot-rankings/cn")
-def cn_hot_rankings(limit: int = 20) -> dict:
+def cn_hot_rankings(limit: int = 20, response: Response = None) -> dict:
     """A-share retail attention ranking, with multi-source fallback.
 
     Sources tried in order:
@@ -4715,11 +4716,26 @@ def cn_hot_rankings(limit: int = 20) -> dict:
            best for non-China deployments like Render Singapore.
         2. EastMoney 个股人气榜 (`stock_hot_rank_em`) — best data quality
            but `emrnweb.eastmoney.com` is geo-blocked from many regions.
+        3. EastMoney 涨幅榜 via Vercel HK proxy (v93 fallback).
 
-    First source that returns non-empty rows wins. If both fail, return 200
+    First source that returns non-empty rows wins. If all fail, return 200
     with `source_status="unavailable"` so the frontend shows a friendly
     explanation rather than a red HTTP error.
+
+    v94: Cache-Control no-store so an upstream CDN / Render edge that briefly
+    cached the "unavailable" envelope (when all three sources were down) does
+    NOT keep serving it after we recover. Same applies in reverse — if the
+    proxy fallback briefly returns stale data while the primary source comes
+    back, we want the next request to re-check rather than pin the stale row.
     """
+    if response is not None:
+        # Defence-in-depth against edge caching. "no-store" tells every layer
+        # (browser, CDN, Render's frontproxy) not to retain the payload — which
+        # matters here because the same URL can flip between source_status=ok
+        # and source_status=unavailable depending on upstream availability.
+        response.headers["Cache-Control"] = "no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     fetched_at = datetime.now(tz=timezone.utc).isoformat()
     # v93: collect per-source error traces so the response message itself
     # tells us *why* each source failed. Previously the endpoint returned
