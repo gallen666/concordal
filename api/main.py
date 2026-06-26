@@ -2139,49 +2139,131 @@ def cron_daily_brief(
     if existing and not force:
         return {"ok": True, "cached": True, "brief": existing}
 
-    # Compose a tight prompt that gives the LLM enough context to generate
-    # something useful even without scraping real-time news. We let the
-    # model speak from its training prior plus the date stamp; the cron
-    # operator can later wire in a news-feed scrape for fresher content.
+    # v96: route the brief through Perplexity Sonar so the body is grounded
+    # in TODAY'S real news (Sonar searches the web at request time) rather
+    # than the LLM's training prior. The previous version was generating
+    # historical-feeling commentary from cached knowledge, which read as
+    # "AI slop" — same news cadence every day, no real-world hooks.
+    #
+    # Sonar gives us citations as a side-effect, which we attach to the
+    # bottom of the body so readers can verify any claim. Falls back to
+    # the previous LLM-router path if Sonar is unavailable.
     prompt_zh = (
-        f"今天是 {today}。\n\n"
-        "请生成一份简短的 A 股 + 美股 + 加密货币每日早评，800-1200 字，"
-        "中文，markdown 格式。包含：\n\n"
-        "1. **市场一句话** — 一句话概括今天的市场基调\n"
-        "2. **昨日复盘** — 三个 bullet，每个 60-100 字\n"
-        "3. **今日看点** — 三个 bullet，每个 60-100 字\n"
-        "4. **风险提示** — 一段，强调投资风险\n\n"
-        "语气专业克制，避免推荐具体股票。结尾加一句"
-        "「— TradingAgents AI · {} 自动生成」。".format(today)
+        f"今天是 {today}（北京时间）。\n\n"
+        "请基于今日真实新闻生成一份中文 A 股 + 美股 + 加密货币市场早评，"
+        "1000 字左右，markdown 格式。结构：\n\n"
+        "## 一句话基调\n"
+        "用一句话概括今天的市场基调（必须含当日具体事件锚定）。\n\n"
+        "## 昨日复盘\n"
+        "- A 股：上证 / 深证 / 创业板涨跌 + 1 个具体板块/事件\n"
+        "- 美股：道指 / 纳指 / 标普涨跌 + 1 个具体公司/事件\n"
+        "- 加密：BTC / ETH 走势 + 1 个具体催化剂\n\n"
+        "## 今日看点\n"
+        "- 中国：经济数据 / 政策 / 公司公告\n"
+        "- 海外：央行 / 数据 / 地缘\n"
+        "- 加密：监管 / 链上动向\n\n"
+        "## 风险提示\n"
+        "一段，强调投资风险。\n\n"
+        "要求：所有数据 / 涨跌幅 / 公司名 / 数字必须来自你搜到的真实新闻。"
+        "如某市场今天没真新闻，明确说『暂无信息』，不要编造。"
+        "语气专业克制，避免推荐具体股票。"
+        f"结尾加一句『— Concordal AI · {today} 自动生成』。"
     )
     prompt_en = (
-        f"Today is {today}.\n\n"
-        "Write a concise daily brief covering A-share, US equity, and crypto "
-        "markets, 600-900 words, markdown format. Include:\n\n"
-        "1. **Tape headline** — one-sentence summary of today's mood\n"
-        "2. **Yesterday's recap** — three bullets, 30-60 words each\n"
-        "3. **Today's watch list** — three bullets, 30-60 words each\n"
-        "4. **Risk note** — one paragraph emphasising market risk\n\n"
-        "Professional, restrained tone. Do not recommend specific tickers. "
-        f"End with: '— TradingAgents AI · {today} auto-generated'."
+        f"Today is {today} (Asia/Hong_Kong).\n\n"
+        "Generate an English market brief covering A-share, US equity, and "
+        "crypto, grounded in today's real news. 700-900 words, markdown:\n\n"
+        "## Tape headline\n"
+        "One sentence summarising today's mood, anchored to a specific event.\n\n"
+        "## Yesterday's recap\n"
+        "- A-share: SSE/SZSE/ChiNext move + one specific sector/event\n"
+        "- US: Dow/Nasdaq/S&P move + one specific company/event\n"
+        "- Crypto: BTC/ETH price action + one specific catalyst\n\n"
+        "## Today's watch list\n"
+        "- China: data / policy / corporate filings\n"
+        "- Global: central banks / macro prints / geopolitics\n"
+        "- Crypto: regulation / on-chain flows\n\n"
+        "## Risk note\n"
+        "One paragraph emphasising investment risk.\n\n"
+        "Every number / price move / company name MUST come from real news "
+        "you searched. If a market has no relevant news today, say so explicitly. "
+        "Professional, restrained tone. No specific ticker recommendations. "
+        f"End with: '— Concordal AI · {today} auto-generated'."
     )
     prompt = prompt_zh if locale == "zh" else prompt_en
 
+    body_md = ""
+    model_used = "unknown"
+    citations: list[str] = []
+
+    # Primary path: Perplexity Sonar — realtime web search baked in.
     try:
-        from trading_agents.llm.router import get_router
-        router = get_router()
-        result = router.complete(prompt=prompt, system="You are a professional market commentator.")
-        body_md = result.text if hasattr(result, "text") else str(result)
-        model_used = getattr(result, "model", None) or "unknown"
+        from trading_agents.adapters import perplexity_sonar as _sonar
+        if _sonar.is_configured():
+            import httpx as _httpx
+            api_key = os.environ.get("PERPLEXITY_API_KEY", "").strip()
+            sonar_body = {
+                "model": "sonar",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a professional sell-side market commentator. "
+                            "Use only facts from your live web search. Cite every "
+                            "non-trivial claim. Refuse to invent prices, dates, "
+                            "or company actions."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": 1800,
+                "temperature": 0.2,
+                "return_citations": True,
+            }
+            with _httpx.Client(timeout=_httpx.Timeout(45.0)) as _c:
+                _resp = _c.post(
+                    "https://api.perplexity.ai/chat/completions",
+                    json=sonar_body,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                )
+            if _resp.status_code < 400:
+                _j = _resp.json()
+                _choice = (_j.get("choices") or [{}])[0]
+                body_md = ((_choice.get("message") or {}).get("content") or "").strip()
+                citations = list(_j.get("citations") or [])
+                model_used = "perplexity-sonar"
+            else:
+                log.warning("daily-brief Sonar HTTP %s: %s", _resp.status_code, _resp.text[:200])
     except Exception as e:
-        log.warning("daily-brief LLM failed: %s", e)
-        # Persist a clearly-labelled fallback so the page always has SOMETHING
-        body_md = (
-            f"# {today} · Daily Brief Unavailable\n\n"
-            f"The LLM router could not generate today's brief ({e}).\n\n"
-            "This page will be regenerated automatically on the next cron run."
-        )
-        model_used = "fallback"
+        log.warning("daily-brief Sonar attempt failed: %s", e)
+
+    # Fallback: standard LLM router (no realtime news, but better than nothing).
+    if not body_md:
+        try:
+            from trading_agents.llm.router import get_router
+            router = get_router()
+            result = router.complete(prompt=prompt, system="You are a professional market commentator.")
+            body_md = result.text if hasattr(result, "text") else str(result)
+            model_used = getattr(result, "model", None) or "llm-router-fallback"
+        except Exception as e:
+            log.warning("daily-brief LLM fallback failed: %s", e)
+            body_md = (
+                f"# {today} · Daily Brief Unavailable\n\n"
+                f"Both Perplexity Sonar and the LLM router could not generate "
+                f"today's brief ({e}).\n\n"
+                "This page will be regenerated automatically on the next cron run."
+            )
+            model_used = "fallback"
+
+    # Append citations as a markdown footer when Sonar provided them.
+    if citations:
+        cite_lines = ["", "---", "", "**信息源 / Citations:**", ""]
+        for i, url in enumerate(citations[:15], start=1):
+            cite_lines.append(f"{i}. <{url}>")
+        body_md = body_md.rstrip() + "\n" + "\n".join(cite_lines) + "\n"
 
     # Extract title from first markdown H1, or fall back to date.
     title = f"市场早评 · {today}" if locale == "zh" else f"Daily Brief · {today}"
