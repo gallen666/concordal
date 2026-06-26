@@ -2103,6 +2103,127 @@ def _normalize_hot_rows(df, limit: int) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# v97c — fill-rate telemetry for the BofA-style sell-side research format
+# ---------------------------------------------------------------------------
+
+@app.get("/v1/admin/v97-fill-rate", tags=["auth"])
+def admin_v97_fill_rate(request: Request, limit: int = 500) -> dict:
+    """v97c: Tell us whether DeepSeek actually emits the BofA-style fields.
+
+    Scans the most recent `limit` decision_jobs from persistence, peeks into
+    each job's payload, and counts how many populated each of the v97 fields.
+    Returns per-field totals + overall fill percentages.
+
+    Output shape:
+      {
+        "ok": true,
+        "scanned": 134,
+        "decisions_with_payload": 128,
+        "fields": {
+          "shock_anchor":         {"filled": 92,  "pct": 71.9},
+          "industry_tam_usd_bn":  {"filled": 81,  "pct": 63.3},
+          "company_share_pct":    {"filled": 78,  "pct": 60.9},
+          "share_delta_5y_pp":    {"filled": 75,  "pct": 58.6},
+          "share_delta_note":     {"filled": 75,  "pct": 58.6},
+          "phases":               {"filled": 64,  "pct": 50.0},
+          "driver_matrix":        {"filled": 41,  "pct": 32.0},
+          "moat_criteria":        {"filled": 88,  "pct": 68.8}
+        },
+        "version_targets_pct": {
+          "shock_anchor": 70, "industry_tam_usd_bn": 60, ...
+        },
+        "below_target": ["driver_matrix"]
+      }
+
+    Protected by the same TA_CRON_SECRET shared secret as the cron endpoints
+    so it can be hit by curl or a cron job for a daily telemetry post —
+    no separate admin auth system needed.
+
+    Read-only and idempotent. Safe to hit repeatedly.
+    """
+    secret = os.environ.get("TA_CRON_SECRET")
+    if secret:
+        provided = request.headers.get("X-Cron-Secret", "")
+        if provided != secret:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Bad cron secret")
+
+    # Field name → target fill % (per v97 plan in the conversation).
+    targets = {
+        "shock_anchor":        70,
+        "industry_tam_usd_bn": 60,
+        "company_share_pct":   60,
+        "share_delta_5y_pp":   60,
+        "share_delta_note":    60,
+        "phases":              50,
+        "driver_matrix":       40,
+        "moat_criteria":       60,
+    }
+
+    rows = persistence.list_recent_decision_jobs(limit=max(1, min(2000, limit)))
+
+    decisions_with_payload = 0
+    counts = {k: 0 for k in targets}
+
+    for _job_id, payload_json, _updated_at in rows:
+        if not payload_json:
+            continue
+        try:
+            payload = json.loads(payload_json)
+        except (TypeError, ValueError):
+            continue
+
+        # decision_jobs.payload is a wrapper around the decision; the actual
+        # Decision dict lives at .decision (live mode) or .result.decision
+        # (legacy). Try both shapes so old + new rows both count.
+        decision = payload.get("decision")
+        if not decision and isinstance(payload.get("result"), dict):
+            decision = payload["result"].get("decision")
+        if not isinstance(decision, dict):
+            continue
+        decisions_with_payload += 1
+
+        for field in targets:
+            v = decision.get(field)
+            if v is None:
+                continue
+            # Lists/dicts count only if non-empty. Strings count only if
+            # non-whitespace. Numbers count regardless (including 0.0).
+            if isinstance(v, (list, dict, str)) and len(v) == 0:
+                continue
+            if isinstance(v, str) and not v.strip():
+                continue
+            counts[field] += 1
+
+    denom = decisions_with_payload or 1
+    fields_out = {
+        k: {
+            "filled": counts[k],
+            "pct": round(counts[k] * 100.0 / denom, 1),
+        }
+        for k in targets
+    }
+    below_target = [
+        k for k, t in targets.items()
+        if fields_out[k]["pct"] < t
+    ]
+
+    return {
+        "ok": True,
+        "scanned": len(rows),
+        "decisions_with_payload": decisions_with_payload,
+        "fields": fields_out,
+        "version_targets_pct": targets,
+        "below_target": below_target,
+        "notes": (
+            "Below-target fields likely need prompt-strength tuning. Empty "
+            "list when all fields meet the target. Schema field "
+            "`industry_tam_year` is intentionally not tracked here — it's "
+            "always co-emitted with industry_tam_usd_bn."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Daily AI brief — auto-generated market commentary
 # ---------------------------------------------------------------------------
 
