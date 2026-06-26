@@ -53,7 +53,7 @@ function EnContent() {
         The Service, including the analyst pipeline, prompt packs, and UI, is
         licensed to you for personal/team use during your subscription. The
         underlying open-source code is available at
-        github.com/gallen666/concordal under its respective
+        (closed-source) under its respective
         license. Decision artifacts you generate are yours.
       </Section>
       <Section title="8. Disclaimers">
@@ -112,7 +112,7 @@ function ZhContent() {
         付费方案按月预付。取消在当前计费周期结束时生效——除非当地消费者保护法另有规定，部分月份不退款。价格变动会提前 30 天通知。
       </Section>
       <Section title="7. 知识产权">
-        本服务（包括分析师 pipeline、prompt 包、UI）按订阅期内授权您个人/团队使用。底层开源代码在 github.com/gallen666/concordal 按其各自许可证可用。您生成的决策产物归您所有。
+        本服务（包括分析师 pipeline、prompt 包、UI）按订阅期内授权您个人/团队使用。底层开源代码在 (closed-source) 按其各自许可证可用。您生成的决策产物归您所有。
       </Section>
       <Section title="8. 声明">
         本服务"按原样"提供，不作任何保证。我们不保证决策能盈利、准确或无错误。完整风险讨论详见免责声明页。

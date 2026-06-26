@@ -81,12 +81,8 @@ export default function SponsorPage() {
   ];
 
   const recurring: Channel[] = [
-    {
-      name: "GitHub Sponsors",
-      url: GH_SPONSORS ? `https://github.com/sponsors/${GH_SPONSORS}` : null,
-      icon: <Github className="w-5 h-5" />,
-      blurb: "Monthly recurring, GitHub eats the fees. Tax-friendly.",
-    },
+    // v95: GitHub Sponsors removed — Concordal no longer publishes its
+    // source repo, so the channel doesn't apply.
     {
       name: "Patreon",
       url: PATREON ? `https://www.patreon.com/${PATREON}` : null,

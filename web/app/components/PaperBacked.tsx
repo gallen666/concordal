@@ -196,7 +196,7 @@ export function DatasetBanner() {
           </p>
           <div className="flex flex-wrap gap-3 mt-3 text-xs">
             <a
-              href="https://github.com/gallen666/concordal/blob/main/src/trading_agents/backtest/agent_backtest.py"
+              href="#"
               target="_blank"
               rel="noopener"
               className="text-accent hover:underline inline-flex items-center gap-1"
@@ -312,7 +312,7 @@ bus.register(Source(
         <Link href="/research#bus-architecture" className="text-gold hover:underline inline-flex items-center gap-1">
           <BookOpen className="w-3 h-3" /> 总线 4 法则 · 论文 §7
         </Link>
-        <a href="https://github.com/gallen666/concordal/blob/main/src/trading_agents/ecosystem/data_bus.py"
+        <a href="#"
            target="_blank" rel="noopener"
            className="text-accent hover:underline inline-flex items-center gap-1 font-mono">
           <GitBranch className="w-3 h-3" /> data_bus.py 源码

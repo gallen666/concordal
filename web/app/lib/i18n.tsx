@@ -60,7 +60,7 @@ const dict = {
     zh: "一套对标真实买方机构的多 agent 研究台 —— 基本面、情绪、新闻、技术四大分析师；多空辩论；三档风控委员会；基金经理终审。每一个结论都可逐句溯源。",
   },
   "landing.checkNoLookahead":   { en: "No-lookahead enforced",  zh: "严格禁止前瞻偏差" },
-  "landing.checkOpenSource":    { en: "Fully open-source core", zh: "核心代码完全开源" },
+  "landing.checkOpenSource":    { en: "Fully auditable pipeline", zh: "Agent 流水线完全可审计" },
   "landing.checkNoTrades":      { en: "Never executes trades",  zh: "绝不替你下单交易" },
 
   "landing.featuresLabel":      { en: "What you get",                      zh: "你将获得" },
@@ -345,8 +345,8 @@ const dict = {
   },
   "pricing.faq.q2":             { en: "Can I bring my own LLM key?",        zh: "我能自带 LLM key 吗" },
   "pricing.faq.a2":             {
-    en: "Yes. Self-host the open-source backend and set GEMINI_API_KEY / DEEPSEEK_API_KEY / ANTHROPIC_API_KEY. We'll be adding 'BYO key' tier on the hosted version soon — DM us.",
-    zh: "可以。自部署开源后端，设 GEMINI_API_KEY / DEEPSEEK_API_KEY 等环境变量即可。托管版的 \"自带 key\" 方案我们正在加，私信我们。",
+    en: "Soon. We're building a 'Bring Your Own Key' tier where you supply the LLM API key and pay only inference cost — DM us to be on the early list.",
+    zh: "正在做。我们在加'自带 key'档：你提供 LLM API key，只付推理成本。私信我们加入早鸟名单。",
   },
   "pricing.faq.q3":             { en: "Is this investment advice?",         zh: "这是投资建议吗" },
   "pricing.faq.a3":             {
@@ -368,7 +368,7 @@ const dict = {
   "proof.section.lookahead":    { en: "Strict no-lookahead",                zh: "严格禁止前瞻" },
   "proof.section.crossVal":     { en: "Cross-validated against Backtrader", zh: "与 Backtrader 交叉验证" },
   "proof.section.costModel":    { en: "Honest cost model",                  zh: "诚实的成本模型" },
-  "proof.section.openSource":   { en: "Fully open source",                  zh: "完全开源" },
+  "proof.section.openSource":   { en: "Auditable per-decision trace",       zh: "每笔决策可逐句溯源" },
   "proof.section.tests":        { en: "Tests + CI",                         zh: "测试 + CI" },
 
   // ---- /developers landing ---------------------------------------------
@@ -433,8 +433,8 @@ const dict = {
   "sponsor.label":              { en: "WAYS TO SUPPORT",                      zh: "支持渠道" },
   "sponsor.heading":            { en: "Keep the platform free for everyone",  zh: "让平台对所有人保持免费" },
   "sponsor.subheading":         {
-    en: "Concordal is open-source and free forever. If you want to help us keep the LLM bill paid + extend the analyst pipeline, any of these channels works — pick whichever you already use.",
-    zh: "Concordal 是开源的，永久免费。如果想帮我们 cover LLM 账单 + 加新分析师能力，下面任意一个渠道都行——选你已经在用的。",
+    en: "Concordal is in closed beta and free for early users. If you want to help us keep the LLM bill paid + extend the analyst pipeline, any of these channels works — pick whichever you already use.",
+    zh: "Concordal 现处于封闭测试期，对早期用户免费。如果想帮我们 cover LLM 账单 + 加新分析师能力，下面任意一个渠道都行——选你已经在用的。",
   },
   "sponsor.oneTime.title":      { en: "One-time tips",                        zh: "一次性打赏" },
   "sponsor.recurring.title":    { en: "Recurring sponsorship",                zh: "定期赞助" },

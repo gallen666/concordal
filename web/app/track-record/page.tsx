@@ -38,7 +38,7 @@ import { useT } from "../lib/i18n";
 import { DatasetBanner } from "../components/PaperBacked";
 
 const REPORT_URL =
-  "https://raw.githubusercontent.com/gallen666/concordal/main/reports/latest.json";
+  "";
 
 // ---------------------------------------------------------------------------
 // Types — mirror the Python dataclass JSON
@@ -404,7 +404,7 @@ function EmptyState({ error }: { error: string | null }) {
 
         <div className="flex gap-3 flex-wrap pt-3">
           <a
-            href="https://github.com/gallen666/concordal/blob/main/src/trading_agents/backtest/agent_backtest.py"
+            href="#"
             target="_blank" rel="noopener noreferrer"
             className="btn-secondary text-sm"
           >
@@ -620,7 +620,7 @@ function ReportView({ report, locale }: { report: Report; locale: string }) {
       {/* Footer links */}
       <div className="flex flex-wrap gap-3 pt-2 text-sm">
         <a
-          href="https://github.com/gallen666/concordal/tree/main/src/trading_agents/backtest"
+          href="#"
           target="_blank"
           rel="noopener noreferrer"
           className="btn-secondary"
@@ -630,7 +630,7 @@ function ReportView({ report, locale }: { report: Report; locale: string }) {
           <ExternalLink className="w-3.5 h-3.5" />
         </a>
         <a
-          href="https://github.com/gallen666/concordal/blob/main/reports/latest.json"
+          href="#"
           target="_blank"
           rel="noopener noreferrer"
           className="btn-ghost"

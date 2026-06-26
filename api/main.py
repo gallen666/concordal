@@ -121,13 +121,11 @@ app = FastAPI(
         "and do not constitute a recommendation under any securities law."
     ),
     contact={
-        "name": "TradingAgents",
-        "url": "https://github.com/gallen666/concordal",
+        "name": "Concordal",
+        "url": "https://www.concordal.hk",
     },
-    license_info={
-        "name": "Apache 2.0",
-        "url": "https://www.apache.org/licenses/LICENSE-2.0",
-    },
+    # v95: license_info removed — source is no longer public, so we don't
+    # advertise an open-source license alongside the API contract.
     servers=[
         {"url": "https://trading-agents-platform.onrender.com", "description": "Production"},
         {"url": "http://localhost:8000", "description": "Local dev"},

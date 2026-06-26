@@ -59,7 +59,7 @@ export default function Footer() {
     {
       heading: locale === "zh" ? "联系" : "Connect",
       links: [
-        { href: "https://github.com/gallen666/concordal", label: "GitHub" },
+        // v95: GitHub link removed — code is no longer published publicly.
         { href: "/sponsor", label: locale === "zh" ? "支持我们" : "Sponsor" },
         { href: "/me/referral", label: locale === "zh" ? "邀请朋友" : "Refer a friend" },
       ],
@@ -134,14 +134,10 @@ export default function Footer() {
           <div className="flex flex-wrap items-center gap-3 text-2xs font-mono uppercase tracking-wider text-ink-tertiary">
             <span>v0.1.0</span>
             <span>{locale === "zh" ? "封闭测试" : "Closed beta"}</span>
-            <a
-              href="https://github.com/gallen666/concordal"
-              className="hover:text-ink-primary inline-flex items-center gap-1"
-              target="_blank" rel="noopener noreferrer"
-            >
-              <Github className="w-3 h-3" />
-              MIT
-            </a>
+            {/* v95: GitHub badge + MIT link removed — code is no longer
+                published publicly. The remaining version + beta tag are
+                enough for the operational transparency story without
+                implying the source is open. */}
             {icpBeian && (
               <a
                 href="https://beian.miit.gov.cn/"

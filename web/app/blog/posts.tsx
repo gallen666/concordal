@@ -146,7 +146,7 @@ const post_bloomberg: BlogPost = {
       <P>
         We&apos;re also fully open-source. Every prompt, every adapter, every
         cost calculation is auditable on{" "}
-        <Link href="https://github.com/gallen666/concordal" className="text-accent hover:underline">
+        <Link href="#" className="text-accent hover:underline">
           GitHub
         </Link>
         . You can run the entire pipeline locally with your own API keys —
@@ -466,7 +466,7 @@ const post_lookahead: BlogPost = {
         should not be visible to a decision &quot;7 days ago&quot;. This is the{" "}
         <Code>test_no_lookahead_bias</Code> case in our test suite; you can{" "}
         <Link
-          href="https://github.com/gallen666/concordal/blob/main/tests/test_pipeline.py"
+          href="#"
           className="text-accent hover:underline"
         >
           read the code
@@ -811,7 +811,7 @@ const post_a_share: BlogPost = {
         最近半年加了 token 验证，调用前要先 GET 主页拿 cookie。我们的 adapter
         实现见{" "}
         <Link
-          href="https://github.com/gallen666/concordal/blob/main/src/trading_agents/adapters/sentiment_xueqiu.py"
+          href="#"
           className="text-accent hover:underline"
         >
           GitHub
@@ -879,7 +879,7 @@ const post_a_share: BlogPost = {
       <P>
         Concordal 这四项都达标。具体实现都在{" "}
         <Link
-          href="https://github.com/gallen666/concordal"
+          href="#"
           className="text-accent hover:underline"
         >
           GitHub 仓库
