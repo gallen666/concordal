@@ -626,6 +626,102 @@ function DecisionView({
                   .join(" · ")}
               </p>
             )}
+            {/* v97a: BofA-style Shock Anchor — the single most compressible
+                quantitative claim of the thesis. Renders as a callout
+                block above the Market View strip when manager emitted one. */}
+            {d.shock_anchor && (
+              <div className="mb-3 rounded-md border-l-2 border-accent bg-accent/5 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-widest text-accent mb-0.5 font-mono">
+                  {locale === "zh" ? "核心锚点" : "Shock Anchor"}
+                </div>
+                <div className="text-sm font-semibold text-ink-primary leading-snug">
+                  {d.shock_anchor}
+                </div>
+              </div>
+            )}
+            {/* v97a: BofA-style Market View strip — Industry TAM / Company
+                share / Δshare 5yr. The Δshare is the real alpha signal:
+                a +5pp gainer beats a 20%-share incumbent who only adds +1pp. */}
+            {(d.industry_tam_usd_bn != null ||
+              d.company_share_pct != null ||
+              d.share_delta_5y_pp != null) && (
+              <div className="mb-4 rounded-md border border-border-subtle bg-bg-elev/30 px-4 py-3">
+                <div className="text-[10px] uppercase tracking-widest text-ink-tertiary mb-2 font-mono">
+                  {locale === "zh" ? "市场全景" : "Market View"}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-sm">
+                  {d.industry_tam_usd_bn != null && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-ink-tertiary font-mono mb-0.5">
+                        {locale === "zh" ? "行业 TAM" : "Industry TAM"}
+                      </div>
+                      <div className="font-semibold text-ink-primary leading-tight">
+                        ${d.industry_tam_usd_bn}bn
+                      </div>
+                      {d.industry_tam_year && (
+                        <div className="text-[11px] text-ink-tertiary mt-0.5 leading-snug">
+                          {d.industry_tam_year}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {d.company_share_pct != null && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-ink-tertiary font-mono mb-0.5">
+                        {locale === "zh" ? "公司份额" : "Company Share"}
+                      </div>
+                      <div className="font-semibold text-ink-primary leading-tight">
+                        {d.company_share_pct.toFixed(1)}%
+                      </div>
+                      <div className="text-[11px] text-ink-tertiary mt-0.5 leading-snug">
+                        {locale === "zh" ? "当前" : "current"}
+                      </div>
+                    </div>
+                  )}
+                  {d.share_delta_5y_pp != null && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-ink-tertiary font-mono mb-0.5">
+                        {locale === "zh" ? "5 年 Δ 份额" : "Δ Share (5y)"}
+                      </div>
+                      <div
+                        className={cn(
+                          "font-semibold leading-tight",
+                          d.share_delta_5y_pp > 0
+                            ? "text-signal-good"
+                            : d.share_delta_5y_pp < 0
+                              ? "text-signal-bad"
+                              : "text-ink-primary",
+                        )}
+                      >
+                        {d.share_delta_5y_pp > 0 ? "+" : ""}
+                        {d.share_delta_5y_pp.toFixed(1)}pp
+                      </div>
+                      <div className="text-[11px] text-ink-tertiary mt-0.5 leading-snug">
+                        {d.share_delta_5y_pp > 0
+                          ? locale === "zh"
+                            ? "份额提升"
+                            : "share gainer"
+                          : d.share_delta_5y_pp < 0
+                            ? locale === "zh"
+                              ? "份额流失"
+                              : "share loser"
+                            : locale === "zh"
+                              ? "持平"
+                              : "stable"}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {d.share_delta_note && (
+                  <p className="mt-3 pt-3 border-t border-border-subtle text-xs text-ink-secondary leading-relaxed">
+                    <span className="font-mono text-[10px] uppercase tracking-widest text-ink-tertiary mr-2">
+                      {locale === "zh" ? "机理" : "Mechanism"}:
+                    </span>
+                    {d.share_delta_note}
+                  </p>
+                )}
+              </div>
+            )}
             {Array.isArray(d.key_takeaways) && d.key_takeaways.length > 0 && (
               <div className="mb-4 rounded-md border border-border-subtle bg-bg-elev/40 px-4 py-3">
                 <div className="text-[10px] uppercase tracking-widest text-ink-tertiary mb-2 font-mono">

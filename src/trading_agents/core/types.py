@@ -77,6 +77,40 @@ class Decision(BaseModel):
     # on a risk-adjusted basis.
     risk_adjusted: bool = True
 
+    # --- v97a: BofA-style TAM-layered industry framing ---------------------
+    # Inspired by BofA Global Research "Watts to Tokens" (25 May 2026),
+    # which anchored every stock pick to (1) an industry TAM, (2) the
+    # company's share within that TAM, and (3) the *5-year Δshare* — the
+    # last is the real alpha signal because incumbents may hold the largest
+    # absolute share while being out-gained by a faster-share-gainer.
+    # All optional; pre-v97 decisions render unchanged.
+
+    # Shock-anchor headline rule: every report must lead with a memorable
+    # ratio + percentage + time horizon (e.g. "100x rack power × 28% CAGR
+    # × by CY30"). Forces the prompt to pick the single most compressible
+    # claim instead of meandering prose.
+    shock_anchor: str | None = None
+
+    # Industry TAM in USD billions and the corresponding year / definition
+    # (e.g. ("$27bn", "CY30 AI analog semis incl. data center + power
+    # infra")). Helps the reader sanity-check the runway before reading the
+    # company-specific call.
+    industry_tam_usd_bn: float | None = None
+    industry_tam_year: str | None = None
+
+    # Current company share within the industry TAM (in percent). 0-100.
+    company_share_pct: float | None = None
+
+    # The headline alpha number — 5-year change in market share, in
+    # percentage points. Positive = share gainer (long-side thesis).
+    # Negative = share loser (short-side / underweight thesis).
+    share_delta_5y_pp: float | None = None
+
+    # One-sentence explanation for the Δshare — why the company gains or
+    # loses share over 5 years. Forces a mechanistic rather than narrative
+    # claim ("portfolio breadth across Si/SiC/GaN" beats "strong AI tailwind").
+    share_delta_note: str | None = None
+
 
 # ---------------------------------------------------------------------------
 # Market data primitives

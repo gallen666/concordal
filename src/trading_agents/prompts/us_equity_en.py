@@ -268,6 +268,7 @@ Emit a strict JSON object with these fields:
 
   {
     "headline":      str,   # MS-style headline (see HEADLINE RULES)
+    "shock_anchor":  str,   # v97a — see SHOCK-ANCHOR RULE
     "key_takeaways": [str, str, str, str],  # exactly 4 bullets (see RULES)
     "side":          str,   # one of OVERWEIGHT / EQUAL_WEIGHT / UNDERWEIGHT
                             # or legacy BUY / HOLD / SELL
@@ -278,7 +279,17 @@ Emit a strict JSON object with these fields:
     "time_horizon":  str,   # default "12-18 months"
     "rationale":     str,   # 2-3 sentence prose, evidence-dense
     "risk_notes":    str,   # 1-2 sentences
-    "flags":         [str]  # compliance / operational concerns
+    "flags":         [str], # compliance / operational concerns
+
+    # v97a — BofA-style TAM-layered industry framing. All optional but
+    # strongly preferred when the ticker has a definable industry TAM
+    # (most equities do; macro/index plays may omit). Leave fields null
+    # rather than fabricate.
+    "industry_tam_usd_bn": float | null,  # e.g. 27.0 for a $27bn TAM
+    "industry_tam_year":   str | null,    # e.g. "CY30 AI analog semis"
+    "company_share_pct":   float | null,  # e.g. 17.3 for 17.3% market share
+    "share_delta_5y_pp":   float | null,  # 5-year Δshare in pp; +5.0 / -3.0
+    "share_delta_note":    str | null     # one-sentence MECHANISTIC reason
   }
 
 === HEADLINE RULES (this is the FIRST thing the user reads) ===
@@ -294,6 +305,31 @@ Examples of good headlines (study the rhythm):
 Do NOT write headlines like "AAPL Analysis", "Decision for X", or
 "Investment View on Y". Those are not professional research headlines.
 
+=== SHOCK-ANCHOR RULE (v97a) ===
+A *shock anchor* is the single most compressible quantitative claim of
+the thesis. Modeled after BofA Global Research "Watts to Tokens" (25
+May 2026), which anchored a 51-page semis report to "100x rack power
+× 28% CAGR × by CY30" — three numbers no analyst forgets.
+
+REQUIRED ELEMENTS — every shock_anchor MUST contain all three:
+  1. A MULTIPLE or RATIO         (e.g. "5x", "100x", "+400bp")
+  2. A PERCENT or CAGR           (e.g. "28% CAGR", "60% gross margin")
+  3. A TIME HORIZON              (e.g. "by CY30", "over 12-18 months")
+
+Good examples:
+  "100x rack power × 28% CAGR × $27bn TAM by CY30"     ← BofA semis
+  "AAPL services 14% YoY × 60% margin × by FY26 Q4"    ← Apple example
+  "稀土出口下降 70% × 12-month × 影响全球 90% 高端磁体"  ← CN example
+
+Bad examples (do NOT do these):
+  "Strong AI tailwind ahead"                          ← no numbers
+  "Trading at 25x P/E"                                ← no horizon
+  "Expect re-rating over the next year"               ← no multiple
+
+If you cannot construct a valid shock_anchor with all 3 elements (e.g.
+because the inputs lack any quantitative pivot), leave it null. Do NOT
+fabricate to satisfy the field.
+
 === KEY TAKEAWAYS RULES (exactly 4 bullets, each 1 sentence) ===
 Each bullet MUST satisfy two of these three:
   - contains at least 1 NUMBER (absolute value or %)
@@ -303,6 +339,27 @@ Each bullet MUST satisfy two of these three:
 Example takeaway: "Asia power capex projected to rise from US$400bn
 in 2024 to US$800bn by 2030, a CAGR of 12% — supportive for grid and
 utilities names with backlog visibility through 2028."
+
+=== TAM-LAYER FRAMING (v97a, optional but preferred) ===
+BofA's "Watts to Tokens" report makes its alpha case by combining:
+  L1  Industry TAM         e.g. "$27bn AI analog semis by CY30"
+  L2  Company share        e.g. "Infineon 12% today → 17% by CY30"
+  L3  Δshare (5 years)     e.g. "+5pp" (THIS is the real alpha signal)
+
+Δshare matters more than absolute share, because the largest incumbent
+may hold 21% but only gain +1pp over 5 years (TXN in BofA's model),
+while a smaller player gains +5pp (Infineon, ON). The Δshare gainer
+is the long thesis; the Δshare loser is the short / underweight thesis.
+
+When emitting these fields:
+  - share_delta_note MUST give a MECHANISTIC reason, not narrative
+    Good: "Empower acquisition adds package-adjacent power IP — closes
+           the highest-value 'last-inch' socket vs ADI's prior portfolio"
+    Bad:  "Strong execution and AI tailwind drive share gains"
+
+  - If consensus estimates aren't available for the industry, infer
+    industry_tam_usd_bn from the analyst reports + macro snapshot. If
+    even that is impossible, leave all 5 TAM fields null.
 
 === CONFIDENCE BANDS ===
 **Never output 1.0** — markets are uncertain and a 100%-confident
@@ -314,9 +371,10 @@ equity decision is a sign of poor calibration.
   * > 0.85: only when ALL analysts agree AND a hard catalyst is
     verified — must be backed by concrete evidence.
 
-=== EXAMPLE OUTPUT ===
+=== EXAMPLE OUTPUT (v97a BofA-style) ===
 {
-  "headline": "Sustained AI capex underwrites earnings upside — AAPL O/W with 12-18m relative call",
+  "headline": "Services Mix Shift Compounds Margin Expansion — AAPL O/W with 12-18m relative call",
+  "shock_anchor": "Services 14% YoY × 60% gross margin × by FY26 Q4",
   "key_takeaways": [
     "Q1 services revenue +14% YoY beat consensus by 3pts, marking the third consecutive acceleration since FY24 Q3",
     "Gross margin expansion to 46.2% vs 44.1% prior-year reflects the 600bp shift in revenue mix toward services",
@@ -330,7 +388,12 @@ equity decision is a sign of poor calibration.
   "time_horizon": "12-18 months",
   "rationale": "Services trajectory and installed-base monetisation outpace consensus, supporting a multiple re-rating versus S&P 500 over 12-18 months. AI inference demand at the edge provides a structural tailwind for the Pro tier upgrade cycle starting Q4 FY26.",
   "risk_notes": "EU DMA could compress App Store take-rate by ~5pts. China revenue concentration (~17%) leaves earnings exposed to geopolitical escalation.",
-  "flags": []
+  "flags": [],
+  "industry_tam_usd_bn": 1300.0,
+  "industry_tam_year": "CY28 global premium consumer electronics + services",
+  "company_share_pct": 18.5,
+  "share_delta_5y_pp": 2.5,
+  "share_delta_note": "Services attach rate gains 600bp from on-device AI features locking the upgrade cycle to the Pro tier — Samsung's open-Android stack cannot replicate vertical-integration economics"
 }
 """
 

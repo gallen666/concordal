@@ -171,6 +171,33 @@ def manager_node(
     risk_adjusted_raw = payload.get("risk_adjusted")
     risk_adjusted = True if risk_adjusted_raw is None else bool(risk_adjusted_raw)
 
+    # v97a — BofA-style TAM-layered industry framing. All five fields are
+    # optional; we coerce defensively so partial / malformed payloads still
+    # produce a valid Decision (the frontend renders only the fields that
+    # are present).
+    def _opt_float(key: str) -> float | None:
+        v = payload.get(key)
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    def _opt_str(key: str) -> str | None:
+        v = payload.get(key)
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
+
+    shock_anchor = _opt_str("shock_anchor")
+    industry_tam_usd_bn = _opt_float("industry_tam_usd_bn")
+    industry_tam_year = _opt_str("industry_tam_year")
+    company_share_pct = _opt_float("company_share_pct")
+    share_delta_5y_pp = _opt_float("share_delta_5y_pp")
+    share_delta_note = _opt_str("share_delta_note")
+
     decision = Decision(
         ticker=state["ticker"],
         asof=state["asof"],
@@ -185,6 +212,13 @@ def manager_node(
         benchmark=benchmark,
         time_horizon=time_horizon,
         risk_adjusted=risk_adjusted,
+        # v97a
+        shock_anchor=shock_anchor,
+        industry_tam_usd_bn=industry_tam_usd_bn,
+        industry_tam_year=industry_tam_year,
+        company_share_pct=company_share_pct,
+        share_delta_5y_pp=share_delta_5y_pp,
+        share_delta_note=share_delta_note,
     )
 
     # ---- Consensus check (dual-LLM agreement score) ----------------------

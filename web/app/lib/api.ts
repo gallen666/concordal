@@ -43,6 +43,23 @@ export interface Decision {
   time_horizon?: string;
   /** Whether the rating is risk-adjusted (Sharpe-style) or raw. Defaults true. */
   risk_adjusted?: boolean;
+
+  // v97a BofA-style TAM-layered industry framing (all optional, back-compat).
+  /** "Shock-anchor" headline ratio that compresses the thesis to multiple ×
+   *  percent × time-horizon, e.g. "100x rack power × 28% CAGR × by CY30". */
+  shock_anchor?: string | null;
+  /** Industry TAM size in USD billions, e.g. 27.0 for a $27bn opportunity. */
+  industry_tam_usd_bn?: number | null;
+  /** Year / definition the industry TAM corresponds to, e.g.
+   *  "CY30 AI analog semis incl. data center + power infra". */
+  industry_tam_year?: string | null;
+  /** Current company share within the industry TAM, in percent (0-100). */
+  company_share_pct?: number | null;
+  /** 5-year change in company market share, in percentage points.
+   *  This is the BofA-style alpha signal — positive = share gainer. */
+  share_delta_5y_pp?: number | null;
+  /** One-sentence mechanistic reason for the Δshare. */
+  share_delta_note?: string | null;
 }
 
 export interface AnalystReport {
