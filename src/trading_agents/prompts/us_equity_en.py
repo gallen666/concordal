@@ -289,7 +289,17 @@ Emit a strict JSON object with these fields:
     "industry_tam_year":   str | null,    # e.g. "CY30 AI analog semis"
     "company_share_pct":   float | null,  # e.g. 17.3 for 17.3% market share
     "share_delta_5y_pp":   float | null,  # 5-year Δshare in pp; +5.0 / -3.0
-    "share_delta_note":    str | null     # one-sentence MECHANISTIC reason
+    "share_delta_note":    str | null,    # one-sentence MECHANISTIC reason
+
+    # v97b — Visual aids. All three are optional; emit only when you have
+    # concrete information to fill them. Empty/fabricated entries are worse
+    # than omitting because they pollute the chart UI with noise.
+    "phases":         [ {"window": str, "event": str,
+                          "beneficiaries": [str], "risk": str | null} ],
+    "driver_matrix":  {"rows": [str], "cols": [str],
+                       "cells": [[ {"value": 0..5, "label": str} ]],
+                       "caption": str | null} | null,
+    "moat_criteria":  [ {"name": str, "score": 1..5, "note": str | null} ]
   }
 
 === HEADLINE RULES (this is the FIRST thing the user reads) ===
@@ -361,6 +371,56 @@ When emitting these fields:
     industry_tam_usd_bn from the analyst reports + macro snapshot. If
     even that is impossible, leave all 5 TAM fields null.
 
+=== PHASES — staged technology / catalyst roadmap (v97b, optional) ===
+BofA's "Watts to Tokens" report used a 4-phase roadmap (415 VAC today →
+White-Space Retrofit → Hybrid Distribution → True 800 VDC → Microgrid
+CY28-30). Each phase had a window, an event, named beneficiaries, and
+a delay-risk. This staged framing is far more honest than a single
+"12-month price target" for multi-year theses.
+
+Emit 2-4 phases when the thesis has staged catalysts. Each phase MUST:
+  - have a window in the format "CY26", "1H27", "FY28" — not vague
+  - name 1-3 specific beneficiaries (tickers preferred)
+  - include a risk that would push the phase later (or null if low risk)
+
+Do NOT emit phases if the thesis is a single-event call (e.g. "earnings
+beat next quarter"). One phase is silly. Leave the list empty.
+
+=== DRIVER MATRIX — segment × driver intensity grid (v97b, optional) ===
+BofA Exhibit 16 cross-mapped semiconductor type (Si/SiC/GaN/Analog/...)
+with role in data center (lower-voltage workhorse / HV conversion / dense
+DC-DC / safety layer / ...). Generalize: rows = business segments or
+product lines of the company, cols = drivers (e.g. "AI revenue", "China
+share", "Margin lift", "Pricing power").
+
+Each cell.value is 0-5 (0 = no contribution, 5 = dominant driver). Each
+cell.label is a short snippet that explains the value (e.g. "60% rev",
+"+5pp YoY", "weakest moat"). Frontend renders as a heatmap.
+
+Emit a 2x2 minimum, 5x5 maximum. Skip if the company is single-segment
+(set driver_matrix to null).
+
+=== MOAT CRITERIA — 5-axis radar scorecard (v97b, optional) ===
+BofA used 5 criteria to identify analog semi winners. The 5 axes don't
+need to be the same as BofA's — they should be the 5 most relevant for
+the specific ticker. Suggested axes by sector:
+
+  Tech/Software:   Network effects | Switching costs | IP / patents |
+                   Pricing power | Capital efficiency
+  Consumer:        Brand strength | Distribution scale | Margin
+                   structure | Innovation cadence | Geographic mix
+  Banks/Fin:       Funding cost | Loan quality | Cap ratio |
+                   Tech moat | Regulatory positioning
+  Energy/Cyclical: Cost position | Reserve life | Balance sheet |
+                   Capital discipline | Esg posture
+
+Each criterion: score 1-5 (5 = best). 'note' is a one-sentence
+justification — concrete, not platitude ("90% gross margin tier on
+flagship SKU" beats "premium brand").
+
+Emit exactly 5 criteria when present. Leave empty list if you cannot
+give 5 concrete, defensible scores.
+
 === CONFIDENCE BANDS ===
 **Never output 1.0** — markets are uncertain and a 100%-confident
 equity decision is a sign of poor calibration.
@@ -393,7 +453,30 @@ equity decision is a sign of poor calibration.
   "industry_tam_year": "CY28 global premium consumer electronics + services",
   "company_share_pct": 18.5,
   "share_delta_5y_pp": 2.5,
-  "share_delta_note": "Services attach rate gains 600bp from on-device AI features locking the upgrade cycle to the Pro tier — Samsung's open-Android stack cannot replicate vertical-integration economics"
+  "share_delta_note": "Services attach rate gains 600bp from on-device AI features locking the upgrade cycle to the Pro tier — Samsung's open-Android stack cannot replicate vertical-integration economics",
+  "phases": [
+    {"window": "FY26 Q4", "event": "Apple Intelligence Pro tier launch + Vision Pro 2", "beneficiaries": ["AAPL"], "risk": "China regulatory approval delay for on-device LLMs"},
+    {"window": "FY27 H1", "event": "M-chip refresh cycle drives Mac/iPad ASP +8%", "beneficiaries": ["AAPL", "TSM"], "risk": "TSMC N3P yield slips"},
+    {"window": "FY27 H2", "event": "Services revenue crosses $120bn run-rate", "beneficiaries": ["AAPL"], "risk": "EU DMA enforcement on App Store"}
+  ],
+  "driver_matrix": {
+    "rows": ["Services", "iPhone", "Mac/iPad", "Wearables"],
+    "cols": ["Rev growth", "Margin", "AI leverage", "China exposure"],
+    "cells": [
+      [{"value": 5, "label": "14% YoY"}, {"value": 5, "label": "60% GM"}, {"value": 4, "label": "subs hook"}, {"value": 2, "label": "8% rev"}],
+      [{"value": 2, "label": "flat"},    {"value": 4, "label": "38% GM"}, {"value": 5, "label": "Pro tier"}, {"value": 5, "label": "17% rev"}],
+      [{"value": 3, "label": "+6% YoY"}, {"value": 4, "label": "36% GM"}, {"value": 4, "label": "on-device"}, {"value": 3, "label": "moderate"}],
+      [{"value": 2, "label": "flat"},    {"value": 3, "label": "32% GM"}, {"value": 2, "label": "limited"}, {"value": 2, "label": "low"}]
+    ],
+    "caption": "Services drives margin lift; iPhone owns the China + AI optionality"
+  },
+  "moat_criteria": [
+    {"name": "Brand strength", "score": 5, "note": "Top-3 most valuable brand globally; pricing power preserved through cycles"},
+    {"name": "Vertical integration", "score": 5, "note": "M-chip + iOS + App Store + Services tightly coupled — no peer can replicate"},
+    {"name": "Capital allocation", "score": 4, "note": "$90bn+ annual buyback at 30-35x FCF multiple raises long-run questions"},
+    {"name": "Innovation cadence", "score": 4, "note": "Vision Pro proves AR/VR R&D depth but slow path to volume"},
+    {"name": "Regulatory positioning", "score": 3, "note": "App Store challenged by EU DMA, US DOJ, India CCI simultaneously — net negative"}
+  ]
 }
 """
 

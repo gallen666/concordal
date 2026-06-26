@@ -111,6 +111,86 @@ class Decision(BaseModel):
     # claim ("portfolio breadth across Si/SiC/GaN" beats "strong AI tailwind").
     share_delta_note: str | None = None
 
+    # --- v97b: BofA-style visual aids (PhaseTimeline / DriverMatrix /     -
+    # MoatRadar). All optional list/object fields; older decisions render -
+    # unchanged. See per-field docstrings for emission rules.             -
+
+    # Phased technology / catalyst roadmap. BofA's "Watts to Tokens" used a
+    # 4-stage roadmap (415 VAC today → White-Space Retrofit → Hybrid →
+    # True 800 VDC → Microgrid CY28-30). Each phase is a (window, event,
+    # beneficiaries, risk) tuple — gives the analyst staged language for
+    # multi-quarter theses where a single price target hides the journey.
+    phases: list[Phase] = Field(default_factory=list)
+
+    # 2D driver matrix. BofA Exhibit 16 mapped semiconductor type × role in
+    # data center. We generalize: rows = business segments / product lines,
+    # cols = drivers (e.g. "AI revenue", "China share", "Margin lift"), each
+    # cell carries a value (intensity 0-5) + short label. Lets the reader
+    # see at a glance where the company has true leverage.
+    driver_matrix: DriverMatrix | None = None
+
+    # 5-criterion moat / quality scorecard rendered as a radar chart. BofA
+    # used 5 criteria to filter analog semi winners (portfolio breadth /
+    # high-voltage capability / architecture flexibility / multi-device /
+    # reference-design partnerships). Reusable for any company.
+    moat_criteria: list[CriterionScore] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# v97b visual-aid models — used by Decision.phases / .driver_matrix /
+# .moat_criteria. Kept as separate Pydantic models so frontend gets typed
+# JSON and backend can validate before storage.
+# ---------------------------------------------------------------------------
+
+
+class Phase(BaseModel):
+    """One stage in a phased technology / catalyst roadmap.
+
+    Example (BofA-style for an AI power semi name):
+      window="CY26-27", event="800 VDC pilot deployments",
+      beneficiaries=["Infineon", "ON"], risk="ecosystem maturity gating ramp"
+    """
+
+    window: str                          # e.g. "CY26-27", "1H26", "FY27"
+    event: str                           # short label of the trigger
+    beneficiaries: list[str] = Field(default_factory=list)
+    risk: str | None = None              # one-sentence risk if phase delays
+
+
+class DriverCell(BaseModel):
+    """One cell of the driver matrix — value 0-5 intensity + short label."""
+
+    value: float = Field(ge=0.0, le=5.0)  # 0 = no contribution, 5 = dominant
+    label: str = ""                       # e.g. "60% rev", "+5pp", "lead"
+
+
+class DriverMatrix(BaseModel):
+    """2D matrix mapping rows × cols → DriverCell.
+
+    Convention: rows are business segments / product lines (e.g. "Services",
+    "iPhone", "Mac"), cols are drivers (e.g. "AI revenue", "Margin lift",
+    "China share"). cells[i][j] corresponds to rows[i] × cols[j]. Frontend
+    renders as a heatmap-style grid with intensity-encoded shading.
+    """
+
+    rows: list[str]
+    cols: list[str]
+    cells: list[list[DriverCell]]        # cells[row_idx][col_idx]
+    caption: str | None = None           # optional one-sentence summary
+
+
+class CriterionScore(BaseModel):
+    """One axis of the moat / quality radar chart.
+
+    Score is 1-5 (5 = best). 'note' is a one-sentence justification.
+    BofA's five for analog semis: portfolio_breadth, hv_capability,
+    architecture_flexibility, multi_device_support, ecosystem_partnerships.
+    """
+
+    name: str
+    score: float = Field(ge=1.0, le=5.0)
+    note: str | None = None
+
 
 # ---------------------------------------------------------------------------
 # Market data primitives

@@ -198,6 +198,93 @@ def manager_node(
     share_delta_5y_pp = _opt_float("share_delta_5y_pp")
     share_delta_note = _opt_str("share_delta_note")
 
+    # v97b: PhaseTimeline / DriverMatrix / MoatRadar — defensive parse.
+    # Each block individually try/except'd so a malformed phases array
+    # doesn't kill the whole Decision; we log via flag instead.
+    from ..core.types import Phase, DriverMatrix, DriverCell, CriterionScore
+
+    phases: list[Phase] = []
+    phases_raw = payload.get("phases") or []
+    if isinstance(phases_raw, list):
+        for item in phases_raw[:6]:  # cap at 6 to avoid runaway lists
+            if not isinstance(item, dict):
+                continue
+            try:
+                phases.append(
+                    Phase(
+                        window=str(item.get("window", "")).strip() or "TBD",
+                        event=str(item.get("event", "")).strip() or "(unspecified)",
+                        beneficiaries=[
+                            str(b).strip() for b in (item.get("beneficiaries") or [])
+                            if str(b).strip()
+                        ][:5],
+                        risk=(str(item.get("risk")).strip() if item.get("risk") else None) or None,
+                    )
+                )
+            except Exception:
+                state.setdefault("flags", []).append("manager_phase_skip_malformed")
+                continue
+
+    driver_matrix: DriverMatrix | None = None
+    dm_raw = payload.get("driver_matrix")
+    if isinstance(dm_raw, dict):
+        try:
+            rows = [str(r).strip() for r in (dm_raw.get("rows") or []) if str(r).strip()]
+            cols = [str(c).strip() for c in (dm_raw.get("cols") or []) if str(c).strip()]
+            cells_raw = dm_raw.get("cells") or []
+            # Only accept the matrix if rows × cols dimensions match cells.
+            if rows and cols and len(cells_raw) == len(rows) and all(
+                isinstance(row, list) and len(row) == len(cols) for row in cells_raw
+            ):
+                cells: list[list[DriverCell]] = []
+                for row in cells_raw:
+                    cell_row: list[DriverCell] = []
+                    for cell in row:
+                        if isinstance(cell, dict):
+                            v = cell.get("value", 0)
+                            try:
+                                v = max(0.0, min(5.0, float(v)))
+                            except (TypeError, ValueError):
+                                v = 0.0
+                            cell_row.append(
+                                DriverCell(value=v, label=str(cell.get("label", "")).strip())
+                            )
+                        else:
+                            cell_row.append(DriverCell(value=0.0, label=""))
+                    cells.append(cell_row)
+                caption = dm_raw.get("caption")
+                driver_matrix = DriverMatrix(
+                    rows=rows, cols=cols, cells=cells,
+                    caption=(str(caption).strip() if caption else None) or None,
+                )
+            else:
+                state.setdefault("flags", []).append("manager_matrix_dim_mismatch")
+        except Exception:
+            state.setdefault("flags", []).append("manager_matrix_skip_malformed")
+            driver_matrix = None
+
+    moat_criteria: list[CriterionScore] = []
+    moat_raw = payload.get("moat_criteria") or []
+    if isinstance(moat_raw, list):
+        for item in moat_raw[:8]:  # cap at 8 (radar legibility falls off > 6)
+            if not isinstance(item, dict):
+                continue
+            try:
+                score = float(item.get("score", 0))
+                if not (1.0 <= score <= 5.0):
+                    # Clamp instead of skip — LLMs occasionally emit 0 or 5.5.
+                    score = max(1.0, min(5.0, score))
+                moat_criteria.append(
+                    CriterionScore(
+                        name=str(item.get("name", "")).strip() or "Criterion",
+                        score=score,
+                        note=(str(item.get("note")).strip() if item.get("note") else None) or None,
+                    )
+                )
+            except Exception:
+                state.setdefault("flags", []).append("manager_moat_skip_malformed")
+                continue
+
     decision = Decision(
         ticker=state["ticker"],
         asof=state["asof"],
@@ -219,6 +306,10 @@ def manager_node(
         company_share_pct=company_share_pct,
         share_delta_5y_pp=share_delta_5y_pp,
         share_delta_note=share_delta_note,
+        # v97b
+        phases=phases,
+        driver_matrix=driver_matrix,
+        moat_criteria=moat_criteria,
     )
 
     # ---- Consensus check (dual-LLM agreement score) ----------------------

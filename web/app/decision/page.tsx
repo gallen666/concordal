@@ -40,6 +40,9 @@ import { cn } from "../lib/cn";
 import { useT } from "../lib/i18n";
 import { MarketHeader } from "../components/MarketHeader";
 import { KLinePanel } from "../components/KLinePanel";
+import { PhaseTimeline } from "../components/PhaseTimeline";
+import { DriverMatrix } from "../components/DriverMatrix";
+import { MoatRadar } from "../components/MoatRadar";
 
 const SIDE_STYLES: Record<
   string,
@@ -740,6 +743,14 @@ function DecisionView({
                 </ul>
               </div>
             )}
+            {/* v97b: BofA-style visual aids. Each component gates on its
+                own data and returns null when missing — so a manager that
+                only fills 1 of 3 still renders cleanly. The components
+                self-style and slot into the same vertical flow as the
+                Market View / Key Takeaways blocks above. */}
+            <PhaseTimeline phases={d.phases || []} locale={locale} />
+            <DriverMatrix matrix={d.driver_matrix} locale={locale} />
+            <MoatRadar criteria={d.moat_criteria || []} locale={locale} />
             <p className="text-ink-primary leading-relaxed text-base">
               {d.rationale}
             </p>

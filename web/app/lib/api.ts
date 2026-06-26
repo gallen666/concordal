@@ -60,6 +60,41 @@ export interface Decision {
   share_delta_5y_pp?: number | null;
   /** One-sentence mechanistic reason for the Δshare. */
   share_delta_note?: string | null;
+
+  // v97b BofA-style visual aids (all optional).
+  /** Phased catalyst roadmap — 2-4 stages, each with window/event/
+   *  beneficiaries/risk. Renders as a horizontal timeline. */
+  phases?: Phase[];
+  /** 2D matrix mapping business segments × drivers → intensity 0-5.
+   *  Renders as a heatmap grid. */
+  driver_matrix?: DriverMatrix | null;
+  /** 5-axis moat / quality scorecard — renders as a radar chart. */
+  moat_criteria?: CriterionScore[];
+}
+
+export interface Phase {
+  window: string;
+  event: string;
+  beneficiaries: string[];
+  risk?: string | null;
+}
+
+export interface DriverCell {
+  value: number;            // 0-5 intensity
+  label: string;
+}
+
+export interface DriverMatrix {
+  rows: string[];
+  cols: string[];
+  cells: DriverCell[][];    // cells[rowIdx][colIdx]
+  caption?: string | null;
+}
+
+export interface CriterionScore {
+  name: string;
+  score: number;            // 1-5
+  note?: string | null;
 }
 
 export interface AnalystReport {
